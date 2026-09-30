@@ -5,6 +5,11 @@
 Retargeted from GL.iNet firmware 4.x (OpenWrt 21.02, opkg) to stock OpenWrt 25.12 (apk,
 fw4/nftables). Verified against a GL-MT6000 on 25.12.5.
 
+Security
+- `uci_apply` and `pkg_config_resolve` refuse the openwrt-mcp policy config, whatever the
+  grant. Before this, a client holding `uci_apply` on `*` (the `@operator` preset) could add
+  itself a policy with `exec` on `*` and confirm it.
+
 Removed
 - GL.iNet oui-httpd page, menu and i18n; `gl_ddns`/`wireguard_server` WireGuard model;
   `.ipk` packaging (`mkipk.sh`, `install-ipk`); GL-specific docs and findings.

@@ -269,3 +269,20 @@ func TestWriteSyncedSetsMode(t *testing.T) {
 	}
 	_ = time.Now
 }
+
+// A client with uci_apply on '*' must not be able to grant itself more through the policy file.
+func TestApplyRefusesPolicyFile(t *testing.T) {
+	s := testServer(t, "")
+	old := uciConfDir
+	defer func() { uciConfDir = old }()
+	for _, dir := range []string{"/etc/config", filepath.Dir(s.configPath)} {
+		uciConfDir = dir
+		_, _, err := s.uciApply(context.Background(), "c", uciApplyIn{Changes: []UCIChange{
+			{Config: "openwrt-mcp", Section: "p", Type: "policy"},
+			{Config: "openwrt-mcp", Section: "p", Option: "tools", Op: "add_list", Value: "exec"},
+		}, DryRun: true})
+		if err != errPolicyFile {
+			t.Errorf("uciConfDir=%s: want errPolicyFile, got %v", dir, err)
+		}
+	}
+}

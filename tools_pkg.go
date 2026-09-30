@@ -354,6 +354,9 @@ func (s *Server) pkgConfigResolve(ctx context.Context, client string, in pkgConf
 	if !strings.HasPrefix(live, "/etc/") || !contains(findApkNew(), newF) {
 		return "", "", fmt.Errorf("no %s", newF)
 	}
+	if in.Action == "use_new" && s.isPolicyFile(live) {
+		return "", "", errPolicyFile
+	}
 	switch in.Action {
 	case "keep_current":
 		if err := os.Remove(sysPath(newF)); err != nil {

@@ -83,6 +83,9 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 	}
 	var names []string
 	for c := range configs {
+		if s.isPolicyFile(filepath.Join(uciConfDir, c)) {
+			return "", "", errPolicyFile
+		}
 		if _, err := os.Stat(filepath.Join(uciConfDir, c)); err != nil {
 			return "", "", fmt.Errorf("no such UCI config %q", c)
 		}
@@ -406,4 +409,15 @@ func indentOut(s string) string {
 		return ""
 	}
 	return "\n\nreload output:\n  " + strings.ReplaceAll(s, "\n", "\n  ")
+}
+
+// errPolicyFile: whatever a client has been granted, it cannot grant itself more. Without
+// this, uci_apply on scope '*' (the @operator preset) could add a policy with exec on '*'
+// and confirm it.
+var errPolicyFile = fmt.Errorf("the openwrt-mcp policy config cannot be changed through MCP, " +
+	"whatever the grant; change it on the router with openwrt-mcp allow / revoke")
+
+func (s *Server) isPolicyFile(p string) bool {
+	p = filepath.ToSlash(filepath.Clean(p))
+	return p == filepath.ToSlash(filepath.Clean(s.configPath)) || p == defaultConfigPath
 }

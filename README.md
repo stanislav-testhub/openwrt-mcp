@@ -183,6 +183,13 @@ window; codes are single-use; unlocks live in memory only.
 - **Nobody else's edits.** Every committing tool refuses to run while the configs it would
   commit have uncommitted changes from another session, and while an unconfirmed apply is
   pending.
+- **No self-promotion.** `uci_apply` and `pkg_config_resolve` refuse the openwrt-mcp policy
+  config whatever the grant, so a client cannot write itself a wider policy. Policies change
+  only through `openwrt-mcp allow` / `revoke` on the router.
+- **`@operator` is powerful.** `uci_apply` on `*` reaches every UCI config, including
+  `dropbear`, `rpcd` and `uhttpd`, and `pkg_change` installs packages as root. Grant it for a
+  working session (`2h`), and keep long-lived grants to narrow scopes such as
+  `'dhcp.* wireless.*.disabled'`.
 - **Names are validated against UCI's grammar**, so a section like `lan.ipaddr=x` cannot make
   uci act on a different key from the scope the policy approved.
 - **No shell, anywhere.** Every command is an argv; targets and names that could be read as
@@ -201,15 +208,25 @@ window; codes are single-use; unlocks live in memory only.
 
 ## Verified
 
-On a GL-MT6000, stock OpenWrt 25.12.5, with the daemon staged in `/tmp` (not installed) and
-driven over the SSH stdio bridge from Windows: all 23 tools listed with schemas and server
-instructions; `system_status`, `network_clients`, `wg_list_clients`, `service_list`,
-`pkg_query upgradable`, `pkg_config_diff` (11 real `.apk-new` files, settings-level diffs),
-`firewall_show check`, `net_diag ping` from `br-WAN`, `logread` filtering, `uci_get`,
-`sysupgrade list`, `ubus_call` -- all against live data; `uci_apply dry_run` staging and
-reverting with nothing left in `uci changes`; denials for `exec`, `service_control`,
-`ubus_call session.list` and an out-of-scope `uci_apply`, each with its grant line;
-unauthenticated HTTP refused and audited.
+On a GL-MT6000, stock OpenWrt 25.12.5, installed with `install.sh`'s steps and driven from
+Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio bridge):
+
+- **Install:** procd service with respawn, `S95`/`K10` links, socket `0600` in a `0700`
+  directory, HTTP on `127.0.0.1` only, forced-command line in dropbear's `authorized_keys`,
+  `@readonly` + time-limited `@operator` policies picked up without a restart.
+- **Reads against live data:** all 23 tools listed with schemas and server instructions;
+  `system_status`, `network_clients`, `wg_list_clients` (duplicate-name warning),
+  `service_list`, `pkg_query upgradable`, `pkg_config_diff` (11 real `.apk-new` files,
+  settings-level diffs), `firewall_show check`, `net_diag ping` from `br-WAN`, `logread`
+  filtering, `uci_get`, `sysupgrade list`, `ubus_call`.
+- **Writes with rollback** (on a scratch UCI config): `uci_apply` including `set_list` ->
+  automatic rollback at the deadline, file restored byte-identical and `pending.json` removed;
+  a second apply refused while one is pending; `uci_confirm`; `uci_rollback` on demand;
+  `dry_run`.
+- **Crash recovery:** the daemon `SIGKILL`ed with an unconfirmed apply -> procd respawned it
+  after 6 s and it rolled the change back at startup.
+- **Refusals:** `exec`, `ubus_call session.list`, out-of-scope `uci_apply` (each naming the
+  grant line), any `uci_apply` on the policy config, unauthenticated HTTP (audited).
 
 Unit and end-to-end tests (real MCP client over in-memory transport and over the bridge
 handshake) run on any OS against a fake router: apply/confirm/rollback/timeout, **restart
@@ -217,10 +234,10 @@ inside the window**, dry run, refusal on foreign staged edits, list ops, WireGua
 add/list/remove against a captured 25.12 config, client join, log filtering, apk simulation,
 `.apk-new` resolution with rollback, preset contents, scope glob semantics.
 
-**Not yet verified on hardware:** a persistent install via `install.sh` and the LuCI page
-rendering; a real (non-dry-run) `uci_apply` + rollback + reboot-recovery; `service_control`,
-`pkg_change commit`, `wg_new_client`/`wg_remove_client` against the live router; keep.d across
-a real sysupgrade.
+**Not yet verified on hardware** (covered by the fake-router tests only): `service_control`,
+`pkg_change` with `commit`, `wg_new_client` / `wg_remove_client`, the LuCI page rendering, a
+real power cycle (the recovery path is the same one the `SIGKILL` test exercises), and keep.d
+across a real sysupgrade. Reports from other boards are welcome.
 
 ---
 
