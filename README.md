@@ -223,6 +223,9 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   automatic rollback at the deadline, file restored byte-identical and `pending.json` removed;
   a second apply refused while one is pending; `uci_confirm`; `uci_rollback` on demand;
   `dry_run`.
+- **WireGuard:** `wg_new_client` with a preshared key (next free address, peer committed to UCI
+  and hot-added to the kernel, config + QR, CGNAT endpoint warning), listed, then
+  `wg_remove_client` -- `/etc/config/network` back byte-identical, kernel peer gone.
 - **Crash recovery:** the daemon `SIGKILL`ed with an unconfirmed apply -> procd respawned it
   after 6 s and it rolled the change back at startup.
 - **Refusals:** `exec`, `ubus_call session.list`, out-of-scope `uci_apply` (each naming the
@@ -235,7 +238,7 @@ add/list/remove against a captured 25.12 config, client join, log filtering, apk
 `.apk-new` resolution with rollback, preset contents, scope glob semantics.
 
 **Not yet verified on hardware** (covered by the fake-router tests only): `service_control`,
-`pkg_change` with `commit`, `wg_new_client` / `wg_remove_client`, the LuCI page rendering, a
+`pkg_change` with `commit`, the LuCI page rendering, a
 real power cycle (the recovery path is the same one the `SIGKILL` test exercises), and keep.d
 across a real sysupgrade. Reports from other boards are welcome.
 
