@@ -1,0 +1,41 @@
+name: Bug report
+description: Something does not work on your router
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please remove secrets before pasting output: Wi-Fi keys, WireGuard keys, tokens,
+        public IP addresses. Security problems go to the Security tab, not here.
+  - type: input
+    id: release
+    attributes:
+      label: OpenWrt release and target
+      placeholder: "OpenWrt 25.12.5, mediatek/filogic (from /etc/openwrt_release)"
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: openwrt-mcp version
+      placeholder: output of `openwrt-mcp version`
+    validations:
+      required: true
+  - type: input
+    id: client
+    attributes:
+      label: MCP client and transport
+      placeholder: "Claude Code, stdio over SSH"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: Tool name, arguments, the reply you got and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: "`logread -e openwrt-mcp | tail -n 50` and the matching lines of the audit log."
+      render: text

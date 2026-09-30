@@ -4,21 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"testing"
 )
 
-// glClientsReply reproduces the reply shape `ubus call gl-clients list` actually returns on
-// a GL-BE14000 (firmware 4.9.0). Every structural detail here was taken from a real capture:
-// per-client last_rx/last_tx arrays of exactly 60 elements, counters encoded as JSON
-// *strings* rather than numbers, and an empty ipv6 array. MAC, IP and name are substituted.
-//
-// With 49 clients attached the real reply measured 100,587 bytes.
-func glClientsReply(clients int) string {
+// bulkyClientsReply is a per-client reply carrying 60-sample rx/tx time series -- the shape
+// that makes client-list ubus methods (vendor client lists, hostapd airtime) balloon: with
+// 49 clients a real capture of this shape measured 100,587 bytes. Counters are JSON strings
+// and ipv6 is an empty array, as in the capture.
+func bulkyClientsReply(clients int) string {
 	series := make([]string, 60)
 	for i := range series {
 		series[i] = "25198"
@@ -38,12 +34,12 @@ func glClientsReply(clients int) string {
 	return string(b)
 }
 
-func TestPruneUbusJSONShortensGlClients(t *testing.T) {
-	in := glClientsReply(49)
+func TestPruneUbusJSONShortensBulkyClientLists(t *testing.T) {
+	in := bulkyClientsReply(49)
 	out := pruneUbusJSON(in)
 
 	if out == in {
-		t.Fatal("gl-clients reply came back unpruned; the 60-element series should have been cut")
+		t.Fatal("client-list reply came back unpruned; the 60-element series should have been cut")
 	}
 	if len(out) >= len(in) {
 		t.Errorf("pruning did not shrink the reply: %d -> %d bytes", len(in), len(out))
@@ -101,8 +97,8 @@ func TestPruneUbusJSONPassesThroughNonJSON(t *testing.T) {
 
 // Regression: the first version of the pruner capped every array regardless of reply size.
 // A smoke test caught it on `ubus call iwinfo devices` -- 17 radio interface names in 196
-// bytes. It dropped a real interface AND the output grew to 202 bytes. This is the verbatim
-// reply from a GL-BE14000.
+// bytes. It dropped a real interface AND the output grew to 202 bytes. (Verbatim reply from
+// a many-SSID vendor build; a stock router with many SSIDs has the same shape.)
 func TestPruneUbusJSONLeavesShortListsIntact(t *testing.T) {
 	in := "{\n\t\"devices\": [\n\t\t\"ra1\",\n\t\t\"rai15\",\n\t\t\"rai2\",\n\t\t\"rax2\",\n\t\t\"rai0\"," +
 		"\n\t\t\"rax0\",\n\t\t\"rax15\",\n\t\t\"apcli0\",\n\t\t\"ra2\",\n\t\t\"rai3\",\n\t\t\"ra0\"," +
@@ -200,33 +196,22 @@ func TestPruneUbusJSONSizeGateDominates(t *testing.T) {
 	}
 }
 
-// fakeUbus puts a stub `ubus` on PATH that prints body and exits 0.
-func fakeUbus(t *testing.T, body string) {
-	t.Helper()
-	dir := t.TempDir()
-	script := "#!/bin/sh\ncat <<'ENDOFBODY'\n" + body + "\nENDOFBODY\n"
-	if err := os.WriteFile(filepath.Join(dir, "ubus"), []byte(script), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-}
-
 // The pruner working in isolation says nothing about whether ubus_call uses it. This asserts
 // the wiring: delete the pruneUbusJSON call from ubusCall and this test must go red.
 func TestUbusCallPrunesItsReply(t *testing.T) {
-	fakeUbus(t, glClientsReply(49))
+	newFakeRouter(t).on("ubus call luci-rpc getHostHints", bulkyClientsReply(49))
 
-	out, summary, err := ubusCall(context.Background(), ubusCallIn{Object: "gl-clients", Method: "list"})
+	out, summary, err := ubusCall(context.Background(), ubusCallIn{Object: "luci-rpc", Method: "getHostHints"})
 	if err != nil {
 		t.Fatalf("ubusCall: %v", err)
 	}
-	if summary != "gl-clients.list" {
-		t.Errorf("summary = %q, want gl-clients.list", summary)
+	if summary != "luci-rpc.getHostHints" {
+		t.Errorf("summary = %q, want luci-rpc.getHostHints", summary)
 	}
 	if !strings.Contains(out, "[pruned:") {
 		t.Fatal("ubus_call returned an unpruned reply -- the pruner is not wired into the tool")
 	}
-	if len(out) >= len(glClientsReply(49)) {
+	if len(out) >= len(bulkyClientsReply(49)) {
 		t.Errorf("reply not shortened: %d bytes", len(out))
 	}
 }

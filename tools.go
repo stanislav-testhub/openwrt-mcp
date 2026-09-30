@@ -5,7 +5,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,20 +16,43 @@ import (
 
 const defaultCmdTimeout = 30 * time.Second
 
-// run executes argv directly -- never through a shell -- so there is no quoting or
-// injection surface regardless of what the model puts in the arguments.
+// cmdRunner executes argv directly -- never through a shell -- so there is no quoting or
+// injection surface regardless of what the model puts in the arguments. It is a variable so
+// tests can stand in a fake router: the tools are then exercised end to end on a workstation
+// that has no ubus, uci, apk or wg, on any OS.
+var cmdRunner = execRunner
+
+func execRunner(ctx context.Context, stdin *string, argv []string) (string, string, error) {
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	if stdin != nil {
+		cmd.Stdin = strings.NewReader(*stdin)
+	}
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	err := cmd.Run()
+	return stdout.String(), stderr.String(), err
+}
+
+// run executes argv with the given timeout and returns stdout, followed by stderr if any.
 func run(ctx context.Context, timeout time.Duration, argv ...string) (string, error) {
+	return runWith(ctx, timeout, nil, argv...)
+}
+
+// runStdin is run() with input piped in. It exists for key material (`wg pubkey`,
+// `wg set ... preshared-key /dev/stdin`): passing a secret as an argv element would expose
+// it in /proc to every process on the box for the lifetime of the call.
+func runStdin(ctx context.Context, timeout time.Duration, stdin string, argv ...string) (string, error) {
+	return runWith(ctx, timeout, &stdin, argv...)
+}
+
+func runWith(ctx context.Context, timeout time.Duration, stdin *string, argv ...string) (string, error) {
 	if timeout <= 0 {
 		timeout = defaultCmdTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	out := stdout.String()
-	if e := strings.TrimSpace(stderr.String()); e != "" {
+	out, errOut, err := cmdRunner(ctx, stdin, argv)
+	if e := strings.TrimSpace(errOut); e != "" {
 		if out != "" {
 			out += "\n"
 		}
@@ -39,31 +64,32 @@ func run(ctx context.Context, timeout time.Duration, argv ...string) (string, er
 	return out, err
 }
 
-// runStdin is run() with input piped in. It exists for `wg pubkey`, which reads a private
-// key on stdin -- passing key material as an argv element would expose it in /proc to every
-// process on the box for the lifetime of the call.
-func runStdin(ctx context.Context, timeout time.Duration, stdin string, argv ...string) (string, error) {
-	if timeout <= 0 {
-		timeout = defaultCmdTimeout
+// runJSON runs argv and decodes its stdout as JSON into v.
+func runJSON(ctx context.Context, v any, argv ...string) error {
+	out, err := run(ctx, defaultCmdTimeout, argv...)
+	if err != nil {
+		return fmt.Errorf("%s: %w: %s", strings.Join(argv, " "), err, strings.TrimSpace(out))
 	}
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
-	cmd.Stdin = strings.NewReader(stdin)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	out := stdout.String()
-	if e := strings.TrimSpace(stderr.String()); e != "" {
-		if out != "" {
-			out += "\n"
-		}
-		out += e
+	if err := json.Unmarshal([]byte(out), v); err != nil {
+		return fmt.Errorf("%s: unexpected output: %w", strings.Join(argv, " "), err)
 	}
-	if ctx.Err() == context.DeadlineExceeded {
-		return out, fmt.Errorf("timed out after %s", timeout)
+	return nil
+}
+
+// sysRoot prefixes every file the tools read or write directly (leases, /proc, /sys,
+// /etc/config, *.apk-new). "/" on the router; a fixture tree in tests.
+var sysRoot = "/"
+
+func sysPath(p string) string {
+	if sysRoot == "/" {
+		return p
 	}
-	return out, err
+	return filepath.Join(sysRoot, filepath.FromSlash(p))
+}
+
+func readSys(p string) (string, error) {
+	b, err := os.ReadFile(sysPath(p))
+	return string(b), err
 }
 
 // maxResultBytes caps what any tool may return. A tool result lands in an agent's context
@@ -86,17 +112,20 @@ func textResult(s string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
 }
 
+func errResult(s string) *mcp.CallToolResult {
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: s}}}
+}
+
 // maxArrayElems is how many elements of a long array survive pruning.
 const maxArrayElems = 16
 
 // pruner collapses long arrays in a decoded ubus reply, counting what it drops so the
 // caller can tell "nothing to prune" from "pruned to nothing".
 //
-// The motivating case is measured, not hypothetical: on a GL-BE14000 with 49 clients
-// attached, `ubus call gl-clients list` returned 100,587 bytes -- 60 samples of last_rx and
-// 60 of last_tx per client, a wall of numbers that answers no question anyone asked.
-// Pruning the decoded tree rather than truncating the string keeps the result parseable,
-// which is the entire point.
+// The motivating case: per-client time series (hostapd airtime, luci-rpc host hints on a
+// busy network) where a single reply runs to 100 KB of numbers that answer no question
+// anyone asked. Pruning the decoded tree rather than truncating the string keeps the result
+// parseable, which is the entire point.
 type pruner struct {
 	maxElems int
 	dropped  int
@@ -124,98 +153,12 @@ func (p *pruner) walk(v any) any {
 	return v
 }
 
-// mfaGate returns a refusal, or "" if the call may proceed. Named rather than inlined in the
-// tool wrapper so a test can drive it: a second factor that is never actually consulted is
-// exactly the kind of control that looks present and protects nothing.
-func (s *Server) mfaGate(p *Policy, client, tool string, now time.Time) string {
-	if p == nil || !p.NeedsMFA(tool) {
-		return ""
-	}
-	if _, open := s.mfa.UnlockedUntil(client, now); open {
-		return ""
-	}
-	return fmt.Sprintf("denied: %s requires a second factor for %q\n"+
-		"  call mfa_unlock with a current 6-digit code from your authenticator; "+
-		"it stays unlocked for %s", tool, client, p.MFAWindow)
-}
-
-// uciScopes derives the policy scopes for an apply. Named rather than inlined so a test can
-// pin the section-level form: a scope of "dhcp.pi" (create the section) is a different
-// permission from "dhcp.pi.ip" (set an option in it), and a policy must cover each on its
-// own terms.
-func uciScopes(in uciApplyIn) []string {
-	var out []string
-	for _, c := range in.Changes {
-		out = append(out, uciKey(c))
-	}
-	return out
-}
-
-// uciGetScope is the read counterpart of uciScopes: a read is scoped with the same identity
-// a write would use (see uciKey). A whole-config read addresses just "<config>", so it is
-// covered by a "<config>" or "<config>*" grant but deliberately NOT by "<config>.*" --
-// reading every section of a config is a broader permission than reading one named section.
-func uciGetScope(in uciGetIn) []string {
-	key := in.Config
-	if in.Section != "" {
-		key += "." + in.Section
-		if in.Option != "" {
-			key += "." + in.Option
-		}
-	}
-	return []string{key}
-}
-
-// uciGet reads current configuration with `uci show`. It is the read path uci_apply lacked:
-// an agent can inspect state before changing it without being handed exec (a root shell) or
-// a broad ubus "uci.*" grant merely to look.
-func uciGet(ctx context.Context, in uciGetIn) (string, string, error) {
-	if in.Config == "" {
-		return "", "", fmt.Errorf("config is required")
-	}
-	if in.Option != "" && in.Section == "" {
-		return "", "", fmt.Errorf("option requires a section")
-	}
-	sel := in.Config
-	if in.Section != "" {
-		sel += "." + in.Section
-		if in.Option != "" {
-			sel += "." + in.Option
-		}
-	}
-	out, err := run(ctx, defaultCmdTimeout, "uci", "show", sel)
-	return out, "read " + sel, err
-}
-
-// ubusCall is the ubus_call handler. It is a named function rather than a closure so a test
-// can assert that the reply really is pruned on the way out -- deleting the pruneUbusJSON
-// call here has to break something, or the pruner's own unit tests prove nothing about
-// whether the tool uses it.
-func ubusCall(ctx context.Context, in ubusCallIn) (string, string, error) {
-	if in.Object == "" || in.Method == "" {
-		return "", "", fmt.Errorf("object and method are required")
-	}
-	argv := []string{"ubus", "call", in.Object, in.Method}
-	if len(in.Args) > 0 {
-		b, err := json.Marshal(in.Args)
-		if err != nil {
-			return "", "", fmt.Errorf("args not encodable: %w", err)
-		}
-		argv = append(argv, string(b))
-	}
-	out, err := run(ctx, defaultCmdTimeout, argv...)
-	if err == nil {
-		out = pruneUbusJSON(out)
-	}
-	return out, in.Object + "." + in.Method, err
-}
-
 // pruneMinBytes is the size below which a reply is returned whole, however long its arrays.
 //
-// Not every array is a time series. `ubus call iwinfo devices` returns 17 radio interface
-// names in 196 bytes: capping that at 16 discards a real interface, and the result was
-// measured at 202 bytes -- longer than the original once the notice is added. Pruning has to
-// earn its data loss, and on a reply small enough to read whole it never can.
+// Not every array is a time series. `ubus call iwinfo devices` on a many-SSID router returns
+// a list of interface names in a couple of hundred bytes: capping that at 16 discards a real
+// interface and, once the notice is added, makes the reply longer. Pruning has to earn its
+// data loss, and on a reply small enough to read whole it never can.
 const pruneMinBytes = 8 << 10
 
 // pruneUbusJSON shortens long arrays in a ubus reply. Non-JSON output (ubus error text),
@@ -247,232 +190,37 @@ func pruneUbusJSON(out string) string {
 		b, p.dropped, maxArrayElems, len(out), len(b))
 }
 
-func errResult(s string) *mcp.CallToolResult {
-	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: s}}}
-}
-
-// ---------------------------------------------------------------- tool inputs
-
-type ubusListIn struct {
-	Filter string `json:"filter,omitempty" jsonschema:"optional ubus object path prefix, e.g. 'network' or 'gl-clients'. Omit to list every object on the bus."`
-}
-
-type ubusCallIn struct {
-	Object string         `json:"object" jsonschema:"ubus object name, e.g. 'network.interface.lan' or 'iwinfo'"`
-	Method string         `json:"method" jsonschema:"method to call on that object, e.g. 'status'"`
-	Args   map[string]any `json:"args,omitempty" jsonschema:"JSON arguments for the method; omit for none"`
-}
-
-type UCIChange struct {
-	Config  string `json:"config" jsonschema:"UCI config name, e.g. 'network'"`
-	Section string `json:"section" jsonschema:"section name, e.g. 'lan', 'raspberrypi' or '@wifi-iface[0]'"`
-	Option  string `json:"option,omitempty" jsonschema:"option name, e.g. 'ipaddr'. Omit when creating or deleting a whole section."`
-	Type    string `json:"type,omitempty" jsonschema:"section type, e.g. 'host' or 'rule'. Set this (with no option) to CREATE the named section; put it before the changes that fill it in."`
-	Value   string `json:"value,omitempty" jsonschema:"new value; ignored when delete is true"`
-	Delete  bool   `json:"delete,omitempty" jsonschema:"delete the option, or the whole section when option is omitted"`
-}
-
-type uciApplyIn struct {
-	Changes []UCIChange `json:"changes" jsonschema:"the set of UCI options to change, applied together"`
-	Timeout int         `json:"timeout,omitempty" jsonschema:"seconds before automatic rollback if uci_confirm is not called (default 90, max 600)"`
-}
-
-type uciConfirmIn struct {
-	Token string `json:"token" jsonschema:"the confirm_token returned by uci_apply"`
-}
-
-type uciGetIn struct {
-	Config  string `json:"config" jsonschema:"UCI config to read, e.g. 'dhcp' or 'network'"`
-	Section string `json:"section,omitempty" jsonschema:"section to narrow to, e.g. 'lan' or '@wifi-iface[0]'. Omit to read the whole config."`
-	Option  string `json:"option,omitempty" jsonschema:"option to read a single value. Omit to read the whole section."`
-}
-
-type execIn struct {
-	Argv    []string `json:"argv" jsonschema:"command and arguments, executed directly without a shell. argv[0] is the policy scope."`
-	Timeout int      `json:"timeout,omitempty" jsonschema:"seconds before the command is killed (default 30, max 300)"`
-}
-
-type mfaUnlockIn struct {
-	Code string `json:"code" jsonschema:"the current 6-digit code from the operator's authenticator app"`
-}
-
-type logreadIn struct {
-	Lines   int    `json:"lines,omitempty" jsonschema:"how many recent lines to return (default 100, max 2000)"`
-	Pattern string `json:"pattern,omitempty" jsonschema:"only return lines containing this substring"`
-}
-
-// ---------------------------------------------------------------- registration
-
-// newServerForClient builds an MCP server whose handlers are closed over one authenticated
-// client name. Identity therefore comes from the validated bearer token at connection time
-// and can never be spoofed by a tool argument or a self-asserted clientInfo.name.
-func (s *Server) newServerForClient(client string) *mcp.Server {
-	srv := mcp.NewServer(&mcp.Implementation{Name: "openwrt-mcp", Version: version}, nil)
-
-	addTool(s, srv, client, "ubus_list",
-		"List ubus objects and their methods with argument signatures. This is the discovery tool: "+
-			"call it first to learn what this router can actually do, rather than assuming a fixed catalogue. "+
-			"Always permitted (introspection only, returns no configuration data).",
-		func(in ubusListIn) []string { return nil },
-		func(ctx context.Context, in ubusListIn) (string, string, error) {
-			argv := []string{"ubus", "-v", "list"}
-			if in.Filter != "" {
-				argv = append(argv, in.Filter)
-			}
-			out, err := run(ctx, defaultCmdTimeout, argv...)
-			return out, "listed ubus objects", err
-		})
-
-	addTool(s, srv, client, "ubus_call",
-		"Call any ubus method on the router. This is the main tool -- netifd, wireless, dnsmasq, "+
-			"iwinfo, luci-rpc and the vendor's gl-* objects are all reachable through it. "+
-			"Policy scope is the string \"<object>.<method>\".",
-		func(in ubusCallIn) []string { return []string{in.Object + "." + in.Method} },
-		ubusCall)
-
-	addTool(s, srv, client, "uci_apply",
-		"Change router configuration safely. Stages the given UCI changes, commits them, and applies "+
-			"with a rollback timer armed: if uci_confirm is not called before the timeout, the router "+
-			"automatically reverts everything. Use this rather than 'uci' via exec -- it is the only path "+
-			"that cannot strand you with an unreachable router.\n\n"+
-			"A change sets an option, or -- with 'type' and no 'option' -- creates a named section, so "+
-			"whole objects can be added in one rollback-armed step. To add a static DHCP lease:\n"+
-			"  {config:dhcp, section:pi, type:host}\n"+
-			"  {config:dhcp, section:pi, option:mac, value:'88:a2:9e:8a:e4:15'}\n"+
-			"  {config:dhcp, section:pi, option:ip,  value:'192.168.0.141'}\n"+
-			"Changes run in order, so the creating change must come first. Omit 'option' with "+
-			"'delete' to remove a whole section.\n\n"+
-			"Policy scope is \"<config>.<section>.<option>\", or \"<config>.<section>\" for a "+
-			"section-level change; all must be covered by one policy.",
-		uciScopes,
-		func(ctx context.Context, in uciApplyIn) (string, string, error) {
-			return s.uciApply(ctx, in)
-		})
-
-	addTool(s, srv, client, "uci_confirm",
-		"Confirm a pending uci_apply and cancel its rollback timer. Call this only after verifying the "+
-			"router is still reachable and behaving. Doing nothing is the safe default: the change reverts.",
-		func(in uciConfirmIn) []string { return nil },
-		func(ctx context.Context, in uciConfirmIn) (string, string, error) {
-			return s.uciConfirm(ctx, in.Token)
-		})
-
-	addTool(s, srv, client, "uci_get",
-		"Read router configuration. Returns settings as config.section.option=value lines. "+
-			"Give a config to dump it (e.g. dhcp), add a section to narrow, or an option for a single value. "+
-			"Use this to inspect state before changing it with uci_apply -- safer than being handed an exec shell. "+
-			"Policy scope mirrors uci_apply: '<config>', '<config>.<section>' or '<config>.<section>.<option>'. "+
-			"A section- or option-level read is covered by a '<config>.*' grant; a whole-config read needs '<config>'.",
-		uciGetScope,
-		uciGet)
-
-	addTool(s, srv, client, "exec",
-		"Run a command on the router. argv is executed directly with no shell, so pipes, redirection and "+
-			"globs do not work -- pass a single program and its arguments. Policy scope is argv[0].",
-		func(in execIn) []string {
-			if len(in.Argv) == 0 {
-				return nil
-			}
-			return []string{in.Argv[0]}
-		},
-		func(ctx context.Context, in execIn) (string, string, error) {
-			if len(in.Argv) == 0 {
-				return "", "", fmt.Errorf("argv must not be empty")
-			}
-			out, err := run(ctx, clampSec(in.Timeout, 30, 300), in.Argv...)
-			return out, strings.Join(in.Argv, " "), err
-		})
-
-	addTool(s, srv, client, "wg_new_client",
-		"Issue a new WireGuard client for the router's VPN server: generates a keypair, allocates a "+
-			"free tunnel address, saves a peer the vendor UI still lists, and adds it to the running "+
-			"interface without restarting it, so existing sessions are not dropped. Returns the client "+
-			"config together with a QR code to scan straight into the WireGuard app.\n\n"+
-			"Never reuse one client config on two devices -- WireGuard pins a key to one endpoint, so "+
-			"the two will fight and both connections will flap. Issue one client per device.\n\n"+
-			"This returns a NEW PRIVATE KEY in its output. Treat it as a credential: show it to the "+
-			"operator, do not write it to a file or paste it anywhere it will persist. Policy scope is "+
-			"\"wireguard_server.<server section>\"; gating this behind mfa_tools is sensible.",
-		wgScopes,
-		func(ctx context.Context, in wgNewClientIn) (string, string, error) {
-			return s.wgNewClient(ctx, in)
-		})
-
-	addTool(s, srv, client, "mfa_unlock",
-		"Supply a 6-digit TOTP code to unlock the tools this client's policy marks as needing "+
-			"a second factor. One code opens a time-boxed window rather than gating every call, "+
-			"so ask the operator for a code once and work normally until it expires. Codes are "+
-			"single-use. Does nothing unless the operator has enrolled a secret with "+
-			"'openwrt-mcp mfa enrol'.",
-		func(in mfaUnlockIn) []string { return nil },
-		func(ctx context.Context, in mfaUnlockIn) (string, string, error) {
-			now := time.Now()
-			window := defaultMFAWindow
-			// Use the window from any policy that names this client, so a policy saying
-			// 5m is not silently stretched to the default.
-			for _, p := range s.cfg().Policies {
-				if p.Client == client && p.Enabled && len(p.MFATools) > 0 {
-					window = p.MFAWindow
-					break
-				}
-			}
-			until, err := s.mfa.Unlock(client, in.Code, window, now)
-			if err != nil {
-				// Returned as an error so it audits as ERROR, distinct from a policy DENIED.
-				return "", "mfa_unlock", err
-			}
-			return fmt.Sprintf("Unlocked until %s (%s).", until.Format(time.RFC3339), window),
-				"mfa_unlock", nil
-		})
-
-	addTool(s, srv, client, "logread",
-		"Read the router's system log. Separate from exec so a policy can grant log access without "+
-			"granting a root shell.",
-		func(in logreadIn) []string { return nil },
-		func(ctx context.Context, in logreadIn) (string, string, error) {
-			n := in.Lines
-			if n <= 0 {
-				n = 100
-			}
-			if n > 2000 {
-				n = 2000
-			}
-			out, err := run(ctx, defaultCmdTimeout, "logread", "-l", fmt.Sprint(n))
-			if err == nil && in.Pattern != "" {
-				var keep []string
-				for _, line := range strings.Split(out, "\n") {
-					if strings.Contains(line, in.Pattern) {
-						keep = append(keep, line)
-					}
-				}
-				out = strings.Join(keep, "\n")
-			}
-			return out, fmt.Sprintf("%d lines", n), err
-		})
-
-	return srv
-}
-
-func clampSec(v, def, max int) time.Duration {
-	if v <= 0 {
-		v = def
+// mfaGate returns a refusal, or "" if the call may proceed. Named rather than inlined in the
+// tool wrapper so a test can drive it: a second factor that is never actually consulted is
+// exactly the kind of control that looks present and protects nothing.
+func (s *Server) mfaGate(p *Policy, client, tool string, now time.Time) string {
+	if p == nil || !p.NeedsMFA(tool) {
+		return ""
 	}
-	if v > max {
-		v = max
+	if _, open := s.mfa.UnlockedUntil(client, now); open {
+		return ""
 	}
-	return time.Duration(v) * time.Second
+	return fmt.Sprintf("denied: %s requires a second factor for %q\n"+
+		"  call mfa_unlock with a current 6-digit code from your authenticator; "+
+		"it stays unlocked for %s", tool, client, p.MFAWindow)
 }
+
+// ungatedTools need no policy. ubus_list is introspection only -- method names and argument
+// types, never configuration data -- and without it an agent cannot discover what to ask
+// for. mfa_unlock is how you satisfy the second factor, so gating it would be a deadlock;
+// without a valid current code it does nothing but record a failed attempt.
+var ungatedTools = map[string]bool{"ubus_list": true, "mfa_unlock": true}
 
 // addTool registers one tool behind the shared policy+audit gate.
 //
 // scopeOf derives the policy scope strings from the typed input; fn does the work and
 // returns (output, summary, error). Neither can bypass the gate: authorisation happens
 // in this wrapper, before fn is ever called.
-func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string,
+func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann *mcp.ToolAnnotations,
 	scopeOf func(In) []string,
 	fn func(context.Context, In) (string, string, error),
 ) {
-	mcp.AddTool(srv, &mcp.Tool{Name: name, Description: desc},
+	mcp.AddTool(srv, &mcp.Tool{Name: name, Description: desc, Annotations: ann},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 			started := time.Now()
 			scopes := scopeOf(in)
@@ -490,14 +238,7 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string,
 				return res, nil, nil
 			}
 
-			// ubus_list is introspection only and is never gated; everything else must be
-			// covered by a standing policy. Denial is the default.
-			//
-			// mfa_unlock is exempt for the obvious reason: it is how you satisfy the second
-			// factor, so gating it behind the second factor would be a deadlock. It is safe
-			// to leave open because it grants nothing on its own -- without a valid current
-			// code it does nothing but record a failed attempt.
-			if name != "ubus_list" && name != "mfa_unlock" {
+			if !ungatedTools[name] {
 				now := time.Now()
 				p, reason := s.cfg().AuthorisePolicy(client, name, scopes, now)
 				if p == nil {
@@ -521,3 +262,39 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string,
 			return finish(textResult(out), OutcomeOK, summary, "")
 		})
 }
+
+func clampSec(v, def, max int) time.Duration {
+	if v <= 0 {
+		v = def
+	}
+	if v > max {
+		v = max
+	}
+	return time.Duration(v) * time.Second
+}
+
+func clampInt(v, def, lo, hi int) int {
+	if v == 0 {
+		v = def
+	}
+	if v < lo {
+		v = lo
+	}
+	if v > hi {
+		v = hi
+	}
+	return v
+}
+
+// noScope is the scope function for tools whose policy check is tool-level only.
+func noScope[In any](In) []string { return nil }
+
+// Tool annotations: hints to the client, never a security boundary (the policy is). They let
+// a client auto-approve reads and ask before writes.
+var (
+	annRead = &mcp.ToolAnnotations{ReadOnlyHint: true}
+	annIdem = &mcp.ToolAnnotations{DestructiveHint: ptr(false), IdempotentHint: true}
+	annDest = &mcp.ToolAnnotations{DestructiveHint: ptr(true)}
+)
+
+func ptr[T any](v T) *T { return &v }

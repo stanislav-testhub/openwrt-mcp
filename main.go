@@ -12,13 +12,13 @@ import (
 )
 
 // openwrt-mcp -- an MCP server hosted on an OpenWrt router.
-// Copyright (c) 2026 Ian Williams
+// Copyright (c) 2026 Ian Williams. OpenWrt 25.12 port: see CHANGELOG.md.
 //
 // Released under the MIT Licence. See the LICENSE file.
 
-var version = "0.5.0"
+var version = "1.0.0"
 
-const sourceURL = "https://github.com/GlassOnTin/openwrt-mcp"
+const sourceURL = "https://github.com/stanislav-testhub/openwrt-mcp (based on github.com/GlassOnTin/openwrt-mcp)"
 
 const (
 	defaultConfigPath = "/etc/config/openwrt-mcp"
@@ -52,6 +52,37 @@ func main() {
 		must(err)
 		must(s.Serve())
 
+	case "stdio":
+		// What an SSH forced command runs: bridges this process's stdin/stdout to the daemon.
+		fs := flag.NewFlagSet("stdio", flag.ExitOnError)
+		client := fs.String("client", os.Getenv("OPENWRT_MCP_CLIENT"), "client name the policy applies to")
+		must(fs.Parse(args[1:]))
+		cfg, err := LoadConfig(*configPath)
+		must(err)
+		if cfg.Socket == "" {
+			die("the stdio bridge is disabled (option socket '' in %s)", *configPath)
+		}
+		must(runBridge(cfg.Socket, *client))
+
+	case "authorize-key":
+		if len(args) != 3 {
+			die("usage: openwrt-mcp authorize-key <client> '<ssh public key line>'\n" +
+				"  binds a dedicated key to the stdio bridge for <client> in /etc/dropbear/authorized_keys")
+		}
+		line, err := authorizeKey("/etc/dropbear/authorized_keys", args[1], args[2])
+		must(err)
+		fmt.Printf("added to /etc/dropbear/authorized_keys:\n  %s\n\n"+
+			"Point your MCP client at:  ssh -T -i <that key> -p <ssh port> root@<router>\n"+
+			"and grant it something:    openwrt-mcp allow %s @readonly 30d\n", line, args[1])
+
+	case "revoke":
+		if len(args) != 2 {
+			die("usage: openwrt-mcp revoke <client>   (removes every policy for the client)")
+		}
+		n, err := removePolicies(*configPath, args[1])
+		must(err)
+		fmt.Printf("removed %d policy block(s) for %q\n", n, args[1])
+
 	case "pair":
 		if len(args) != 2 {
 			die("usage: openwrt-mcp pair <client-name>")
@@ -79,12 +110,28 @@ func main() {
 		}
 
 	case "allow":
+		if len(args) == 4 && strings.HasPrefix(args[2], "@") {
+			blocks, err := expandPreset(args[2])
+			must(err)
+			for _, b := range blocks {
+				must(appendPolicy(*configPath, args[1], strings.Join(b.tools, ","), strings.Join(b.scopes, " "), args[3]))
+			}
+			fmt.Printf("granted %s preset %s (%d policy blocks) for %s; the daemon picks it up without a restart\n",
+				args[1], args[2], len(blocks), args[3])
+			break
+		}
 		if len(args) != 5 {
 			die("usage: openwrt-mcp allow <client> <tool[,tool...]> <scope-glob[ scope-glob...]> <duration|never>\n" +
-				"  e.g. openwrt-mcp allow claude-code ubus_call 'network.* iwinfo.*' 30d")
+				"       openwrt-mcp allow <client> @readonly|@operator <duration|never>\n" +
+				"  e.g. openwrt-mcp allow claude-code uci_apply 'dhcp.* wireless.*.disabled' 30d")
+		}
+		for _, t := range strings.Split(args[2], ",") {
+			if t = strings.TrimSpace(t); t != "" && !validTool(t) {
+				die("unknown tool %q (tools: %s)", t, strings.Join(allToolNames, ", "))
+			}
 		}
 		must(appendPolicy(*configPath, args[1], args[2], args[3], args[4]))
-		fmt.Printf("granted %s -> %s on '%s' for %s\nrestart to apply: /etc/init.d/openwrt-mcp restart\n",
+		fmt.Printf("granted %s -> %s on '%s' for %s; the daemon picks it up without a restart\n",
 			args[1], args[2], args[3], args[4])
 
 	case "policies":
@@ -138,7 +185,7 @@ func main() {
 				"  list mfa_tools 'exec'\n"+
 				"  list mfa_tools 'uci_apply'\n"+
 				"  option mfa_window '15m'\n\n"+
-				"Restart to apply: /etc/init.d/openwrt-mcp restart\n"+
+				"The daemon picks this up without a restart.\n"+
 				"The secret is stored at %s/mfa (mode 0600); anyone who reads it can generate codes.\n",
 				args[2], uri, secret, defaultConfigPath, *statePath)
 
@@ -168,7 +215,7 @@ func main() {
 		}
 
 	case "status":
-		// Backs the router's own web UI via the oui-httpd RPC module; --json is the
+		// Backs the LuCI status page (via rpcd file.exec); --json is the
 		// machine-readable form of exactly what the text output shows.
 		fs := flag.NewFlagSet("status", flag.ExitOnError)
 		asJSON := fs.Bool("json", false, "emit JSON")
@@ -237,19 +284,23 @@ func parseDuration(s string) (time.Duration, error) {
 func usage() {
 	fmt.Fprintf(os.Stderr, `openwrt-mcp %s -- an MCP server hosted on the router
 
-  serve                                       run the daemon (loopback only)
-  pair     <client>                           mint a bearer token, printed once
+  serve                                       run the daemon (loopback TCP + root-only unix socket)
+  stdio    --client <name>                    bridge stdin/stdout to the daemon (SSH forced command)
+  authorize-key <client> '<pubkey>'           bind a dedicated SSH key to the stdio bridge
+  pair     <client>                           mint a bearer token for the HTTP transport, printed once
   unpair   <client>                           revoke every token for a client
-  clients                                     list paired clients
+  clients                                     list paired (HTTP) clients
   allow    <client> <tools> <scopes> <dur>    grant a standing policy
-  revoke                                      (edit %s and restart)
+  allow    <client> @readonly|@operator <dur> grant a preset
+  revoke   <client>                           remove every policy for a client (config: %s)
   policies                                    show current grants
   status   [--json] [--audit N]                daemon state, pairings, grants, recent audit
   mfa      enrol <client> [device] | status   optional TOTP second factor for gated tools
   version
 
-Reach it from a workstation with:
-  ssh -N -L 8730:127.0.0.1:8730 root@router
+Connect an MCP client either way:
+  stdio: ssh -T -i <mcp key> root@router          (key bound with authorize-key)
+  http:  ssh -N -L 8730:127.0.0.1:8730 root@router, then http://127.0.0.1:8730/mcp + bearer token
 `, version, defaultConfigPath)
 	flag.PrintDefaults()
 }

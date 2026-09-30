@@ -16,7 +16,7 @@ import (
 	"time"
 )
 
-// ponytail: we parse UCI ourselves rather than shelling to `uci show`. It is ~60 lines
+// We parse UCI ourselves rather than shelling to `uci show`. It is ~60 lines
 // of trivial format, and doing it in-process makes the whole policy engine unit-testable
 // on a workstation that has no uci binary. The `uci` binary is still used for *router*
 // config via the tools -- just not for our own.
@@ -126,6 +126,7 @@ type Policy struct {
 
 type Config struct {
 	Listen     string
+	Socket     string // unix socket for the stdio bridge; "" disables it
 	AuditPath  string
 	AuditMaxMB int
 	Policies   []*Policy
@@ -133,12 +134,13 @@ type Config struct {
 
 const (
 	defaultListen     = "127.0.0.1:8730"
+	defaultSocket     = "/var/run/openwrt-mcp/mcp.sock"
 	defaultAuditPath  = "/etc/openwrt-mcp/audit.jsonl"
 	defaultAuditMaxMB = 16
 )
 
 func LoadConfig(configPath string) (*Config, error) {
-	c := &Config{Listen: defaultListen, AuditPath: defaultAuditPath, AuditMaxMB: defaultAuditMaxMB}
+	c := &Config{Listen: defaultListen, Socket: defaultSocket, AuditPath: defaultAuditPath, AuditMaxMB: defaultAuditMaxMB}
 	f, err := os.Open(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -153,6 +155,9 @@ func LoadConfig(configPath string) (*Config, error) {
 		case "server":
 			if v := s.Options["listen"]; v != "" {
 				c.Listen = v
+			}
+			if v, ok := s.Options["socket"]; ok {
+				c.Socket = v // '' turns the stdio bridge off
 			}
 			if v := s.Options["audit"]; v != "" {
 				c.AuditPath = v
@@ -307,12 +312,18 @@ func (p *Policy) takeToken(now time.Time) bool {
 	return true
 }
 
+// literalBrackets makes '[' and ']' match themselves. Scopes name anonymous UCI sections as
+// "firewall.@rule[3]", and path.Match would read "[3]" as a character class -- so a grant
+// written exactly as the scope it should cover ("system.@system[0].hostname") silently
+// failed to match it. Only '*' and '?' are wildcards.
+var literalBrackets = strings.NewReplacer("[", `\[`, "]", `\]`)
+
 func matchAny(globs []string, s string) bool {
 	for _, g := range globs {
-		if g == "*" {
+		if g == "*" || g == s {
 			return true
 		}
-		if ok, err := path.Match(g, s); err == nil && ok {
+		if ok, err := path.Match(literalBrackets.Replace(g), s); err == nil && ok {
 			return true
 		}
 	}

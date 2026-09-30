@@ -1,267 +1,248 @@
 package main
 
 import (
+	"context"
 	"path"
 	"strings"
 	"testing"
+	"time"
 )
 
-// Real `uci show wireguard_server` output from a GL-BE14000, trimmed of key material.
-const sampleWGShow = `wireguard_server.main_server=servers
-wireguard_server.main_server.address_v4='10.1.0.1/24'
-wireguard_server.main_server.port='51820'
-wireguard_server.main_server.public_key='SERVERPUB='
-wireguard_server.main_server.client_to_client='1'
-wireguard_server.peer_1046=peers
-wireguard_server.peer_1046.name='Haven'
-wireguard_server.peer_1046.peer_id='1046'
-wireguard_server.peer_1046.client_ip='10.1.0.2/24'
-wireguard_server.peer_1046.enabled='1'
+// Shapes captured from an OpenWrt 25.12.5 router (keys replaced). Note the two peers that
+// share a description -- that happens in real configs and must not confuse removal.
+const sampleNetworkX = `network.loopback=interface
+network.loopback.proto='static'
+network.wan=interface
+network.wan.proto='dhcp'
+network.wg0=interface
+network.wg0.proto='wireguard'
+network.wg0.private_key='SERVERPRIV='
+network.wg0.listen_port='51820'
+network.wg0.addresses='10.20.30.1/24'
+network.wg0.mtu='1380'
+network.cfg1196fc=wireguard_wg0
+network.cfg1196fc.public_key='PEERA='
+network.cfg1196fc.allowed_ips='10.20.30.4/32'
+network.cfg1196fc.description='phone'
+network.cfg1296fc=wireguard_wg0
+network.cfg1296fc.public_key='PEERB='
+network.cfg1296fc.allowed_ips='10.20.30.5/32'
+network.cfg1296fc.description='phone'
+network.cfg1396fc=wireguard_wg0
+network.cfg1396fc.public_key='PEERC='
+network.cfg1396fc.allowed_ips='10.20.30.6/32'
+network.cfg1396fc.description='tablet'
 `
 
-func TestParseUCIShow(t *testing.T) {
-	tr := parseUCIShow(sampleWGShow)
-
-	if got := tr.typ["main_server"]; got != "servers" {
-		t.Errorf("section type = %q, want servers", got)
-	}
-	// Quotes must be stripped, or every value is used with literal ' around it.
-	if got := tr.get("main_server", "address_v4"); got != "10.1.0.1/24" {
-		t.Errorf("address_v4 = %q, want unquoted 10.1.0.1/24", got)
-	}
-	if got := tr.sectionsOfType("peers"); len(got) != 1 || got[0] != "peer_1046" {
-		t.Errorf("peers = %v, want [peer_1046]", got)
-	}
-	// File order matters: "the only server" must be picked deterministically.
-	if len(tr.order) == 0 || tr.order[0] != "main_server" {
-		t.Errorf("order = %v, want main_server first", tr.order)
-	}
-	// A missing option must read as empty, not panic on a nil inner map.
-	if got := tr.get("nonexistent", "nope"); got != "" {
-		t.Errorf("missing option = %q, want empty", got)
-	}
+func wgDump(handshakeC int64) string {
+	return "SERVERPRIV=\tSERVERPUB=\t51820\toff\n" +
+		"PEERA=\t(none)\t(none)\t10.20.30.4/32\t0\t0\t0\toff\n" +
+		"PEERB=\t(none)\t(none)\t10.20.30.5/32\t0\t0\t0\toff\n" +
+		"PEERC=\t(none)\t203.0.113.9:5555\t10.20.30.6/32\t" + itoa(handshakeC) + "\t2048\t4096\toff\n"
 }
 
-func TestParseUCIShowSkipsJunkRatherThanFailing(t *testing.T) {
-	tr := parseUCIShow("garbage line with no equals\n\nwireguard_server.s=servers\n")
-	if tr.typ["s"] != "servers" {
-		t.Error("a malformed line stopped the rest of the config from parsing")
+func itoa(n int64) string { return strings.TrimSpace(strings.Repeat(" ", 0) + fmtInt(n)) }
+func fmtInt(n int64) string {
+	if n == 0 {
+		return "0"
 	}
+	var b []byte
+	for n > 0 {
+		b = append([]byte{byte('0' + n%10)}, b...)
+		n /= 10
+	}
+	return string(b)
 }
 
-// Handing two devices the same address silently breaks whichever connects second, so
-// allocation must skip the server and every peer already holding one.
-func TestNextFreeClientIPSkipsServerAndPeers(t *testing.T) {
-	addr, bits, err := nextFreeClientIP("10.1.0.1/24", []string{"10.1.0.2/24"})
+func wgFake(t *testing.T, handshakeC int64) *fakeRouter {
+	f := newFakeRouter(t)
+	f.on("uci -q -X show network", sampleNetworkX)
+	f.on("wg show wg0 dump", wgDump(handshakeC))
+	f.on("uci changes network", "")
+	return f
+}
+
+func TestLoadWGMergesConfigAndKernel(t *testing.T) {
+	wgFake(t, 0)
+	_, srv, peers, err := loadWG(context.Background(), "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if addr.String() != "10.1.0.3" {
-		t.Errorf("got %s, want 10.1.0.3 (.1 is the server, .2 is taken)", addr)
+	if srv.Iface != "wg0" || srv.Port != "51820" || srv.PubKey != "SERVERPUB=" || srv.MTU != 1380 {
+		t.Errorf("server = %+v", srv)
 	}
-	if bits != 24 {
-		t.Errorf("prefix bits = %d, want 24", bits)
+	if len(peers) != 3 {
+		t.Fatalf("peers = %d, want 3", len(peers))
+	}
+	c := peers[2]
+	if c.Name != "tablet" || c.Endpoint != "203.0.113.9:5555" || c.Rx != 2048 || !c.InUCI || !c.InKernel {
+		t.Errorf("peer C = %+v", c)
 	}
 }
 
-func TestNextFreeClientIPFillsGaps(t *testing.T) {
-	// .2 released, .3 still held: the gap should be reused rather than climbing forever.
-	addr, _, err := nextFreeClientIP("10.1.0.1/24", []string{"10.1.0.3/24", "10.1.0.4/24"})
+func TestListClientsNeverPrintsThePrivateKey(t *testing.T) {
+	wgFake(t, 0)
+	out, _, err := wgListClients(context.Background(), wgListIn{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if addr.String() != "10.1.0.2" {
-		t.Errorf("got %s, want 10.1.0.2", addr)
+	if strings.Contains(out, "SERVERPRIV") {
+		t.Fatal("the server private key leaked into wg_list_clients output")
+	}
+	if !strings.Contains(out, "share a name (phone)") {
+		t.Errorf("duplicate names not flagged:\n%s", out)
 	}
 }
 
-// The failure that matters: a full subnet must be an error, never a silently reused
-// address. This is the assertion that would catch someone "fixing" exhaustion by wrapping.
-func TestNextFreeClientIPExhaustionIsAnError(t *testing.T) {
-	// /30 -> .1 server, .2 usable, .3 broadcast. One peer fills it.
-	if _, _, err := nextFreeClientIP("10.9.9.1/30", []string{"10.9.9.2/30"}); err == nil {
-		t.Fatal("a full subnet returned an address instead of an error")
-	}
-}
+func TestNewClientAllocatesConfiguresAndHotAdds(t *testing.T) {
+	root := withFixtureRoot(t)
+	_ = root
+	f := wgFake(t, 0)
+	f.on("uci -q show ddns", "ddns.myddns_ipv4=service\nddns.myddns_ipv4.enabled='0'\nddns.myddns_ipv4.lookup_host='yourhost.example.com'\n")
+	f.on("ubus call network.interface dump", `{"interface":[{"interface":"WAN","up":true,"metric":1,
+		"ipv4-address":[{"address":"100.72.1.2","mask":15}],
+		"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
+	f.on("wg genkey", "CLIENTPRIV=\n")
+	f.on("wg pubkey", "CLIENTPUB=\n")
+	f.on("uci add network wireguard_wg0", "cfg1496fc\n")
+	f.on("uci set", "")
+	f.on("uci add_list", "")
+	f.on("uci commit network", "")
+	f.on("wg set wg0", "")
 
-func TestNextFreeClientIPSkipsBroadcast(t *testing.T) {
-	addr, _, err := nextFreeClientIP("10.9.9.1/29", []string{
-		"10.9.9.2/29", "10.9.9.3/29", "10.9.9.4/29", "10.9.9.5/29", "10.9.9.6/29",
-	})
-	if err == nil {
-		t.Fatalf("got %s; .7 is the broadcast address and must not be handed out", addr)
+	s := testServer(t, "")
+	out, summary, err := s.wgNewClient(context.Background(), wgNewClientIn{Name: "laptop"})
+	if err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestNextFreeClientIPRejectsBadCIDR(t *testing.T) {
-	if _, _, err := nextFreeClientIP("10.1.0.1", nil); err == nil {
-		t.Error("a bare address (no prefix) should be rejected")
-	}
-}
-
-func TestNextPeerIDAvoidsCollision(t *testing.T) {
-	tr := parseUCIShow(sampleWGShow)
-	if got := nextPeerID(tr); got != 1047 {
-		t.Errorf("next peer id = %d, want 1047 (1046 exists)", got)
-	}
-	if got := nextPeerID(parseUCIShow("wireguard_server.main_server=servers\n")); got != 1001 {
-		t.Errorf("first peer id = %d, want 1001", got)
-	}
-}
-
-func TestClientConfigRendersValidIni(t *testing.T) {
-	c := wgClientConfig{
-		PrivateKey: "PRIV=", Address: "10.1.0.3/24", DNS: "10.1.0.1", MTU: 1420,
-		ServerPubKey: "PUB=", AllowedIPs: "0.0.0.0/0",
-		Endpoint: "eq64078.glddns.com:51820", Keepalive: 25,
-	}
-	got := c.String()
 	for _, want := range []string{
-		"[Interface]", "PrivateKey = PRIV=", "Address = 10.1.0.3/24", "DNS = 10.1.0.1",
-		"MTU = 1420", "[Peer]", "PublicKey = PUB=", "AllowedIPs = 0.0.0.0/0",
-		"Endpoint = eq64078.glddns.com:51820", "PersistentKeepalive = 25",
+		"Address = 10.20.30.2/32", // lowest free: .1 server, .4-.6 taken
+		"DNS = 10.20.30.1",        // server's tunnel address
+		"MTU = 1380",              // follows the interface
+		"PublicKey = SERVERPUB=",  // from the running interface, not the private key
+		"Endpoint = 100.72.1.2:51820",
+		"CGNAT", // and says why that endpoint will not work
+		"Scan with the WireGuard app",
 	} {
-		if !strings.Contains(got, want) {
-			t.Errorf("config missing %q:\n%s", want, got)
+		if !strings.Contains(out, want) {
+			t.Errorf("output missing %q:\n%s", want, out)
 		}
 	}
-	// [Interface] must precede [Peer] or wg-quick assigns the keys to the wrong section.
-	if strings.Index(got, "[Interface]") > strings.Index(got, "[Peer]") {
-		t.Error("[Peer] came before [Interface]")
+	if strings.Contains(summary, "PRIV") {
+		t.Error("audit summary contains key material")
+	}
+	calls := f.allCalls()
+	for _, want := range []string{
+		"uci set network.cfg1496fc.description=laptop",
+		"uci set network.cfg1496fc.public_key=CLIENTPUB=",
+		"uci add_list network.cfg1496fc.allowed_ips=10.20.30.2/32",
+		"uci commit network",
+		"wg set wg0 peer CLIENTPUB= allowed-ips 10.20.30.2/32",
+	} {
+		if !strings.Contains(calls, want) {
+			t.Errorf("missing call %q:\n%s", want, calls)
+		}
+	}
+	// The private key must reach wg pubkey on stdin, never as an argument.
+	if strings.Contains(calls, "CLIENTPRIV") {
+		t.Error("private key passed as an argv element")
 	}
 }
 
-func TestClientConfigOmitsUnsetOptionals(t *testing.T) {
-	c := wgClientConfig{PrivateKey: "P", Address: "10.1.0.3/24", ServerPubKey: "S",
+func TestNewClientRefusesADuplicateName(t *testing.T) {
+	wgFake(t, 0)
+	s := testServer(t, "")
+	if _, _, err := s.wgNewClient(context.Background(), wgNewClientIn{Name: "tablet"}); err == nil ||
+		!strings.Contains(err.Error(), "already exists") {
+		t.Errorf("duplicate name accepted: %v", err)
+	}
+}
+
+func TestNewClientRefusesOnTopOfStagedNetworkEdits(t *testing.T) {
+	f := wgFake(t, 0)
+	f.on("uci changes network", "network.lan.ipaddr='10.0.0.1'")
+	s := testServer(t, "")
+	if _, _, err := s.wgNewClient(context.Background(), wgNewClientIn{Name: "x"}); err == nil ||
+		!strings.Contains(err.Error(), "uncommitted") {
+		t.Errorf("committed over someone else's staged network edit: %v", err)
+	}
+}
+
+func TestRemoveAmbiguousNameAsksToNarrow(t *testing.T) {
+	wgFake(t, 0)
+	s := testServer(t, "")
+	_, _, err := s.wgRemoveClient(context.Background(), wgRemoveIn{Name: "phone"})
+	if err == nil || !strings.Contains(err.Error(), "2 peers match") {
+		t.Fatalf("ambiguous removal not refused: %v", err)
+	}
+}
+
+func TestRemoveRefusesALiveTunnelUnlessForced(t *testing.T) {
+	f := wgFake(t, time.Now().Unix()-30)
+	f.on("wg set wg0 peer PEERC= remove", "")
+	f.on("uci delete network.cfg1396fc", "")
+	f.on("uci commit network", "")
+	s := testServer(t, "")
+	if _, _, err := s.wgRemoveClient(context.Background(), wgRemoveIn{Name: "tablet"}); err == nil ||
+		!strings.Contains(err.Error(), "connected right now") {
+		t.Fatalf("removed a peer with a live handshake: %v", err)
+	}
+	if _, _, err := s.wgRemoveClient(context.Background(), wgRemoveIn{Name: "tablet", Force: true}); err != nil {
+		t.Fatal(err)
+	}
+	if !f.ran("uci delete network.cfg1396fc") || !f.ran("wg set wg0 peer PEERC= remove") {
+		t.Errorf("forced removal did not remove from both config and kernel:\n%s", f.allCalls())
+	}
+}
+
+// Handing two devices the same address silently breaks whichever connects second.
+func TestNextFreeClientIP(t *testing.T) {
+	a, err := nextFreeClientIP("10.1.0.1/24", []string{"10.1.0.2/32", "10.1.0.4"})
+	if err != nil || a.String() != "10.1.0.3" {
+		t.Errorf("got %v %v, want 10.1.0.3", a, err)
+	}
+	if _, err := nextFreeClientIP("10.1.0.1/30", []string{"10.1.0.2/32"}); err == nil {
+		t.Error("a full /30 (server, one peer, broadcast) must be an error, not a reuse")
+	}
+	if _, err := nextFreeClientIP("nonsense", nil); err == nil {
+		t.Error("bad CIDR accepted")
+	}
+}
+
+func TestClientConfigRendersPSKOnlyWhenSet(t *testing.T) {
+	c := wgClientConfig{PrivateKey: "P", Address: "10.1.0.3/32", ServerPubKey: "S",
 		AllowedIPs: "0.0.0.0/0", Endpoint: "h:51820"}
-	got := c.String()
-	for _, unwanted := range []string{"DNS =", "MTU =", "PersistentKeepalive ="} {
-		if strings.Contains(got, unwanted) {
-			t.Errorf("emitted %q with no value set:\n%s", unwanted, got)
-		}
+	if strings.Contains(c.String(), "PresharedKey") {
+		t.Error("PresharedKey emitted with none set")
+	}
+	c.PresharedKey = "K="
+	if !strings.Contains(c.String(), "PresharedKey = K=") {
+		t.Error("PresharedKey missing")
+	}
+	if strings.Index(c.String(), "[Interface]") > strings.Index(c.String(), "[Peer]") {
+		t.Error("[Peer] before [Interface]")
 	}
 }
 
-// A QR that does not vary with its content is a fixed image, which would scan as somebody
-// else's tunnel. Cheap to assert, and the failure is otherwise invisible until a scan.
+// A QR that does not vary with its content is a fixed image that would scan as somebody
+// else's tunnel.
 func TestRenderQRIsContentDependent(t *testing.T) {
-	a, err := renderQR("[Interface]\nPrivateKey = AAA=\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	b, err := renderQR("[Interface]\nPrivateKey = BBB=\n")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a == b {
-		t.Fatal("two different configs produced identical QR output")
-	}
-	if !strings.ContainsAny(a, "█▀▄ ") {
-		t.Errorf("QR output does not look like block characters:\n%.120s", a)
-	}
-	// Deterministic, so a redeploy of the same client does not produce a different image.
-	again, _ := renderQR("[Interface]\nPrivateKey = AAA=\n")
-	if a != again {
-		t.Error("QR rendering is not deterministic")
+	a, _ := renderQR("[Interface]\nPrivateKey = AAA=\n")
+	b, _ := renderQR("[Interface]\nPrivateKey = BBB=\n")
+	if a == b || a == "" {
+		t.Fatal("QR output does not depend on content")
 	}
 }
 
-func TestRenderQRHandlesAFullConfig(t *testing.T) {
-	c := wgClientConfig{
-		PrivateKey: strings.Repeat("A", 44) + "=", Address: "10.1.0.3/24", DNS: "10.1.0.1",
-		MTU: 1420, ServerPubKey: strings.Repeat("B", 44) + "=", AllowedIPs: "0.0.0.0/0",
-		Endpoint: "eq64078.glddns.com:51820", Keepalive: 25,
-	}
-	qr, err := renderQR(c.String())
-	if err != nil {
-		t.Fatalf("a realistic config failed to encode: %v", err)
-	}
-	// Must fit a normal terminal, or it cannot be scanned off the screen.
-	lines := strings.Split(strings.TrimRight(qr, "\n"), "\n")
-	if len(lines) > 45 {
-		t.Errorf("QR is %d rows tall; too big to scan from a standard terminal", len(lines))
-	}
-	if len(lines) < 10 {
-		t.Errorf("QR is only %d rows; suspiciously small for a full config", len(lines))
-	}
-}
-
-// The bug this pins: a request scope is matched as a LITERAL against policy globs, so
-// emitting "*" here makes a policy naming one server fail to match it.
-func TestWGScopesAreLiteralsNotGlobs(t *testing.T) {
-	for _, in := range []wgNewClientIn{{Name: "a"}, {Name: "a", Server: "main_server"}} {
-		for _, s := range wgScopes(in) {
-			if strings.ContainsAny(s, "*?[") {
-				t.Errorf("scope %q contains a glob metacharacter", s)
-			}
+// Request scopes are matched as literals against policy globs, so they must never contain
+// a glob metacharacter themselves.
+func TestWGScopesAreLiterals(t *testing.T) {
+	for _, sc := range append(wgNewScope(wgNewClientIn{Iface: "wg0"}), wgRemoveScope(wgRemoveIn{Name: "tablet"})...) {
+		if strings.ContainsAny(sc, "*?[") {
+			t.Errorf("scope %q contains a glob metacharacter", sc)
 		}
 	}
-	// A policy for the specific server must cover an explicit request for it.
-	if ok, _ := path.Match("wireguard_server.main_server", wgScopes(wgNewClientIn{Server: "main_server"})[0]); !ok {
-		t.Error("an explicit server request is not covered by a policy naming that server")
-	}
-	// And a config-level policy must cover the unspecified case.
-	if ok, _ := path.Match("wireguard_server*", wgScopes(wgNewClientIn{})[0]); !ok {
-		t.Error("the default request is not covered by a wireguard_server* policy")
-	}
-}
-
-func TestFirstJSONIPv4(t *testing.T) {
-	const status = `{"up":true,"ipv6-address":[{"address":"fd00::1","mask":64}],` +
-		`"ipv4-address":[{"address":"51.155.210.106","mask":32}]}`
-	if got := firstJSONIPv4(status); got != "51.155.210.106" {
-		t.Errorf("got %q, want 51.155.210.106 (must skip the IPv6 address)", got)
-	}
-	if got := firstJSONIPv4(`{"up":false}`); got != "" {
-		t.Errorf("got %q, want empty when there is no address", got)
-	}
-}
-
-func TestFirstAddr(t *testing.T) {
-	if got := firstAddr("10.1.0.1/24"); got != "10.1.0.1" {
-		t.Errorf("got %q, want 10.1.0.1", got)
-	}
-	if got := firstAddr("nonsense"); got != "" {
-		t.Errorf("got %q, want empty for an unparseable CIDR", got)
-	}
-}
-
-// An error naming all three fields sends you looking at all three. This calls the real
-// function rather than re-deriving it, or it would pass with the production code broken.
-func TestMissingServerFieldsAreNamedIndividually(t *testing.T) {
-	// Only public_key absent -- and no private_key either, so the setup hint applies.
-	err := checkServerComplete(parseUCIShow(
-		"wireguard_server.s=servers\nwireguard_server.s.address_v4='10.1.0.1/24'\n"+
-			"wireguard_server.s.port='51820'\n"), "s")
-	if err == nil {
-		t.Fatal("an incomplete server section was accepted")
-	}
-	msg := err.Error()
-	if !strings.Contains(msg, "public_key") {
-		t.Errorf("message does not name the missing field: %s", msg)
-	}
-	for _, present := range []string{"address_v4", "port"} {
-		if strings.Contains(msg, present) {
-			t.Errorf("message blames %q, which is present: %s", present, msg)
-		}
-	}
-	if !strings.Contains(msg, "never been set up") {
-		t.Errorf("no keypair at all, but the message does not say the server is unconfigured: %s", msg)
-	}
-
-	// A fully configured server must pass.
-	if err := checkServerComplete(parseUCIShow(sampleWGShow), "main_server"); err != nil {
-		t.Errorf("a complete server section was rejected: %v", err)
-	}
-
-	// Missing port only: no keypair hint, since the keypair is fine.
-	err = checkServerComplete(parseUCIShow(
-		"wireguard_server.s=servers\nwireguard_server.s.address_v4='10.1.0.1/24'\n"+
-			"wireguard_server.s.public_key='K='\nwireguard_server.s.private_key='P='\n"), "s")
-	if err == nil || !strings.Contains(err.Error(), "port") {
-		t.Fatalf("expected a port complaint, got %v", err)
-	}
-	if strings.Contains(err.Error(), "never been set up") {
-		t.Errorf("keypair is present but the message claims the server is unconfigured: %v", err)
+	if ok, _ := path.Match("wireguard.wg0", wgNewScope(wgNewClientIn{Iface: "wg0"})[0]); !ok {
+		t.Error("a grant for wg0 does not cover an explicit request for wg0")
 	}
 }

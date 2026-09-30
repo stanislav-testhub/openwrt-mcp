@@ -174,7 +174,7 @@ func (m *MFAStore) Enrol(client, issuer, device string) (secret, uri string, err
 	}
 
 	// otpauth label is "Issuer:AccountName". The router goes in the account, so apps show
-	// e.g. "openwrt-mcp (claude-code@GL-BE14000)" and two routers never collide.
+	// e.g. "openwrt-mcp (claude-code@OpenWrt)" and two routers never collide.
 	account := client
 	if device == "" {
 		device = deviceLabel()

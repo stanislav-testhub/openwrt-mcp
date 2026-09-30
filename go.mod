@@ -1,4 +1,4 @@
-module github.com/GlassOnTin/openwrt-mcp
+module github.com/stanislav-testhub/openwrt-mcp
 
 go 1.26.1
 

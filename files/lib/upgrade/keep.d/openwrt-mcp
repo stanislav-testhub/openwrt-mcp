@@ -1,12 +1,16 @@
 # Files sysupgrade must carry across a firmware flash.
 #
-# /etc/config/* is preserved by OpenWrt already, but /usr/bin and /etc/init.d are not:
-# without this the daemon vanishes on every firmware upgrade and has to be reinstalled
-# by hand. GL.iNet's own packages use the same mechanism (see the keep.d entry shipped
-# by gl-sdk4-screen-large).
+# /etc/config/* is preserved by OpenWrt already, but /usr/bin, /etc/init.d, the rc.d links
+# and the LuCI page are not: without this list the daemon vanishes on every sysupgrade and
+# has to be reinstalled by hand. (An owut/ASU image rebuilds packages, not loose files.)
 #
-# The tokens and audit log live under /etc/openwrt-mcp and are listed explicitly --
-# losing the token store would silently unpair every client.
+# /etc/openwrt-mcp holds the token digests, MFA secrets, audit log and any pending
+# rollback -- losing it would silently unpair every client.
 /usr/bin/openwrt-mcp
 /etc/init.d/openwrt-mcp
+/etc/rc.d/S95openwrt-mcp
+/etc/rc.d/K10openwrt-mcp
 /etc/openwrt-mcp
+/usr/share/luci/menu.d/luci-app-openwrt-mcp.json
+/usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json
+/www/luci-static/resources/view/openwrt-mcp/status.js

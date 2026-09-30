@@ -1,503 +1,256 @@
-# openwrt-mcp
+# openwrt-mcp -- an MCP server for OpenWrt 25.12+
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Release](https://img.shields.io/github/v/release/GlassOnTin/openwrt-mcp)](https://github.com/GlassOnTin/openwrt-mcp/releases)
-[![ko-fi](https://img.shields.io/badge/Ko--fi-support-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/glassontin)
+[![CI](https://github.com/stanislav-testhub/openwrt-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/stanislav-testhub/openwrt-mcp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+![OpenWrt 25.12+](https://img.shields.io/badge/OpenWrt-25.12%2B-00B5E2)
 
-An MCP server that runs **on** an OpenWrt router, so Claude Code (or any MCP client) can
-inspect and change it over an SSH tunnel.
+An [MCP](https://modelcontextprotocol.io) server that runs **on** an OpenWrt router, so
+Claude Code (or any MCP client) can inspect and change it -- behind deny-by-default policies,
+an audit log, and an automatic rollback for configuration changes.
 
-Developed against **GL.iNet** routers — verified on a Flint 2, a Flint 4 (GL-BE14000,
-firmware 4.9.0, router mode) and a Slate 7 Pro (GL-BE10000, firmware 4.8.4, AP mode).
-GL.iNet firmware 4.x is OpenWrt 21.02 with `opkg`, which is what the `.ipk` targets. It
-should suit any `opkg`-based OpenWrt; stock OpenWrt 24.10+ moved to `apk` and is **untested**.
+> **Based on [GlassOnTin/openwrt-mcp](https://github.com/GlassOnTin/openwrt-mcp)** by Ian
+> Williams, which targets GL.iNet firmware 4.x (OpenWrt 21.02, `opkg`). This is a port to
+> **stock OpenWrt 25.12** (`apk`, fw4/nftables, procd, netifd, LuCI JS). The security core is
+> upstream's; see [Credits](#credits) for what came from where.
 
-The other OpenWrt MCP servers I could find run *off*-router — they SSH in from your
-workstation on every call. This one is resident: a single static Go binary under procd,
-always on, with its own authorisation and audit trail.
+## Requirements
 
-It exposes seven generic tools rather than a hand-written catalogue of router features.
-`ubus list -v` already self-describes every object, method and argument signature on the
-box, so the agent discovers what your router can actually do instead of trusting a list
-that goes stale with each firmware update. On a GL.iNet box that means the vendor's own
-`gl-*` objects come through without a line of code per feature.
+- **Router:** stock OpenWrt **25.12.0 or newer** (the `apk` releases). Nothing to install on the
+  router beforehand. 24.10 and older (`opkg`, 21.02-era tooling) are not supported -- use
+  upstream for GL.iNet 4.x firmware.
+- **Workstation:** Go 1.26+, `ssh`, `tar` (Linux, macOS, or Git Bash on Windows).
+- **Any CPU OpenWrt and Go share:** `install.sh` reads the router's `DISTRIB_ARCH` and
+  cross-compiles a static binary (arm64, armv5/v7, mips/mipsle softfloat, mips64, x86, riscv64).
 
-![The MCP Server page in GL.iNet's admin panel: daemon status, paired clients, standing
-policies and the recent audit tail, including a refused call](docs/router-ui.png)
-
-On GL.iNet firmware it adds a read-only page to the router's own admin panel, under
-**Applications → MCP Server** — what is running, who is paired, what they may do, and what
-they have been doing. Granting stays on the command line.
-
-The refusal in that audit tail is the security model working, not a fault: `ubus_call` was
-granted on `network.*`, `iwinfo.*`, `system.*` and `gl-clients.*`, so `dnsmasq.metrics` was
-denied — and the denial names the uncovered scope and prints the `allow` line that would
-cover it. Starting narrow costs little when widening is one command away.
+Tested on a GL.iNet GL-MT6000 (mediatek/filogic, `aarch64_cortex-a53`) with OpenWrt 25.12.5.
+Nothing in the code is specific to that board.
 
 ---
 
-## Use cases
-
-### 1. Putting a new router through its paces
-
-The one this was written for. Ask in plain language and let the agent find the objects:
-
-> "What's on the 6GHz radio right now, and how much airtime is each client using?"
-
-The agent calls `ubus_list` to see what's available (`iwinfo`, `network.wireless`,
-`luci-rpc`, `gl-clients` …), then `ubus_call` to read them. A read-only grant covers this
-and cannot change anything:
-
-```sh
-openwrt-mcp allow claude-code ubus_call,logread 'network.* iwinfo.* luci-rpc.* gl-*' 30d
-```
-
-### 2. "The wifi has been dropping out"
-
-Correlating a symptom across sources is tedious by hand and well suited to an agent:
-association lists, survey/scan data, DHCP lease churn and the system log, over the same
-window. Still a read-only grant — worth having standing, since it can't break anything.
-
-> "Cross-reference the last hour of logs against which clients disconnected, and tell me
-> whether it correlates with a channel change or a DFS event."
-
-### 3. Config changes with an undo you don't have to remember
-
-The interesting one. `uci_apply` stages your changes, snapshots the configs it's touching,
-commits, reloads — and **arms a rollback timer**. If `uci_confirm` isn't called before it
-expires, the router puts everything back. Lock yourself out with a bad firewall rule and it
-repairs itself while you're still typing.
-
-```
-uci_apply  {"changes": [{"config":"firewall","section":"@zone[1]","option":"input","value":"DROP"}],
-            "timeout": 120}
-  -> "ROLLBACK ARMED: reverts at 15:07:22Z (in 2m0s) unless you call uci_confirm {...}"
-
-  ... you check you can still reach the router ...
-
-uci_confirm {"token": "3Kc681oIe4IP"}
-  -> "Confirmed. Rollback cancelled."
-```
-
-A change with `type` and no `option` **creates** a section, so whole objects go in under one
-rollback. Pinning a DHCP lease is one call:
-
-```
-uci_apply {"changes": [
-  {"config":"dhcp","section":"raspberrypi","type":"host"},
-  {"config":"dhcp","section":"raspberrypi","option":"mac","value":"88:a2:9e:8a:e4:15"},
-  {"config":"dhcp","section":"raspberrypi","option":"ip","value":"192.168.0.141"},
-  {"config":"dhcp","section":"raspberrypi","option":"network","value":"lan"}]}
-```
-
-Changes run in order, so the creating change comes first. `delete` with no `option` removes
-the whole section. Sections are **named**, not `uci add` anonymous ones: later changes in the
-same batch can refer to the name, and re-running an apply is idempotent where `uci add` would
-append a duplicate every time.
-
-If the daemon is restarted mid-window the change is rolled back on startup, because nobody
-ever vouched for it.
-
-### 4. An audit trail for what the agent did
-
-Every tool call is recorded at the wrapper, so a new tool is logged without opting in.
-`DENIED` is a distinct outcome from `ERROR` — "we said no" isn't "it broke":
-
-```
-OK      uci_apply    system.@system[0].description   applied 1 change(s), rollback armed 20s
-OK      uci_rollback -                               rolled back system (timeout)
-DENIED  uci_apply    system.@system[0].description   denied: no policy grants uci_apply to "confirm-test"
-OK      uci_confirm  -                               confirmed m2_glAwWSd5L
-```
-
-Secrets are redacted by the recorder rather than by callers, so a new tool can't leak a
-password by forgetting to scrub it. `keyId` and `publicKey` deliberately survive — they're
-identifiers, and redacting them would make the log useless.
-
----
-
-## Install
-
-`ROUTER` below is your router's LAN address. GL.iNet ships `192.168.8.1`; change it if you
-have. Everything is `root@`, because that is the only account OpenWrt has.
-
-### 1. Set up SSH key auth (required)
-
-The install pipes over `ssh` non-interactively, so password auth is not enough. A factory
-router has no `authorized_keys` yet:
-
-```sh
-ssh-keygen -f ~/.ssh/known_hosts -R 192.168.8.1   # only if that IP held another device before
-ssh-copy-id root@192.168.8.1                      # asks for the router password, once
-ssh root@192.168.8.1 true                         # must succeed with no prompt
-```
-
-Leave the router's password auth enabled — it is your way back in if the key is ever lost.
-
-### 2. Install the daemon
-
-Download `openwrt-mcp_*.ipk` from [Releases](https://github.com/GlassOnTin/openwrt-mcp/releases)
-and push it over — no toolchain needed:
-
-```sh
-ssh root@192.168.8.1 'cat > /tmp/openwrt-mcp.ipk' < openwrt-mcp_0.4.0_aarch64_cortex-a53.ipk
-ssh root@192.168.8.1 'opkg install /tmp/openwrt-mcp.ipk && rm -f /tmp/openwrt-mcp.ipk'
-```
-
-Or build it yourself — needs **Go 1.26+** on your workstation, nothing on the router:
-
-```sh
-make install-ipk ROUTER=root@192.168.8.1   # packaged; survives a firmware upgrade
-make install     ROUTER=root@192.168.8.1   # straight onto the filesystem, no packaging
-```
-
-The router needs no Go, no compiler and no OpenWrt SDK: the binary is statically linked and
-cross-compiled on your machine. `make` uses whatever `go` is on your PATH; override with
-`make install-ipk GO=/usr/local/go/bin/go` if you keep it somewhere unusual.
-
-### 3. Pair a client and grant it something
-
-`pair` prints the token **once** — capture it, it is not recoverable:
-
-```sh
-TOK=$(ssh root@192.168.8.1 'openwrt-mcp pair claude-code')
-ssh root@192.168.8.1 "openwrt-mcp allow claude-code ubus_list,ubus_call,logread 'network.* iwinfo.* system.*' 30d"
-```
-
-Nothing is granted by default. Start narrow: a refusal names the uncovered scope and prints
-the exact `allow` line that would widen it, so it is cheap to loosen and expensive to notice
-you were too loose.
-
-### Optional: a second factor for the dangerous tools
-
-A broad grant plus a stolen bearer token is root on your router. The token is something your
-*workstation* has; a TOTP code is something *you* have, somewhere else. Enrol once and name
-the tools that should need it:
-
-```sh
-ssh root@192.168.8.1 'openwrt-mcp mfa enrol claude-code'   # prints a QR-scannable otpauth:// URI
-```
-
-The router names itself in the account, so an authenticator holding secrets for several
-routers can tell them apart — `claude-code@GL-BE14000` rather than a second identical
-`claude-code`. It defaults to the hostname; pass a label to override:
-`mfa enrol claude-code upstairs`.
-
-```
-config policy
-	option client 'claude-code'
-	...
-	list   mfa_tools  'exec'
-	list   mfa_tools  'uci_apply'
-	option mfa_window '15m'
-```
-
-`list mfa_tools '*'` covers every tool the policy grants. Off unless you configure it, so
-existing setups are unchanged.
-
-One code then opens a **time-boxed window** rather than gating every call — an agent works in
-bursts, and a control that demands six digits per call gets switched off, which protects
-nothing. The agent calls `mfa_unlock` once, you read it a code, and it works normally until
-the window lapses:
-
-```
-exec {"argv":["uptime"]}
-  -> denied: exec requires a second factor for "claude-code"
-     call mfa_unlock with a current 6-digit code from your authenticator; it stays unlocked for 15m0s
-mfa_unlock {"code":"552575"}   -> Unlocked until 2026-08-07T07:39:48Z (15m0s).
-exec {"argv":["uptime"]}       -> 08:24:51 up 12:57, load average: 2.39 …
-mfa_unlock {"code":"552575"}   -> code already used
-```
-
-Codes are single-use, unlocks are per client and held in memory only, so a daemon restart
-re-locks everything. Standard RFC 6238 (SHA-1, 6 digits, 30s), checked against the RFC's own
-test vectors, so any authenticator app works.
-
-> Run `mfa enrol` yourself over SSH. The secret is printed once and is *recoverable* from
-> `/etc/openwrt-mcp/mfa` (mode 0600), unlike bearer tokens which are stored only as digests —
-> so anything that sees your terminal or that file can generate codes. Enrolling on someone
-> else's behalf, or pasting the secret into a chat, defeats the point of a second factor.
-
-### 4. Connect over a tunnel
-
-The daemon refuses to bind anything but loopback, so reach it through SSH:
-
-```sh
-ssh -N -f -L 8730:127.0.0.1:8730 root@192.168.8.1
-claude mcp add --transport http openwrt http://127.0.0.1:8730/mcp \
-  --header "Authorization: Bearer $TOK"
-```
-
-Pick a different local port if 8730 is taken on your workstation — `-L 8731:127.0.0.1:8730`,
-and point the client at 8731 to match.
-
-To keep the tunnel up across reboots and drops, run it under systemd rather than by hand:
-
-```ini
-# ~/.config/systemd/user/openwrt-mcp-tunnel.service
-[Unit]
-Description=SSH tunnel to openwrt-mcp
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-ExecStart=/usr/bin/ssh -NT -o BatchMode=yes -o ExitOnForwardFailure=yes \
-    -o ServerAliveInterval=30 -o ServerAliveCountMax=3 \
-    -L 8730:127.0.0.1:8730 root@192.168.8.1
-Restart=always
-RestartSec=10
-StartLimitIntervalSec=0
-
-[Install]
-WantedBy=default.target
-```
-
-```sh
-systemctl --user enable --now openwrt-mcp-tunnel
-```
-
-No `autossh` needed: `Restart=always` handles respawn, and the `ServerAlive` options plus
-`ExitOnForwardFailure` cover the case autossh exists for — a connection that is up but dead.
-
-> OpenWrt's dropbear has no `sftp-server`, so plain `scp` fails with "Connection closed".
-> The Makefile pipes over ssh instead; use `scp -O` if you're copying files by hand.
-
-### Packaging notes
-
-`mkipk.sh` builds the `.ipk` without the OpenWrt SDK — the binary is `CGO_ENABLED=0` static
-Go, so there is nothing to cross-link and only the archive format is left. Two details cost
-real time, both verified on opkg 1bf042dd (2021-06-13):
-
-- **The container is a gzipped tar, not an `ar` archive.** `.ipk` exists in both forms and
-  most documentation describes the `ar` one (identical to `.deb`). This opkg rejects `ar`
-  with `pkg_init_from_file: Malformed package file` — both binutils' output *and* hand-written
-  headers without binutils' trailing-slash name quirk.
-- **`/etc/config/openwrt-mcp` is declared a conffile**, so an upgrade never clobbers live
-  policies or pairings; opkg parks the new default at `…-opkg` instead.
-
-The package also ships `/lib/upgrade/keep.d/openwrt-mcp`, which is how the binary, the init
-script and the token store survive `sysupgrade`. GL.iNet's own packages use the same
-mechanism.
-
----
-
-## The router's own web UI
-
-On GL.iNet firmware the package adds a page under **Applications → MCP Server**: whether the
-daemon is running, which clients are paired, what each is granted, and the recent audit tail.
-
-It is **read-only**. `pair`, `allow` and `unpair` stay command-line only, so nothing
-reachable over the network can widen a grant — the same reason they are not MCP tools. The
-page explains grants; it never issues them.
-
-The data comes from `openwrt-mcp status --json` via an oui-httpd RPC module
-(`openwrt-mcp.status`). Status is a CLI subcommand rather than a second HTTP endpoint on
-purpose: the daemon's only listener is loopback and reachability is not treated as identity,
-so another HTTP surface would mean either exposing policy and audit data to every process on
-the router, or keeping a bearer token on the router for the UI to present. oui-httpd already
-runs as root and can read the state directory, so a CLI read grants its caller nothing new.
-
-On stock OpenWrt the two extra files are inert — nothing reads them — so it stays one package.
-
-> Building a view for this UI needs no GL.iNet SDK and no bundler. The SPA fetches the file
-> as text, `eval`s it, and uses the resulting value as the route component, so a plain IIFE
-> returning a Vue 2 options object is enough. The shipped `module.exports=…` bundles work only
-> because a direct `eval` inherits the enclosing webpack wrapper's scope. Vue is 2.6.12, so
-> render functions avoid needing a template compiler at eval time. See `ui/view.js`.
-
----
-
-## Security model
-
-Adapted from [Haven](https://github.com/GlassOnTin/Haven)'s MCP backbone.
-
-| | |
-|---|---|
-| **Reachability** | Loopback only, enforced in code — startup fails on a routable address. SSH key auth is the outer lock, the bearer token the inner one. |
-| **No loopback auto-trust** | Any process on the router can reach `127.0.0.1`, and `ssh -R` can make remote traffic arrive there. Reachability is never treated as identity; origin is recorded for attribution only. |
-| **Tokens** | 256-bit, base64url, shown once. Only the SHA-256 digest is stored (mode 0600), compared in constant time. `unpair` takes effect without a restart. |
-| **Authorisation** | Standing policies in `/etc/config/openwrt-mcp`. Deny by default. A policy grants a client a tool list, scope globs, a calls/minute ceiling and an expiry — and can only ever *add* permission. |
-| **Refusals are actionable** | A denial names the uncovered scope and prints the `openwrt-mcp allow …` line that would grant it. |
-| **Grant management is CLI-only** | `pair`/`allow`/`unpair` are not MCP tools, so there's no tool for a policy to cover and no self-escalation path through the policy system. |
-| **Rollback** | `uci_apply` reverts unless confirmed, including across a daemon restart. |
-
-`ubus_list` is the one ungated tool: introspection returns method names and argument types,
-never configuration data, and without it an agent can't discover what to ask for.
-
-### Why not rpcd's ACLs or its own apply/rollback?
-
-Both were the first choice; neither works for a resident daemon.
-
-- **rpcd ACLs don't apply.** A root process calling ubus over the local unix socket bypasses
-  them entirely — sessionless `uci get` returns data. ACLs only bind the uhttpd JSON-RPC
-  path. Relying on them here would be theatre.
-- **rpcd's `uci apply {"rollback":true}` needs credentials.** Every uci *write* method takes
-  a `ubus_rpc_session`, and `session.login` wants a username and password. Verified on
-  OpenWrt 21.02 / rpcd 2022-02-19:
-
-  ```
-  ubus call uci apply '{}'                          -> Invalid argument   (no session)
-  ubus call uci apply '{"ubus_rpc_session":"0..0"}' -> No response        (null session, no write ACL)
-  ```
-
-  Storing the router's root password in a file on the router is a worse hole than the one
-  the rollback closes, so `uci_apply` snapshots and restores itself.
+## What changed from upstream
+
+| | upstream 0.5 (21.02 / GL.iNet) | this port (25.12) |
+|---|---|---|
+| Packaging | `.ipk` for `opkg` | `install.sh` file install + `keep.d` (25.12's apk has no `mkpkg`; see below) |
+| Web UI | GL.iNet oui-httpd page | LuCI page, *Services -> MCP Server* (read-only) |
+| Transport | HTTP over an `ssh -L` tunnel | same, **plus stdio over SSH** via a key-bound forced command -- no tunnel to keep alive |
+| Rollback snapshot | `/tmp` (lost on reboot) | **on flash**; an unconfirmed change is rolled back at the next start, including after a power cycle |
+| `uci_apply` | set / create / delete | **+ `add_list`, `del_list`, `set_list`, `dry_run`**, shows the staged `uci changes`, strict name validation |
+| Reload | `ubus call uci reload_config` (async) | `/sbin/reload_config`, plus explicit `config.change` events when it has no checksums (first run after boot) |
+| WireGuard | GL `wireguard_server` / `gl_ddns` | stock `network.<iface>` + `wireguard_<iface>` peers, DDNS from `ddns`, CGNAT warning, PSK, list and remove |
+| Packages | -- | `pkg_query`, `pkg_change` (simulate first), `.apk-new` review with a settings-level diff |
+| Firewall | -- | `firewall_show`: nft ruleset, `fw4 print`, `fw4 check` |
+| Services | -- | `service_list` / `service_control` via rpcd `rc` |
+| Scope globs | `[0]` was a character class | brackets are literal: `firewall.@rule[3].*` means what it says |
+| Presets | -- | `openwrt-mcp allow <client> @readonly|@operator <dur>` |
 
 ---
 
 ## Tools
 
-| Tool | Policy scope | |
+| Tool | Scope | |
 |---|---|---|
-| `ubus_list` | *(ungated)* | Objects, methods and argument signatures. The discovery tool. |
-| `ubus_call` | `<object>.<method>` | The workhorse: netifd, wireless, dnsmasq, iwinfo, luci-rpc, `gl-*`. Replies over 8 KB have long arrays pruned — see Findings. |
-| `uci_apply` | `<config>.<section>.<option>`, or `<config>.<section>` for a section-level change | Stage → snapshot → commit → reload, rollback armed. Sets options, and creates or deletes whole sections. All scopes must be covered by one policy. |
-| `uci_confirm` | *(tool-level)* | Cancels the rollback timer. |
-| `exec` | `argv[0]` | Direct exec, **no shell** — no pipes, globs or redirection, and no quoting surface. |
-| `logread` | *(tool-level)* | Split out from `exec` so logs can be granted without a root shell. |
-| `wg_new_client` | `wireguard_server.<server section>`, or `wireguard_server` when unspecified | Issues a WireGuard client: keypair, next free tunnel address, a peer the vendor UI still lists, hot-added with `wg set` so live sessions are not dropped. Returns the config **and a UTF-8 QR** to scan. Emits a private key — see below. |
-| `mfa_unlock` | *(ungated)* | Supplies a TOTP code to open the second-factor window. Ungated because it is how you satisfy the factor; it grants nothing without a valid current code. |
-
-### `wg_new_client`
-
-Adding a VPN client by hand is three fiddly steps — generate a keypair, find a free address,
-write a peer section the vendor UI still recognises — and then you have to get the config onto
-a phone. Transcription is what actually goes wrong, so the tool returns a scannable QR next to
-the text:
-
-```
-Created client "laptop" as peer_1048 at 10.1.0.4/24.
-
-[Interface]
-PrivateKey = ...
-Address = 10.1.0.4/24
-DNS = 10.1.0.1
-MTU = 1420
-
-[Peer]
-PublicKey = ...
-AllowedIPs = 0.0.0.0/0
-Endpoint = eq64078.glddns.com:51820
-PersistentKeepalive = 25
-
-Scan with the WireGuard app:
-
-    █▀▀▀▀▀█ ▄▀ ▀▄█ █▀▀▀▀▀█
-    █ ███ █ ▀█▄▀▄▀ █ ███ █
-    █ ▀▀▀ █ █▄▀ ▄█ █ ▀▀▀ █
-    ▀▀▀▀▀▀▀ █ ▀ █▄ ▀▀▀▀▀▀▀
-    ...
-```
-
-Three things it does deliberately:
-
-- **Hot-adds with `wg set`** rather than restarting the interface. A restart drops every
-  established session, which is a poor trade for adding one client. If the running interface
-  cannot be identified the peer is still committed, and the output says so rather than
-  implying nothing happened.
-- **Prefers the router's dynamic-DNS name** over its WAN address for `Endpoint`. A dynamic
-  address baked into a client config stops working at the next reconnect.
-- **Refuses to reuse an address.** A full subnet is an error, never a silently recycled
-  address — two devices sharing one tunnel address breaks whichever connects second.
-
-**It returns a new private key in its output.** The key is not written to the audit log
-(`audit.jsonl` records arguments and a summary, never tool output), but it does land in the
-context of whatever called it. Show it to the operator and let them scan it; don't save it.
-Issue one client per device — WireGuard pins a key to a single endpoint, so sharing one config
-across two devices makes both connections flap. Gating this tool behind `mfa_tools` is
-sensible:
-
-```
-config policy
-	option client 'claude-code'
-	list tools 'wg_new_client'
-	list scopes 'wireguard_server.*'
-	list mfa_tools 'wg_new_client'
-```
+| `system_status` | tool | Model, release, uptime, load, memory, storage, temperatures, conntrack, every interface (state, addresses, default route, errors), radios/SSIDs, and what is outstanding. Call first. |
+| `logread` | tool | Whole log buffer filtered (substring, RE2, last N minutes) *before* the line limit. |
+| `network_clients` | tool | DHCP leases + static hosts + neighbour table + every AP's association list, joined by MAC: name, IP, SSID, signal, rates, connected time, lease. |
+| `firewall_show` | tool | `nft list ruleset`, `fw4 print`, `fw4 check`, one table or chain. |
+| `net_diag` | `<action>[.<target>]` | ping / traceroute / nslookup (optionally from a given interface), routes, policy rules, neighbours. |
+| `uci_get` | `<config>[.<section>[.<option>]]` | `uci show`, optionally with stable `cfgXXXXXX` ids. |
+| `uci_apply` | `<config>.<section>[.<option>]` per change | Stage, commit, reload, **rollback armed**. `dry_run` shows exactly what would change. |
+| `uci_confirm` / `uci_rollback` | tool | Make a pending change permanent / undo it now. |
+| `service_list` / `service_control` | tool / `<service>.<action>` | procd services; stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. |
+| `pkg_query` | tool | installed, upgradable, search, info, files, owner, policy, `apk audit`, world. |
+| `pkg_change` | `<action>.<pkg>` / `upgrade` | apk add/del/upgrade; **simulates unless `commit=true`**; reports new `.apk-new` files. |
+| `pkg_config_diff` | tool | Every `.apk-new` as a diff against the live file -- for `/etc/config/*` by setting (`uci show`), so quoting/indentation noise disappears. |
+| `pkg_config_resolve` | live path | keep_current (drop the new default) or use_new (install it; rollback-armed for UCI configs). |
+| `sysupgrade` | `<action>` | list (preserved files), test (validate an image in /tmp), check (`owut`), backup. **Never flashes.** |
+| `wg_list_clients` | tool | Peers with handshake age, endpoint, traffic, config/kernel mismatch, duplicate names. |
+| `wg_new_client` | `wireguard.<iface>` | Keypair, next free address, peer saved and hot-added, config + QR. |
+| `wg_remove_client` | `wireguard.<iface>.<name>` | By name, key or section; refuses a peer connected in the last 3 minutes unless forced. |
+| `ubus_list` | *(ungated)* | Discovery: every object, method and argument signature. |
+| `ubus_call` | `<object>.<method>` | Anything else on the bus. Replies over 8 KB have long arrays pruned. |
+| `exec` | `argv[0]` | One program, no shell. A broad grant is a root shell. |
+| `mfa_unlock` | *(ungated)* | Opens the TOTP window for MFA-gated tools. |
 
 ---
 
-## Status
+## Install
 
-Written against a GL.iNet **Flint 2**, now also verified on a **Flint 4** (GL-BE14000,
-MT7988A, 2GB/64GB). The Flint 4 turned out to run the *same* base — OpenWrt 21.02-SNAPSHOT,
-kernel 5.4.281, `aarch64_cortex-a53`, GL firmware 4.9.0 — so uci, ubus, procd and dropbear
-behave identically and only the vendor `gl-*` layer differs.
+```sh
+git clone https://github.com/stanislav-testhub/openwrt-mcp
+cd openwrt-mcp
+ROUTER=root@192.168.1.1 SSH_PORT=22 SSH_KEY=~/.ssh/id_ed25519 ./install.sh install
+```
 
-**Verified on the Flint 4:** a real static DHCP lease pinned end to end — one `uci_apply`
-deleting an anonymous `@host[2]`, creating a named `host` section and setting four options,
-verified against dnsmasq's generated `dhcp-host=` line and a DNS lookup before confirming;
-bearer auth (401 missing, 401 wrong, 200 valid, all three in the
-audit log); the scope gate refusing an out-of-scope object *and* printing the `allow` line
-that would grant it; `uci_apply` rollback-on-timeout restoring `/etc/config/system`
-byte-identically against an independent `sha256sum` baseline; `uci_confirm` cancelling the
-timer (value survived 25s past a 15s deadline, snapshot cleaned up); `exec` running a granted
-`argv[0]`, refusing an ungranted one, and passing `|` through as a literal argument rather
-than a pipe; `.ipk` install, conffile preservation and service enable via postinst; and the
-whole path over a real `ssh -L` tunnel.
+`ROUTER`, `SSH_PORT` and `SSH_KEY` are your router's root login (defaults: `root@192.168.1.1`,
+22, your ssh defaults).
 
-**Verified previously on the Flint 2 and not re-run here:** revocation taking effect without
-a restart, per-client policy isolation.
+It reads the router's `DISTRIB_ARCH`, runs the tests, cross-compiles a static binary, and
+installs `/usr/bin/openwrt-mcp`, the init script, the default config (never overwriting an
+existing one), the `keep.d` entry and the LuCI page; then enables and starts the service. It
+refuses to restart the daemon while a `uci_apply` awaits confirmation (that would roll it back)
+unless `FORCE=1`. `./install.sh uninstall [--purge]` reverses it.
 
-29 unit tests pass. They're mutation-checked: neutering `Authorise` fails 5, neutering
-`redact` fails 2, neutering the response pruner fails 2, and removing the pruner *call* from
-`ubus_call` fails 1 — that last test exists because an earlier version of the pruner had
-working unit tests while nothing asserted the tool actually used it.
-
-**Not verified:** that `keep.d` survives a real `sysupgrade` — the file is installed and
-correct, but no firmware flash was performed. Concurrency beyond one apply at a time
-(a second `uci_apply` is refused while one is pending).
-
-### Findings from the Flint 4 `gl-*` surface
-
-- **`gl-clients list` is enormous.** With 49 clients attached it returned 100,587 bytes —
-  60 samples of `last_rx` and 60 of `last_tx` per client. `ubus_call` now caps arrays at 16
-  elements in the decoded reply, which brought that call to 43,676 bytes and left it valid
-  JSON. Still not small; the remaining bulk is one legitimate row per client.
-- **Pruning applies only to replies over 8 KB, and only when it actually shrinks them.**
-  Both conditions were added after the first version got it wrong: `ubus call iwinfo devices`
-  returns 17 radio interface names in 196 bytes, and capping that at 16 dropped a real
-  interface while growing the reply to 202 bytes. Not every array is a time series.
-- **Do not grant `gl_screen.*`.** The Flint 4 has a 320x240 LCD and `gl_screen` accepts
-  `set`, but `ubus -v list` declares no argument schema and the validation all lives in the
-  oui-httpd Lua layer (`check_passcode`, `brightness_min/max`), which `ubus_call` bypasses.
-  Called directly, `{"method":"config_update","params":{"config":{"BRIGHTNESS":"40"}}}`
-  returns success and writes `BRIGHTNESS '"40"'` — the JSON quotes retained, the type
-  corrupted — into both `/tmp/gl_screen/active_config` and UCI, while `gl_screen -l` never
-  reflects the change. Other argument shapes are silently ignored. A useful screen tool
-  would have to reimplement the Lua layer's validation; the generic path is not safe here.
-- **`/tmp/gl_screen/active_config` holds the screen passcode in plaintext** (`PASSCODE
-  "1402"`). Any `exec` grant broad enough to read it exposes the device unlock code. The
-  auditor's `redact` covers the audit log, not tool output.
-- `sms_manager` exists but exposes exactly one ubus method, `set_sms_log_level`. There is no
-  send or read surface, and with no modem fitted (`cellular.modem status` → `{"modems": []}`)
-  nothing to wrap.
-
-**Known limitations**
-
-- There is **no permanent denylist**. `sysupgrade`, `firstboot` and `mtd` are reachable if a
-  policy grants them. That was a deliberate choice; keep recovery access to hand.
-- A broadly scoped `exec` grant is a root shell, and from a root shell `openwrt-mcp allow`
-  grants anything else. Scoped grants (`exec` limited to named binaries) keep the policy
-  engine meaningful; an unscoped one reduces it to an audit trail.
-- Rate-limit windows are process-scoped, so a restart resets them — erring toward allowing
-  what you already granted.
-- Tool output is capped at 64 KB, and ubus replies over 8 KB have arrays capped at 16
-  elements. Both cuts say so in the result, but a caller that needs a full time series has
-  to reach for a narrower ubus method.
-- Install with `make install-ipk`, not `make install`, if you want the daemon to survive a
-  firmware upgrade — only the packaged form ships the `keep.d` entry.
+**Why not an `.apk`:** 25.12 packages are apk-tools v3 ADB archives. Building one needs the
+OpenWrt SDK or a host apk-tools with `mkpkg` (the router's apk has no `mkpkg`), and an
+unsigned package then needs `--allow-untrusted` anyway. A static binary loses nothing by being
+installed as files: `/etc/config` survives sysupgrade on its own, and `/lib/upgrade/keep.d/openwrt-mcp`
+carries the binary, init script, rc.d links, state and LuCI page. (An `owut`/ASU image
+rebuilds *packages*, not loose files -- the keep.d entry is what preserves this across one.)
 
 ---
+
+## Connect
+
+### stdio over SSH (recommended)
+
+A dedicated key, bound on the router to the MCP bridge and nothing else:
+
+```sh
+ssh-keygen -t ed25519 -N '' -f ~/.ssh/openwrt_mcp
+ssh root@router "openwrt-mcp authorize-key claude-code '$(cat ~/.ssh/openwrt_mcp.pub)'"
+ssh root@router "openwrt-mcp allow claude-code @readonly 30d"
+claude mcp add openwrt -- ssh -T -i ~/.ssh/openwrt_mcp -o BatchMode=yes root@router
+```
+
+`authorize-key` writes a line like
+`command="/usr/bin/openwrt-mcp stdio --client claude-code",no-port-forwarding,no-agent-forwarding,no-X11-forwarding,no-pty ssh-ed25519 ...`
+into `/etc/dropbear/authorized_keys`: that key gets the MCP server as client `claude-code` and
+cannot open a shell or forward ports. It refuses a key that is already a root login.
+
+The bridge pipes the session into a root-only unix socket (`/var/run/openwrt-mcp/mcp.sock`,
+0600 in a 0700 directory). The **daemon** runs the tools, so a rollback armed in one session
+outlives it. The client name on the socket is asserted, not proven -- sound because only root
+can connect, and root can already edit the policy file; the SSH key is the real
+authentication.
+
+On Windows, the built-in OpenSSH client works for this (`ssh.exe`); use a full path to the key.
+
+### HTTP over a tunnel
+
+Unchanged from upstream: `openwrt-mcp pair <client>` prints a bearer token once;
+`ssh -N -L 8730:127.0.0.1:8730 root@router`; then
+`claude mcp add --transport http openwrt http://127.0.0.1:8730/mcp --header "Authorization: Bearer $TOK"`.
+The daemon refuses to bind anything but loopback.
+
+### Make the policy mean something
+
+If the agent can also run `ssh root@router ...` through its shell tool, the policy is
+advisory. Deny that in the client (Claude Code: a `permissions.deny` rule for
+`Bash(ssh * root@<router>*)`), or keep the root key where the agent cannot read it.
+
+---
+
+## Policies
+
+Deny by default. A policy grants one client a list of tools, scope globs (`*` and `?` are
+wildcards; brackets are literal), a calls/minute ceiling and an expiry. Changes to
+`/etc/config/openwrt-mcp` take effect without a restart.
+
+```sh
+openwrt-mcp allow claude-code @readonly 30d          # every read tool; ubus_call on an allow-list of read methods
+openwrt-mcp allow claude-code @operator 7d           # + uci_apply/confirm/rollback, service_control, pkg_change,
+                                                      #   pkg_config_resolve, wg_new/remove_client, sysupgrade backup
+openwrt-mcp allow claude-code uci_apply 'dhcp.* wireless.*.disabled' 30d
+openwrt-mcp allow claude-code service_control 'dnsmasq.restart adguardhome.*' 30d
+openwrt-mcp revoke claude-code                        # remove every policy for the client
+openwrt-mcp policies | status | clients
+```
+
+Neither preset includes `exec` or unrestricted `ubus_call`; both bypass the safety rails. The
+read-only ubus list is explicit `object.method` pairs, not `*.list`-style globs, because
+`session.list` returns LuCI session ids. `uci_get '*'` does read secrets (Wi-Fi keys), as any
+config read on OpenWrt does.
+
+A refusal names the uncovered scope and prints the exact `allow` line that would cover it.
+
+### Second factor
+
+Unchanged from upstream: `openwrt-mcp mfa enrol <client>` prints an `otpauth://` URI; then in a
+policy `list mfa_tools 'uci_apply'`, `option mfa_window '15m'`. One code opens a time-boxed
+window; codes are single-use; unlocks live in memory only.
+
+---
+
+## Safety model
+
+- **Rollback that survives the thing most likely to happen.** `uci_apply` snapshots the touched
+  configs to `/etc/openwrt-mcp/rollback/<token>/` (fsynced), writes the pending record *before*
+  committing, commits, reloads, and arms a timer (default 90 s, max 600 s). No `uci_confirm` ->
+  files restored atomically, staged changes reverted, services reloaded. If the router is
+  power-cycled inside the window, procd starts the daemon after network (S95) and it rolls back
+  at startup, forcing a `config.change` for each restored config.
+- **Nobody else's edits.** Every committing tool refuses to run while the configs it would
+  commit have uncommitted changes from another session, and while an unconfirmed apply is
+  pending.
+- **Names are validated against UCI's grammar**, so a section like `lan.ipaddr=x` cannot make
+  uci act on a different key from the scope the policy approved.
+- **No shell, anywhere.** Every command is an argv; targets and names that could be read as
+  options (`-f`) are refused.
+- **Lifelines.** `service_control` will not stop or disable dropbear, network, rpcd or
+  openwrt-mcp. `sysupgrade` has no flash action -- validate an image with `test`, flash by hand.
+  `wg_remove_client` will not drop a tunnel that handshook in the last 3 minutes unless forced.
+- **Credentials.** `wg_new_client` output contains a new private key; the audit log records
+  arguments and a summary, never tool output, and redacts secret-looking fields. The server
+  private key is read from `wg show dump` and discarded.
+- **Upstream's findings still hold:** rpcd ACLs do not bind a root process on the local ubus
+  socket, so they are not relied on; rpcd's own apply/rollback keeps its state in rpcd memory
+  and tmpfs, which is why the snapshot is ours and on flash.
+
+---
+
+## Verified
+
+On a GL-MT6000, stock OpenWrt 25.12.5, with the daemon staged in `/tmp` (not installed) and
+driven over the SSH stdio bridge from Windows: all 23 tools listed with schemas and server
+instructions; `system_status`, `network_clients`, `wg_list_clients`, `service_list`,
+`pkg_query upgradable`, `pkg_config_diff` (11 real `.apk-new` files, settings-level diffs),
+`firewall_show check`, `net_diag ping` from `br-WAN`, `logread` filtering, `uci_get`,
+`sysupgrade list`, `ubus_call` -- all against live data; `uci_apply dry_run` staging and
+reverting with nothing left in `uci changes`; denials for `exec`, `service_control`,
+`ubus_call session.list` and an out-of-scope `uci_apply`, each with its grant line;
+unauthenticated HTTP refused and audited.
+
+Unit and end-to-end tests (real MCP client over in-memory transport and over the bridge
+handshake) run on any OS against a fake router: apply/confirm/rollback/timeout, **restart
+inside the window**, dry run, refusal on foreign staged edits, list ops, WireGuard
+add/list/remove against a captured 25.12 config, client join, log filtering, apk simulation,
+`.apk-new` resolution with rollback, preset contents, scope glob semantics.
+
+**Not yet verified on hardware:** a persistent install via `install.sh` and the LuCI page
+rendering; a real (non-dry-run) `uci_apply` + rollback + reboot-recovery; `service_control`,
+`pkg_change commit`, `wg_new_client`/`wg_remove_client` against the live router; keep.d across
+a real sysupgrade.
+
+---
+
+## Credits
+
+- **[GlassOnTin/openwrt-mcp](https://github.com/GlassOnTin/openwrt-mcp)** (Ian Williams, MIT) --
+  the base of this project. Kept from it: the on-router static Go daemon under procd, standing
+  deny-by-default policies with scope globs, rate limits and expiry, bearer tokens stored as
+  digests, TOTP windows, the JSONL audit log with secret redaction, loopback-only HTTP, ubus
+  reply pruning, and the confirm-or-roll-back idea for `uci_apply`. The git history of the
+  upstream project is preserved in this repository.
+- **[jsebgiraldo/openwrt_ssh_mcp](https://github.com/jsebgiraldo/openwrt_ssh_mcp)** -- an
+  off-router Python server (SSH per call, regex command whitelist), reviewed for ideas. Four
+  were taken and reimplemented here:
+  1. validating a firmware image before flashing (`sysupgrade -T` -> `sysupgrade` action `test`);
+  2. firmware and board information (part of `system_status`);
+  3. package management (rewritten for `apk`: `pkg_query`, `pkg_change`);
+  4. ping / traceroute / nslookup (`net_diag`).
+
+  Not taken: OpenThread border-router tools (hardware-specific), `opkg` and `iptables` commands
+  (gone in 25.12), a flash-firmware tool (irreversible and unrecoverable remotely), and regex
+  whitelisting of shell strings (argv + policy scopes instead).
+
+## Contributing and security
+
+Bug reports and pull requests are welcome -- see [CONTRIBUTING.md](CONTRIBUTING.md). Please
+report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in a public
+issue.
 
 ## Licence
 
-Copyright (c) 2026 Ian Williams. **MIT** — see [LICENSE](LICENSE).
-
-MIT rather than a copyleft licence so that anyone, vendors included, can ship this in a
-firmware image without the licence being the reason not to. `GET /health` still returns the
-version and a link back here; that began as AGPL §13 compliance and stays because a service
-that says what it is and where it came from is useful regardless.
-
-If it saved you an afternoon, [Ko-fi](https://ko-fi.com/glassontin) is appreciated and never
-expected.
+MIT -- see [LICENSE](LICENSE). Copyright (c) 2026 Ian Williams (upstream) and Stanislav Chupin
+(OpenWrt 25.12 port).

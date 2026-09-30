@@ -190,3 +190,61 @@ func TestUciGetValidation(t *testing.T) {
 		t.Error("option without a section should error")
 	}
 }
+
+// uci parses "config.section.option=value" out of one argument, so a name carrying '.' or
+// '=' would make uci act on a different key from the scope the policy was checked against.
+func TestValidateChangeRejectsKeyInjection(t *testing.T) {
+	for _, c := range []UCIChange{
+		{Config: "wireless", Section: "guest.disabled=0 x", Option: "ssid", Value: "a"},
+		{Config: "wireless", Section: "guest", Option: "ssid=evil", Value: "a"},
+		{Config: "../etc", Section: "x", Option: "y"},
+		{Config: "dhcp", Section: "@host[0]", Type: "host"}, // create needs a real name
+		{Config: "system", Section: "@system[0]", Option: "hostname", Value: "a\nb"},
+		{Config: "dhcp", Section: "x", Op: "add_list", Option: "server"}, // no value
+		{Config: "dhcp", Section: "x", Op: "set_list", Option: "server"}, // no values
+		{Config: "dhcp", Section: "x", Op: "rename", Option: "y"},
+	} {
+		if err := validateChange(c); err == nil {
+			t.Errorf("accepted %+v", c)
+		}
+	}
+	for _, c := range []UCIChange{
+		{Config: "firewall", Section: "@rule[-1]", Option: "proto", Op: "add_list", Value: "udp"},
+		{Config: "luci_statistics", Section: "collectd", Option: "Interval", Value: "30"},
+		{Config: "network", Section: "wg0", Option: "addresses", Values: []string{"10.0.0.1/24", "fd00::1/64"}},
+	} {
+		if err := validateChange(c); err != nil {
+			t.Errorf("rejected valid %+v: %v", c, err)
+		}
+	}
+}
+
+func TestListOpsArgv(t *testing.T) {
+	add := uciCmds(UCIChange{Config: "dhcp", Section: "@dnsmasq[0]", Option: "server", Op: "add_list", Value: "1.1.1.1"})
+	if strings.Join(add[0].argv, " ") != "uci add_list dhcp.@dnsmasq[0].server=1.1.1.1" {
+		t.Errorf("add_list argv = %v", add[0].argv)
+	}
+	del := uciCmds(UCIChange{Config: "dhcp", Section: "@dnsmasq[0]", Option: "server", Op: "del_list", Value: "1.1.1.1"})
+	if strings.Join(del[0].argv, " ") != "uci del_list dhcp.@dnsmasq[0].server=1.1.1.1" {
+		t.Errorf("del_list argv = %v", del[0].argv)
+	}
+	set := uciCmds(UCIChange{Config: "dhcp", Section: "x", Option: "server", Values: []string{"a", "b"}})
+	if len(set) != 3 || !set[0].mayFail {
+		t.Errorf("set_list must be a tolerant clear then one add per value: %+v", set)
+	}
+}
+
+func TestSplitUCIValue(t *testing.T) {
+	for in, want := range map[string]string{
+		`'a'`:           "a",
+		`'a' 'b c'`:     "a|b c",
+		`'it'\''s'`:     "it's",
+		`''`:            "",
+		`plain`:         "plain",
+		`'10.0.0.1/24'`: "10.0.0.1/24",
+	} {
+		if got := strings.Join(splitUCIValue(in), "|"); got != want {
+			t.Errorf("splitUCIValue(%s) = %q, want %q", in, got, want)
+		}
+	}
+}

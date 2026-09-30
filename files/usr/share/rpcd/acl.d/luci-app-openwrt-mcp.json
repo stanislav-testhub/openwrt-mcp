@@ -1,0 +1,10 @@
+{
+	"luci-app-openwrt-mcp": {
+		"description": "Read-only status of the openwrt-mcp daemon",
+		"read": {
+			"file": {
+				"/usr/bin/openwrt-mcp status --json --audit 40": [ "exec" ]
+			}
+		}
+	}
+}

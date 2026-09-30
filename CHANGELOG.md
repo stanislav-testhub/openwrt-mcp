@@ -1,5 +1,40 @@
 # Changelog
 
+## 1.0.0 -- OpenWrt 25.12 port
+
+Retargeted from GL.iNet firmware 4.x (OpenWrt 21.02, opkg) to stock OpenWrt 25.12 (apk,
+fw4/nftables). Verified against a GL-MT6000 on 25.12.5.
+
+Removed
+- GL.iNet oui-httpd page, menu and i18n; `gl_ddns`/`wireguard_server` WireGuard model;
+  `.ipk` packaging (`mkipk.sh`, `install-ipk`); GL-specific docs and findings.
+
+Changed
+- Rollback snapshots live on flash under the state directory and the pending record is written
+  before commit, so a reboot inside the window rolls back at the next start. Restore is atomic
+  per file and forces `config.change` events when `reload_config` has no checksums.
+- Reload runs `/sbin/reload_config` synchronously instead of rpcd's asynchronous method.
+- Scope globs treat `[` `]` literally (`firewall.@rule[3].*`); previously `[0]` was a character
+  class and a grant written exactly as its scope did not match it.
+- Commands run through a replaceable runner; the test suite runs on any OS.
+- WireGuard: stock `network.<iface>` + `wireguard_<iface>` peers; endpoint from `ddns`, else the
+  default-route interface with a CGNAT/private-address warning; optional PSK.
+
+Added
+- stdio transport: `openwrt-mcp stdio --client X` bridges an SSH session into a root-only unix
+  socket; `authorize-key` binds a dedicated key to it with a forced command.
+- `uci_apply`: `add_list`, `del_list`, `set_list`, `dry_run`, staged-change output, UCI name
+  validation; `uci_rollback`.
+- Tools: `system_status`, `network_clients`, `firewall_show`, `net_diag`, `service_list`,
+  `service_control`, `pkg_query`, `pkg_change`, `pkg_config_diff`, `pkg_config_resolve`,
+  `sysupgrade`, `wg_list_clients`, `wg_remove_client`. `logread` filters the whole buffer and
+  gains regex and since-minutes.
+- CLI: `allow <client> @readonly|@operator <dur>`, `revoke <client>`, `authorize-key`.
+- LuCI status page (Services -> MCP Server), read-only via one rpcd exec ACL.
+- `install.sh` (build for the router's arch, install, uninstall) and keep.d coverage for
+  everything installed. MCP server instructions and tool annotations.
+
+
 ## v0.5.0
 
 **Issue a WireGuard client and show a QR to scan it**, plus `uci_get` to read configuration

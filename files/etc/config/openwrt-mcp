@@ -1,24 +1,30 @@
 config server
 	# Loopback only, always. The daemon refuses to start on a routable address.
-	# Reach it from a workstation with:
+	# HTTP transport, reached from a workstation with:
 	#   ssh -N -L 8730:127.0.0.1:8730 root@router
 	option listen '127.0.0.1:8730'
+	# Root-only unix socket for the stdio transport (`openwrt-mcp stdio`, run by an SSH
+	# forced command -- see `openwrt-mcp authorize-key`). Set to '' to disable.
+	option socket '/var/run/openwrt-mcp/mcp.sock'
 	option audit '/etc/openwrt-mcp/audit.jsonl'
 	option audit_max_mb '16'
 
 # No policies by default: every gated tool is denied until you grant it.
-# ubus_list is the one exception -- introspection is always permitted, so an agent
-# can discover what the router offers before asking for anything.
+# ubus_list and mfa_unlock are the exceptions -- introspection and the second factor itself.
 #
-# Grant with, for example:
-#   openwrt-mcp allow claude-code ubus_call,logread 'network.* iwinfo.* gl-*' 30d
+# Grant with a preset:
+#   openwrt-mcp allow claude-code @readonly 30d
+#   openwrt-mcp allow claude-code @operator 7d
+# or tool by tool:
+#   openwrt-mcp allow claude-code uci_apply 'dhcp.* wireless.*.disabled' 30d
 #
 # config policy
 #	option client       'claude-code'
-#	list   tools        'ubus_call'
-#	list   tools        'logread'
-#	list   scopes       'network.*'
-#	list   scopes       'iwinfo.*'
+#	list   tools        'uci_apply'
+#	list   tools        'uci_confirm'
+#	list   scopes       'dhcp.*'
 #	option max_per_min  '60'
 #	option expires      '2026-12-31'
 #	option enabled      '1'
+#	list   mfa_tools    'uci_apply'
+#	option mfa_window   '15m'

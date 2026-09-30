@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// `openwrt-mcp status --json` backs the router's own web UI.
+// `openwrt-mcp status --json` backs the LuCI page (Services -> MCP Server).
 //
 // Deliberately a CLI subcommand rather than an HTTP endpoint. The daemon's only listener is
 // loopback and unauthenticated reachability is explicitly not treated as identity, so adding
@@ -20,19 +20,30 @@ import (
 // process on the router, or storing a bearer token on the router for the UI to present --
 // the same hole the README rejects for rpcd's credentialed uci apply.
 //
-// A CLI read has neither problem: oui-httpd already runs as root, and root can read the
-// state directory regardless, so this exposes nothing that caller could not already reach.
+// A CLI read has neither problem: LuCI reaches it through rpcd's file.exec, which runs as
+// root and is granted exactly this command line by the page's ACL, so it exposes nothing
+// that caller could not already reach.
 // It also keeps every administrative operation on one surface.
 
 type statusReport struct {
 	Version  string         `json:"version"`
 	Source   string         `json:"source"`
 	Listen   string         `json:"listen"`
+	Socket   string         `json:"socket"`
 	Running  bool           `json:"running"`
+	Pending  []pendingRow   `json:"pending"`
 	Clients  []clientReport `json:"clients"`
 	Policies []policyReport `json:"policies"`
 	Audit    []auditRow     `json:"audit"`
 	Counts   map[string]int `json:"counts"`
+}
+
+// pendingRow is an apply awaiting uci_confirm, read from the daemon's on-flash record.
+type pendingRow struct {
+	Token    string   `json:"token"`
+	Client   string   `json:"client"`
+	Configs  []string `json:"configs"`
+	Deadline string   `json:"deadline"`
 }
 
 type clientReport struct {
@@ -72,6 +83,7 @@ func runStatus(configPath, statePath string, auditLines int, asJSON bool) error 
 		Version: version,
 		Source:  sourceURL,
 		Listen:  cfg.Listen,
+		Socket:  cfg.Socket,
 		Running: daemonRunning(cfg.Listen),
 		Counts:  map[string]int{},
 	}
@@ -101,6 +113,15 @@ func runStatus(configPath, statePath string, auditLines int, asJSON bool) error 
 		}
 	}
 
+	if b, err := os.ReadFile(statePath + "/pending.json"); err == nil {
+		var list []pendingApply
+		if json.Unmarshal(b, &list) == nil {
+			for _, p := range list {
+				rep.Pending = append(rep.Pending, pendingRow{Token: p.Token, Client: p.Client,
+					Configs: p.Configs, Deadline: p.Deadline.Format(time.RFC3339)})
+			}
+		}
+	}
 	rep.Audit = tailAudit(cfg.AuditPath, auditLines)
 	rep.Counts["clients"] = len(rep.Clients)
 	rep.Counts["policies"] = len(rep.Policies)

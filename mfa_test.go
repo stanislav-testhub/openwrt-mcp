@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -144,7 +145,7 @@ func TestEnrolPersistsAndRotates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Mode().Perm() != 0o600 {
+	if runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 { // Windows has no unix modes
 		t.Errorf("secret file mode is %v, want 0600", st.Mode().Perm())
 	}
 

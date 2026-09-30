@@ -253,3 +253,23 @@ func TestAppendPolicyRoundTrips(t *testing.T) {
 		t.Fatal("scope outside the grant was authorised")
 	}
 }
+
+// Regression: path.Match read "[0]" as a character class, so a grant naming an anonymous
+// section exactly as its scope is written did not cover it.
+func TestScopeGlobsTreatBracketsLiterally(t *testing.T) {
+	for _, tc := range []struct {
+		glob, scope string
+		want        bool
+	}{
+		{"system.@system[0].description", "system.@system[0].description", true},
+		{"firewall.@rule[3].*", "firewall.@rule[3].enabled", true},
+		{"firewall.@rule[3].*", "firewall.@rule[4].enabled", false},
+		{"system.@system[0].description", "system.@system0.description", false},
+		{"firewall.@rule[?].enabled", "firewall.@rule[7].enabled", true},
+		{"network.*", "network.lan.ipaddr", true},
+	} {
+		if got := matchAny([]string{tc.glob}, tc.scope); got != tc.want {
+			t.Errorf("matchAny(%q, %q) = %v, want %v", tc.glob, tc.scope, got, tc.want)
+		}
+	}
+}

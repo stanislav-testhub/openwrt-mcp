@@ -1,15 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"path"
-	"sort"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +26,8 @@ type Server struct {
 	audit      *Auditor
 	mfa        *MFAStore
 	tokens     *TokenStore
+
+	applyMu sync.Mutex // serialises uci staging: /tmp/.uci is shared by every uci user
 
 	mu      sync.RWMutex
 	config  *Config
@@ -87,53 +92,10 @@ func NewServer(configPath, statePath string) (*Server, error) {
 	return s, nil
 }
 
-// ---------------------------------------------------------------- http
-
-func (s *Server) Handler() http.Handler {
-	mux := http.NewServeMux()
-	mux.Handle("/mcp", s.authenticate(mcp.NewStreamableHTTPHandler(s.getServer, nil)))
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
-		// Points at its own source. Under the AGPL this was a §13 obligation; under MIT
-		// it is only good manners, but a service that will tell you what it is and where
-		// it came from is worth keeping either way.
-		fmt.Fprintf(w, "openwrt-mcp %s ok\nsource: %s\n", version, sourceURL)
-	})
-	return mux
-}
-
-// authenticate enforces the bearer token on every request. There is deliberately no
-// loopback auto-trust: any process on the router can reach 127.0.0.1, and an `ssh -R`
-// can make remote traffic arrive there too, so reachability is never treated as proof
-// of identity. Origin is recorded for audit attribution only.
-func (s *Server) authenticate(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Browser defence: a page in a local browser must not be able to drive the router.
-		if o := r.Header.Get("Origin"); o != "" && !isLoopbackOrigin(o) {
-			http.Error(w, "forbidden origin", http.StatusForbidden)
-			return
-		}
-		raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
-		client, ok := s.tokens.Resolve(strings.TrimSpace(raw))
-		if !ok {
-			s.audit.Record(AuditEvent{
-				Time: nowISO(), Client: "<unauthenticated>", Outcome: OutcomeDenied,
-				Error: "bad or missing bearer token from " + r.RemoteAddr,
-			})
-			w.Header().Set("WWW-Authenticate", `Bearer realm="openwrt-mcp"`)
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		_ = client
-		next.ServeHTTP(w, r)
-	})
-}
-
-func (s *Server) getServer(r *http.Request) *mcp.Server {
-	raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
-	client, ok := s.tokens.Resolve(raw)
-	if !ok {
-		return nil // unreachable: authenticate() already rejected it
-	}
+// serverFor returns the MCP server for one client name, building it on first use. Every
+// tool handler is closed over that name, so identity is fixed when the connection is
+// authenticated and can never be spoofed by a tool argument or a self-asserted clientInfo.
+func (s *Server) serverFor(client string) *mcp.Server {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if srv, ok := s.servers[client]; ok {
@@ -144,6 +106,52 @@ func (s *Server) getServer(r *http.Request) *mcp.Server {
 	return srv
 }
 
+// ---------------------------------------------------------------- http (bearer token)
+
+func (s *Server) Handler() http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle("/mcp", s.authenticate(mcp.NewStreamableHTTPHandler(s.getServer, nil)))
+	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+		// A service that will tell you what it is and where it came from is worth keeping.
+		fmt.Fprintf(w, "openwrt-mcp %s ok\nsource: %s\n", version, sourceURL)
+	})
+	return mux
+}
+
+// authenticate enforces the bearer token on every request. There is deliberately no
+// loopback auto-trust: any process on the router can reach 127.0.0.1, and an `ssh -R`
+// can make remote traffic arrive there too, so reachability is never treated as proof
+// of identity.
+func (s *Server) authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Browser defence: a page in a local browser must not be able to drive the router.
+		if o := r.Header.Get("Origin"); o != "" && !isLoopbackOrigin(o) {
+			http.Error(w, "forbidden origin", http.StatusForbidden)
+			return
+		}
+		raw := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if _, ok := s.tokens.Resolve(strings.TrimSpace(raw)); !ok {
+			s.audit.Record(AuditEvent{
+				Time: nowISO(), Client: "<unauthenticated>", Outcome: OutcomeDenied,
+				Error: "bad or missing bearer token from " + r.RemoteAddr,
+			})
+			w.Header().Set("WWW-Authenticate", `Bearer realm="openwrt-mcp"`)
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) getServer(r *http.Request) *mcp.Server {
+	raw := strings.TrimSpace(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "))
+	client, ok := s.tokens.Resolve(raw)
+	if !ok {
+		return nil // unreachable: authenticate() already rejected it
+	}
+	return s.serverFor(client)
+}
+
 func isLoopbackOrigin(o string) bool {
 	o = strings.TrimPrefix(strings.TrimPrefix(o, "https://"), "http://")
 	if h, _, err := net.SplitHostPort(o); err == nil {
@@ -151,6 +159,94 @@ func isLoopbackOrigin(o string) bool {
 	}
 	return o == "localhost" || net.ParseIP(o).IsLoopback()
 }
+
+// ---------------------------------------------------------------- unix socket (stdio bridge)
+//
+// `openwrt-mcp stdio --client NAME` is what an SSH forced command runs: the MCP client's
+// stdin/stdout travel over the SSH session, and the bridge pipes them into this socket. The
+// daemon, not the bridge, runs the tools, so a pending rollback outlives the session that
+// armed it.
+//
+// Identity here is asserted, not proven: the first line names the client. That is sound only
+// because the socket is reachable by root alone (mode 0600 inside a 0700 directory), and root
+// can already edit the policy file directly -- so the assertion grants root nothing it lacks.
+// The name is bound to an SSH key by the forced command in authorized_keys, which is the real
+// authentication.
+
+type bridgeHello struct {
+	Client string `json:"client"`
+	Origin string `json:"origin,omitempty"`
+}
+
+var reClientName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+
+func (s *Server) listenSocket(sock string) (net.Listener, error) {
+	dir := path.Dir(sock)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return nil, err
+	}
+	_ = os.Remove(sock) // stale socket from a previous run
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(sock, 0o600); err != nil {
+		ln.Close()
+		return nil, err
+	}
+	return ln, nil
+}
+
+func (s *Server) serveSocket(ln net.Listener) {
+	for {
+		conn, err := ln.Accept()
+		if err != nil {
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			log.Printf("openwrt-mcp: socket accept: %v", err)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		go s.handleBridge(conn)
+	}
+}
+
+func (s *Server) handleBridge(conn net.Conn) {
+	defer conn.Close()
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	br := bufio.NewReaderSize(conn, 64<<10)
+	line, err := br.ReadSlice('\n')
+	if err != nil {
+		return
+	}
+	var hello bridgeHello
+	if json.Unmarshal(line, &hello) != nil || !reClientName.MatchString(hello.Client) {
+		fmt.Fprintln(conn, `{"jsonrpc":"2.0","error":{"code":-32600,"message":"openwrt-mcp: bad bridge handshake"}}`)
+		return
+	}
+	_ = conn.SetReadDeadline(time.Time{})
+	s.audit.Record(AuditEvent{Time: nowISO(), Client: hello.Client, Tool: "session", Outcome: OutcomeOK,
+		Summary: "stdio session opened via " + orDefault(hello.Origin, "local socket")})
+
+	ss, err := s.serverFor(hello.Client).Connect(context.Background(),
+		&mcp.IOTransport{Reader: readCloser{br, conn}, Writer: conn}, nil)
+	if err != nil {
+		log.Printf("openwrt-mcp: bridge session for %s: %v", hello.Client, err)
+		return
+	}
+	_ = ss.Wait()
+}
+
+type readCloser struct {
+	io.Reader
+	io.Closer
+}
+
+// ---------------------------------------------------------------- serve
 
 func (s *Server) Serve() error {
 	cfg := s.cfg()
@@ -168,8 +264,15 @@ func (s *Server) Serve() error {
 	if err != nil {
 		return err
 	}
-	log.Printf("openwrt-mcp %s listening on %s (%d policies, %d paired clients)",
-		version, cfg.Listen, len(cfg.Policies), len(s.tokens.Clients()))
+	if cfg.Socket != "" {
+		sl, err := s.listenSocket(cfg.Socket)
+		if err != nil {
+			return fmt.Errorf("socket %s: %w", cfg.Socket, err)
+		}
+		go s.serveSocket(sl)
+	}
+	log.Printf("openwrt-mcp %s listening on %s and %s (%d policies, %d paired clients)",
+		version, cfg.Listen, orDefault(cfg.Socket, "(no socket)"), len(cfg.Policies), len(s.tokens.Clients()))
 	srv := &http.Server{
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,
@@ -178,266 +281,39 @@ func (s *Server) Serve() error {
 	return srv.Serve(ln)
 }
 
-// ---------------------------------------------------------------- uci apply/rollback
-//
-// rpcd's own apply/rollback (ubus call uci apply {"rollback":true}) is the obvious thing
-// to use and was the first choice, but it is unreachable here: every uci write method
-// requires a ubus_rpc_session, and session.login needs a username+password. Using it would
-// mean storing the router's root password in a file on the router -- a worse hole than the
-// one the rollback closes. Verified on OpenWrt 21.02 / rpcd 2022-02-19:
-//   ubus call uci apply '{}'                          -> Invalid argument  (no session)
-//   ubus call uci apply '{"ubus_rpc_session":"0..0"}' -> No response       (null session lacks write ACL)
-//
-// So we snapshot /etc/config ourselves, arm a timer, and restore unless confirmed. The
-// pending record is written to disk so that a daemon restart mid-window still rolls back:
-// on startup an unconfirmed apply is always reverted, because "we lost track of it" is
-// exactly when you want the conservative answer.
-
-type pendingApply struct {
-	Token    string    `json:"token"`
-	Snapshot string    `json:"snapshot"`
-	Deadline time.Time `json:"deadline"`
-	Configs  []string  `json:"configs"`
-
-	timer *time.Timer
-}
-
-func (s *Server) pendingPath() string { return path.Join(s.statePath, "pending.json") }
-
-// A change is one of four things, decided by which fields are set:
-//
-//	type set                -> create the section:  uci set dhcp.pi=host
-//	option set              -> set an option:       uci set dhcp.pi.ip=192.168.0.141
-//	option set + delete     -> remove an option:    uci delete dhcp.pi.ip
-//	neither, + delete       -> remove the section:  uci delete dhcp.pi
-//
-// Section creation exists because without it uci_apply cannot express "add a static lease",
-// "add a firewall rule" or "add an interface" -- UCI refuses to set an option on a section
-// that does not exist ("uci: Invalid argument"), so those jobs fell out of the rollback-armed
-// path and into a raw root shell, which is the one thing this tool is for avoiding.
-//
-// Named sections rather than `uci add`: the caller picks the name, so later changes in the
-// same batch can refer to it without knowing a generated id, and re-running the same apply
-// is idempotent where `uci add` would append a duplicate every time.
-func validateChange(c UCIChange) error {
-	if c.Config == "" || c.Section == "" {
-		return fmt.Errorf("each change needs at least a config and a section")
+// runBridge is the `stdio` subcommand: connect to the daemon's socket, announce the client,
+// then copy bytes both ways until either side closes.
+func runBridge(sock, client string) error {
+	if !reClientName.MatchString(client) {
+		return fmt.Errorf("bad client name %q", client)
 	}
-	if strings.ContainsAny(c.Config, "/.") {
-		return fmt.Errorf("bad config name %q", c.Config)
+	conn, err := net.Dial("unix", sock)
+	if err != nil {
+		return fmt.Errorf("daemon not reachable on %s (is it running? /etc/init.d/openwrt-mcp start): %w", sock, err)
 	}
-	if c.Type != "" {
-		if c.Option != "" {
-			return fmt.Errorf("%s.%s: type creates a section, so it cannot be combined with option",
-				c.Config, c.Section)
-		}
-		if c.Delete {
-			return fmt.Errorf("%s.%s: type creates a section, so it cannot be combined with delete",
-				c.Config, c.Section)
-		}
-		if strings.ContainsAny(c.Type, "/.=") {
-			return fmt.Errorf("bad section type %q", c.Type)
-		}
-		return nil
+	defer conn.Close()
+	origin := "stdio"
+	if c := os.Getenv("SSH_CLIENT"); c != "" {
+		origin = "ssh from " + strings.Fields(c)[0]
 	}
-	if c.Option == "" && !c.Delete {
-		return fmt.Errorf("%s.%s: needs an option to set, a type to create the section, "+
-			"or delete to remove the whole section", c.Config, c.Section)
+	hello, _ := json.Marshal(bridgeHello{Client: client, Origin: origin})
+	if _, err := conn.Write(append(hello, '\n')); err != nil {
+		return err
+	}
+	done := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(os.Stdout, conn)
+		close(done)
+	}()
+	_, _ = io.Copy(conn, os.Stdin)
+	// stdin closed: the client has gone. Half-close so the daemon sees EOF and ends the
+	// session, then wait for anything it still had to say.
+	if uc, ok := conn.(*net.UnixConn); ok {
+		_ = uc.CloseWrite()
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
 	}
 	return nil
-}
-
-// uciKey is the change's identity for error messages and policy scope: "config.section" for
-// anything section-level, "config.section.option" otherwise. Creating a section is a
-// different permission from setting an option in one, and the scope string says so.
-func uciKey(c UCIChange) string {
-	if c.Option == "" {
-		return c.Config + "." + c.Section
-	}
-	return c.Config + "." + c.Section + "." + c.Option
-}
-
-func uciArgv(c UCIChange) []string {
-	switch {
-	case c.Type != "":
-		return []string{"uci", "set", uciKey(c) + "=" + c.Type}
-	case c.Delete:
-		// Covers both the option and the whole-section case; uciKey already picked which.
-		return []string{"uci", "delete", uciKey(c)}
-	default:
-		return []string{"uci", "set", uciKey(c) + "=" + c.Value}
-	}
-}
-
-func (s *Server) uciApply(ctx context.Context, in uciApplyIn) (string, string, error) {
-	if len(in.Changes) == 0 {
-		return "", "", fmt.Errorf("changes must not be empty")
-	}
-	timeout := clampSec(in.Timeout, 90, 600)
-
-	s.mu.Lock()
-	busy := len(s.pending) > 0
-	s.mu.Unlock()
-	if busy {
-		return "", "", fmt.Errorf("an apply is already pending confirmation; call uci_confirm or wait for it to roll back")
-	}
-
-	// Refuse to start on top of somebody else's uncommitted edits -- committing those
-	// as a side effect would apply changes nobody asked us for.
-	if out, err := run(ctx, defaultCmdTimeout, "uci", "changes"); err == nil && strings.TrimSpace(out) != "" {
-		return "", "", fmt.Errorf("refusing to apply: uncommitted UCI changes already exist:\n%s", out)
-	}
-
-	// Work out which configs are affected before snapshotting: the snapshot covers only
-	// those files, never the whole of /etc/config. A whole-tree restore would silently
-	// clobber an unrelated change made by another process during the confirmation window.
-	configs := map[string]bool{}
-	for _, c := range in.Changes {
-		if err := validateChange(c); err != nil {
-			return "", "", err
-		}
-		configs[c.Config] = true
-	}
-	var names []string
-	for c := range configs {
-		if _, err := os.Stat("/etc/config/" + c); err != nil {
-			return "", "", fmt.Errorf("no such UCI config %q", c)
-		}
-		names = append(names, c)
-	}
-	sort.Strings(names)
-
-	token := randToken()
-	snapshot := path.Join(os.TempDir(), "openwrt-mcp-rollback-"+token+".tar.gz")
-	if out, err := run(ctx, defaultCmdTimeout,
-		append([]string{"tar", "-czf", snapshot, "-C", "/etc/config"}, names...)...); err != nil {
-		return "", "", fmt.Errorf("snapshot failed: %w\n%s", err, out)
-	}
-
-	for _, c := range in.Changes {
-		key := uciKey(c)
-		argv := uciArgv(c)
-		if out, err := run(ctx, defaultCmdTimeout, argv...); err != nil {
-			_, _ = run(ctx, defaultCmdTimeout, "uci", "revert", c.Config)
-			_ = os.Remove(snapshot)
-			return "", "", fmt.Errorf("staging %s failed: %w\n%s", key, err, out)
-		}
-	}
-
-	for _, c := range names {
-		if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", c); err != nil {
-			s.restoreSnapshot(ctx, snapshot, names)
-			return "", "", fmt.Errorf("commit %s failed: %w\n%s", c, err, out)
-		}
-	}
-	reloadOut, _ := run(ctx, defaultCmdTimeout, "ubus", "call", "uci", "reload_config", "{}")
-
-	p := &pendingApply{Token: token, Snapshot: snapshot, Deadline: time.Now().Add(timeout), Configs: names}
-	s.mu.Lock()
-	p.timer = time.AfterFunc(timeout, func() { s.rollback(token, "timeout") })
-	s.pending[token] = p
-	s.mu.Unlock()
-	s.savePending()
-
-	return fmt.Sprintf(
-		"Applied %d change(s) to %s and reloaded.\n\n"+
-			"ROLLBACK ARMED: this reverts automatically at %s (in %s) unless you call\n"+
-			"  uci_confirm {\"token\": \"%s\"}\n\n"+
-			"Verify the router is still reachable and behaving BEFORE confirming.\n%s",
-		len(in.Changes), strings.Join(names, ", "),
-		p.Deadline.Format(time.RFC3339), timeout, token, reloadOut,
-	), fmt.Sprintf("applied %d change(s), rollback armed %s", len(in.Changes), timeout), nil
-}
-
-func (s *Server) uciConfirm(ctx context.Context, token string) (string, string, error) {
-	s.mu.Lock()
-	p, ok := s.pending[token]
-	if ok {
-		if p.timer != nil {
-			p.timer.Stop()
-		}
-		delete(s.pending, token)
-	}
-	s.mu.Unlock()
-	if !ok {
-		return "", "", fmt.Errorf("no pending apply with token %q (it may have already rolled back)", token)
-	}
-	_ = os.Remove(p.Snapshot)
-	s.savePending()
-	return fmt.Sprintf("Confirmed. Rollback cancelled; changes to %s are permanent.", strings.Join(p.Configs, ", ")),
-		"confirmed " + token, nil
-}
-
-func (s *Server) rollback(token, reason string) {
-	s.mu.Lock()
-	p, ok := s.pending[token]
-	delete(s.pending, token)
-	s.mu.Unlock()
-	if !ok {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	err := s.restoreSnapshot(ctx, p.Snapshot, p.Configs)
-	s.savePending()
-	outcome, msg := OutcomeOK, fmt.Sprintf("rolled back %s (%s)", strings.Join(p.Configs, ", "), reason)
-	if err != nil {
-		outcome, msg = OutcomeError, "ROLLBACK FAILED: "+err.Error()
-	}
-	log.Printf("openwrt-mcp: %s", msg)
-	s.audit.Record(AuditEvent{Time: nowISO(), Client: "<system>", Tool: "uci_rollback", Outcome: outcome, Summary: msg})
-}
-
-func (s *Server) restoreSnapshot(ctx context.Context, snapshot string, configs []string) error {
-	if _, err := os.Stat(snapshot); err != nil {
-		return fmt.Errorf("snapshot %s missing: %w", snapshot, err)
-	}
-	if out, err := run(ctx, defaultCmdTimeout, "tar", "-xzf", snapshot, "-C", "/etc/config"); err != nil {
-		return fmt.Errorf("restore failed: %w\n%s", err, out)
-	}
-	for _, c := range configs {
-		_, _ = run(ctx, defaultCmdTimeout, "uci", "revert", c)
-	}
-	if out, err := run(ctx, defaultCmdTimeout, "ubus", "call", "uci", "reload_config", "{}"); err != nil {
-		return fmt.Errorf("reload after restore failed: %w\n%s", err, out)
-	}
-	_ = os.Remove(snapshot)
-	return nil
-}
-
-func (s *Server) savePending() {
-	s.mu.RLock()
-	list := make([]*pendingApply, 0, len(s.pending))
-	for _, p := range s.pending {
-		list = append(list, p)
-	}
-	s.mu.RUnlock()
-	b, err := json.Marshal(list)
-	if err != nil {
-		return
-	}
-	_ = os.MkdirAll(s.statePath, 0o700)
-	_ = os.WriteFile(s.pendingPath(), b, 0o600)
-}
-
-// recoverPending rolls back any apply that was still unconfirmed when we stopped.
-// A restart during the confirmation window means nobody ever vouched for the change.
-func (s *Server) recoverPending() {
-	b, err := os.ReadFile(s.pendingPath())
-	if err != nil {
-		return
-	}
-	var list []*pendingApply
-	if json.Unmarshal(b, &list) != nil {
-		return
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-	for _, p := range list {
-		log.Printf("openwrt-mcp: unconfirmed apply %s found at startup, rolling back", p.Token)
-		if err := s.restoreSnapshot(ctx, p.Snapshot, p.Configs); err != nil {
-			log.Printf("openwrt-mcp: recovery rollback failed: %v", err)
-		}
-	}
-	_ = os.Remove(s.pendingPath())
 }
