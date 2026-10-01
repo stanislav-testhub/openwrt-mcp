@@ -53,7 +53,7 @@ func parseUCI(r *bufio.Scanner) []uciSection {
 				cur.Options[fields[1]] = fields[2]
 			}
 		case "list":
-			if cur != nil && len(fields) > 2 {
+			if cur != nil && len(fields) > 2 && fields[2] != "" {
 				cur.Lists[fields[1]] = append(cur.Lists[fields[1]], fields[2])
 			}
 		}
@@ -65,6 +65,8 @@ func parseUCI(r *bufio.Scanner) []uciSection {
 }
 
 // splitUCI tokenises a UCI line, honouring single and double quotes and dropping # comments.
+// A quoted empty string is a field of its own: `option socket ”` is how the stdio bridge is
+// switched off, and dropping the empty value would leave the default in force.
 func splitUCI(line string) ([]string, bool) {
 	line = strings.TrimSpace(line)
 	if line == "" || strings.HasPrefix(line, "#") {
@@ -73,6 +75,14 @@ func splitUCI(line string) ([]string, bool) {
 	var fields []string
 	var buf strings.Builder
 	var quote rune
+	quoted := false // the current token was opened by a quote, so it exists even if empty
+	flush := func() {
+		if buf.Len() > 0 || quoted {
+			fields = append(fields, buf.String())
+			buf.Reset()
+		}
+		quoted = false
+	}
 	for _, c := range line {
 		switch {
 		case quote != 0:
@@ -82,26 +92,18 @@ func splitUCI(line string) ([]string, bool) {
 				buf.WriteRune(c)
 			}
 		case c == '\'' || c == '"':
-			quote = c
+			quote, quoted = c, true
 		case c == ' ' || c == '\t':
-			if buf.Len() > 0 {
-				fields = append(fields, buf.String())
-				buf.Reset()
-			}
+			flush()
 		case c == '#' && len(fields) >= 3:
 			// trailing comment after a complete option line
-			if buf.Len() > 0 {
-				fields = append(fields, buf.String())
-				buf.Reset()
-			}
+			flush()
 			return fields, true
 		default:
 			buf.WriteRune(c)
 		}
 	}
-	if buf.Len() > 0 {
-		fields = append(fields, buf.String())
-	}
+	flush()
 	return fields, true
 }
 

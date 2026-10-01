@@ -252,7 +252,9 @@ type firewallShowIn struct {
 	Chain  string `json:"chain,omitempty" jsonschema:"for chain: chain name, e.g. 'forward_lan' or 'srcnat'"`
 }
 
-var reNftName = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+// A name is passed to nft as its own argument, so it must not begin with '-': nft would read
+// it as an option wherever it sits on the command line.
+var reNftName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$`)
 
 // firewallShow reads the firewall. OpenWrt 22.03+ is fw4 on nftables: iptables is gone, and
 // the rules an agent needs to reason about are fw4's rendered ruleset plus whatever other

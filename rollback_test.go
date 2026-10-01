@@ -4,9 +4,9 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
-	"time"
 )
 
 // fakeUCI simulates just enough of uci for the apply path: staged changes accumulate per
@@ -229,7 +229,7 @@ func TestSetListClearsThenAdds(t *testing.T) {
 }
 
 func TestResolveUseNewIsRollbackArmed(t *testing.T) {
-	s, f, root := applyFixture(t)
+	s, _, root := applyFixture(t)
 	writeFixture(t, root, "etc/config/dhcp.apk-new", "config dnsmasq\n\toption domain 'new'\n")
 	out, _, err := s.pkgConfigResolve(context.Background(), "c", pkgConfigResolveIn{Path: "/etc/config/dhcp", Action: "use_new"})
 	if err != nil {
@@ -244,7 +244,6 @@ func TestResolveUseNewIsRollbackArmed(t *testing.T) {
 	if b, _ := os.ReadFile(filepath.Join(uciConfDir, "dhcp.pre-apk-new")); string(b) != origDHCP {
 		t.Error("old copy not kept as .pre-apk-new")
 	}
-	_ = f
 	if _, _, err := s.uciRollbackNow(context.Background(), firstToken(s)); err != nil {
 		t.Fatal(err)
 	}
@@ -262,12 +261,21 @@ func firstToken(s *Server) string {
 	return ""
 }
 
-func TestWriteSyncedSetsMode(t *testing.T) {
+func TestWriteSyncedWritesTheContentAndTheRequestedMode(t *testing.T) {
 	p := filepath.Join(t.TempDir(), "x")
+	// Write over an existing wider file: the mode must end up as asked, not inherited.
+	if err := os.WriteFile(p, []byte("old content that is longer"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if err := writeSynced(p, []byte("a"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	_ = time.Now
+	if b, _ := os.ReadFile(p); string(b) != "a" {
+		t.Errorf("content %q: the old file was not truncated", b)
+	}
+	if st, _ := os.Stat(p); runtime.GOOS != "windows" && st.Mode().Perm() != 0o600 { // Windows has no unix modes
+		t.Errorf("mode %o, want 600", st.Mode().Perm())
+	}
 }
 
 // A client with uci_apply on '*' must not be able to grant itself more through the policy file.

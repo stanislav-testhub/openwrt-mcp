@@ -235,6 +235,17 @@ func main() {
 // deliberately not exposed as an MCP tool, so there is no tool for a policy to cover and
 // therefore no self-escalation path through the policy system itself.
 func appendPolicy(configPath, client, tools, scopes, duration string) error {
+	// Every value is written inside single quotes, so a quote or a newline in one would end the
+	// value and let the rest be read as more UCI -- corrupting the file that holds every grant.
+	// The client name must also be one the stdio bridge can actually present.
+	if !reClientName.MatchString(client) {
+		return fmt.Errorf("bad client name %q: use letters, digits, '.', '_' or '-' (max 64)", client)
+	}
+	for _, sc := range strings.Fields(scopes) {
+		if strings.ContainsAny(sc, "'\"\x00") {
+			return fmt.Errorf("bad scope %q: quotes are not allowed", sc)
+		}
+	}
 	var expires string
 	if duration != "never" {
 		d, err := parseDuration(duration)

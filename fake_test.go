@@ -16,6 +16,7 @@ import (
 type fakeRouter struct {
 	mu       sync.Mutex
 	calls    []string
+	argvs    [][]string // the same commands with their argument boundaries intact
 	stdins   []string
 	handlers map[string]func(argv []string, stdin string) (string, error)
 }
@@ -76,6 +77,7 @@ func (f *fakeRouter) run(_ context.Context, stdin *string, argv []string) (strin
 	}
 	f.mu.Lock()
 	f.calls = append(f.calls, line)
+	f.argvs = append(f.argvs, append([]string(nil), argv...))
 	f.stdins = append(f.stdins, in)
 	var best string
 	var fn func([]string, string) (string, error)
@@ -104,6 +106,13 @@ func (f *fakeRouter) ran(prefix string) bool {
 		}
 	}
 	return false
+}
+
+// argvList returns every command's argv, so a test can tell "a b" (one argument) from "a", "b".
+func (f *fakeRouter) argvList() [][]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([][]string(nil), f.argvs...)
 }
 
 func (f *fakeRouter) allCalls() string {

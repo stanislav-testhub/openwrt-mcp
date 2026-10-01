@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -34,6 +35,9 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		func(ctx context.Context, in ubusListIn) (string, string, error) {
 			argv := []string{"ubus", "-v", "list"}
 			if in.Filter != "" {
+				if strings.HasPrefix(in.Filter, "-") {
+					return "", "", fmt.Errorf("filter is an object path and cannot start with '-'")
+				}
 				argv = append(argv, in.Filter)
 			}
 			out, err := run(ctx, defaultCmdTimeout, argv...)
@@ -45,7 +49,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 			"system, service, rc, file, ... Replies over 8 KB have long arrays pruned. Some methods WRITE "+
 			"(system.reboot, network.interface.*.down, uci.set, rc.init) -- prefer the dedicated tools for those. "+
 			"Policy scope: \"<object>.<method>\".",
-		nil,
+		annDest,
 		func(in ubusCallIn) []string { return []string{in.Object + "." + in.Method} },
 		ubusCall)
 
@@ -162,7 +166,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		"Firmware helpers that never flash: list (files a sysupgrade keeps), test (validate an image already in "+
 			"/tmp), check (owut: is a newer release available), backup (config archive in /tmp). "+
 			"Policy scope: the action.",
-		nil, sysupgradeScope, sysupgradeTool)
+		annWrite, sysupgradeScope, sysupgradeTool)
 
 	// ---- wireguard
 
@@ -244,6 +248,10 @@ type mfaUnlockIn struct {
 func ubusCall(ctx context.Context, in ubusCallIn) (string, string, error) {
 	if in.Object == "" || in.Method == "" {
 		return "", "", fmt.Errorf("object and method are required")
+	}
+	// Both become arguments of `ubus call`; neither may be read as an option.
+	if strings.HasPrefix(in.Object, "-") || strings.HasPrefix(in.Method, "-") {
+		return "", "", fmt.Errorf("object and method are names and cannot start with '-'")
 	}
 	argv := []string{"ubus", "call", in.Object, in.Method}
 	if len(in.Args) > 0 {

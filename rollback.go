@@ -267,7 +267,7 @@ func (s *Server) rollback(token, reason string) {
 	s.savePending()
 	outcome, msg := OutcomeOK, fmt.Sprintf("rolled back %s (%s)", strings.Join(p.Configs, ", "), reason)
 	if err != nil {
-		outcome, msg = OutcomeError, "ROLLBACK FAILED: "+err.Error()
+		outcome, msg = OutcomeError, fmt.Sprintf("ROLLBACK FAILED (snapshot kept at %s): %v", p.Dir, err)
 	}
 	log.Printf("openwrt-mcp: %s", msg)
 	s.audit.Record(AuditEvent{Time: nowISO(), Client: "<system>", Tool: "uci_rollback", Outcome: outcome, Summary: msg})
@@ -374,7 +374,7 @@ func (s *Server) recoverPending() {
 		log.Printf("openwrt-mcp: unconfirmed apply %s (%s) found at startup, rolling back", p.Token, strings.Join(p.Configs, ","))
 		msg, outcome := "rolled back "+strings.Join(p.Configs, ", ")+" (unconfirmed at startup)", OutcomeOK
 		if err := s.restore(ctx, p, true); err != nil {
-			msg, outcome = "ROLLBACK FAILED at startup: "+err.Error(), OutcomeError
+			msg, outcome = fmt.Sprintf("ROLLBACK FAILED at startup (snapshot kept at %s): %v", p.Dir, err), OutcomeError
 			log.Printf("openwrt-mcp: %s", msg)
 		}
 		s.audit.Record(AuditEvent{Time: nowISO(), Client: "<system>", Tool: "uci_rollback", Outcome: outcome, Summary: msg})

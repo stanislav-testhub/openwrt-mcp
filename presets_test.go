@@ -2,11 +2,9 @@ package main
 
 import (
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestPresetsNameOnlyRealTools(t *testing.T) {
@@ -60,7 +58,6 @@ func TestRevokeRemovesOnlyThatClient(t *testing.T) {
 	if !strings.Contains(string(b), "# keep me") {
 		t.Error("revoke dropped unrelated content")
 	}
-	_ = time.Now
 }
 
 func TestAuthorizedKeyLineIsLockedDown(t *testing.T) {
@@ -92,9 +89,30 @@ func TestAuthorizeKeyRefusesAKeyThatIsAlreadyARootLogin(t *testing.T) {
 	}
 }
 
-func TestPresetScopesNeverContainAClientSuppliedGlob(t *testing.T) {
-	// Scope strings built from requests are literals; a policy glob must match them.
-	if ok, _ := path.Match("wireguard.*", "wireguard.wg0"); !ok {
-		t.Error("sanity")
+// A scope is built from a request and matched against the policy's globs. The glob is the
+// pattern and the scope the subject, never the other way round: a request that smuggles
+// wildcard characters into its own scope must not widen what a narrow grant allows.
+func TestScopeGlobsMatchTheScopeNotTheOtherWayRound(t *testing.T) {
+	for _, c := range []struct {
+		globs []string
+		scope string
+		want  bool
+	}{
+		{[]string{"dhcp.pi"}, "dhcp.p*", false},    // a request's '*' is not a wildcard
+		{[]string{"dhcp.pi"}, "dhcp.p?", false},    // nor '?'
+		{[]string{"dhcp.pi"}, "dhcp.[pi]i", false}, // nor a character class
+		{[]string{"dhcp.pi"}, "dhcp.pi", true},
+		{[]string{"dhcp.*"}, "dhcp.*", true},                  // literal equality still matches
+		{[]string{"dhcp.p?"}, "dhcp.pi", true},                // the policy's '?' is a wildcard
+		{[]string{"dhcp.*"}, "dhcp.pi.ip", true},              // path.Match: '*' spans dots (they are not separators)
+		{[]string{"/etc/config/*"}, "/etc/config/a/b", false}, // but not '/'
+		{[]string{"/etc/config/*"}, "/etc/config/dhcp", true},
+		{nil, "anything", false}, // no grant, no match
+		{[]string{}, "", false},
+		{[]string{"a", "b"}, "b", true}, // any one glob suffices
+	} {
+		if got := matchAny(c.globs, c.scope); got != c.want {
+			t.Errorf("matchAny(%q, %q) = %v, want %v", c.globs, c.scope, got, c.want)
+		}
 	}
 }

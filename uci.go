@@ -65,7 +65,7 @@ func (c UCIChange) op() string {
 // "config.section.option=value" out of one string, so a section containing '.' or '=' would
 // make the key uci acts on differ from the scope string the policy was checked against.
 var (
-	reUCIConfig  = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+	reUCIConfig  = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]*$`) // not '-' first: it starts the uci key, so it would parse as an option
 	reUCISection = regexp.MustCompile(`^([A-Za-z0-9_]+|@[A-Za-z0-9_-]+\[-?[0-9]+\])$`)
 	reUCIOption  = regexp.MustCompile(`^[A-Za-z0-9_]+$`)
 	reUCIType    = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)

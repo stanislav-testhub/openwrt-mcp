@@ -10,6 +10,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"regexp"
@@ -152,12 +153,20 @@ func (s *Server) getServer(r *http.Request) *mcp.Server {
 	return s.serverFor(client)
 }
 
+// isLoopbackOrigin reports whether an Origin header names a loopback host. It parses the value
+// as a URL rather than trimming it by hand: "http://localhost:80@evil.example" has the host
+// evil.example, and a string trim reads it as localhost.
 func isLoopbackOrigin(o string) bool {
-	o = strings.TrimPrefix(strings.TrimPrefix(o, "https://"), "http://")
-	if h, _, err := net.SplitHostPort(o); err == nil {
-		o = h
+	u, err := url.Parse(o)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Host == "" {
+		return false
 	}
-	return o == "localhost" || net.ParseIP(o).IsLoopback()
+	// An Origin is scheme://host[:port] and nothing more.
+	if (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return false
+	}
+	h := u.Hostname()
+	return strings.EqualFold(h, "localhost") || net.ParseIP(h).IsLoopback()
 }
 
 // ---------------------------------------------------------------- unix socket (stdio bridge)

@@ -286,6 +286,10 @@ var serviceActions = map[string]bool{"start": true, "stop": true, "restart": tru
 // says. Restarting them is allowed -- they come back.
 var lifelineServices = map[string]bool{"dropbear": true, "network": true, "rpcd": true, "openwrt-mcp": true}
 
+// serviceSettle is how long service_control waits before reading the state back. A variable
+// so tests need not sleep for real.
+var serviceSettle = time.Second
+
 func serviceControlScope(in serviceControlIn) []string { return []string{in.Name + "." + in.Action} }
 
 var reServiceName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
@@ -311,7 +315,7 @@ func serviceControl(ctx context.Context, in serviceControlIn) (string, string, e
 		return out, "", fmt.Errorf("%s %s: %w", in.Action, in.Name, err)
 	}
 	// rc init returns before a procd service has settled; give it a moment.
-	time.Sleep(time.Second)
+	time.Sleep(serviceSettle)
 	after, _ := rcList(ctx)
 	e := after[in.Name]
 	return fmt.Sprintf("%s %s: done. Now enabled=%v running=%v.", in.Action, in.Name, e.Enabled, e.Running),

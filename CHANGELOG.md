@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+Found by a test-coverage audit (schema-driven hostile-input test, fuzzing, mutation analysis).
+
+Security
+- `firewall_show` (family, table, chain), `uci_get` (config), `ubus_list` (filter) and
+  `ubus_call` (object, method) accepted values starting with `-`, which reached `nft`, `uci`
+  and `ubus` as options. Refused now, and the validators for nft names and UCI config names
+  no longer allow a leading `-`.
+- The audit log recorded the value of a secret option set through `uci_apply`
+  (`{"option":"key","value":"<wifi password>"}`), contrary to the README. A secret-named
+  option (`key`, `key1..4`, `psk`, `password`, `private_key`, `preshared_key`, ...) now hides
+  its `value`/`values`.
+- The HTTP `Origin` check trimmed the header by hand, so `http://localhost:80@evil.example` read
+  as `localhost`. It parses a URL now, refuses userinfo, paths and fragments, and accepts
+  `http://[::1]`.
+- `openwrt-mcp allow` wrote the client name and scopes between single quotes without checking
+  them; a quote or newline could corrupt the policy file. The client name must now be one the
+  stdio bridge accepts, and scopes may not contain quotes.
+- `authorize-key` refuses control characters in the key comment.
+
+Fixed
+- `option socket ''`, documented as switching the stdio bridge off, was ignored: the UCI
+  tokenizer dropped an empty quoted value, so the default socket stayed in force.
+- `pruneUbusJSON` could return a reply longer than the one it replaced (by up to the notice).
+- Truncating an oversized result could split a multi-byte character.
+- A failed automatic rollback (timer or startup) now names the snapshot directory in the audit
+  entry, as a failed manual rollback already did.
+- `ubus_call` is annotated destructive and `sysupgrade` non-destructive (both had none).
+
+Tests
+- HTTP transport, Origin and bearer handling, the unix-socket bridge and `runBridge`, the
+  loopback-only guard of `Serve`, the CLI as a subprocess, the real rollback timer and every
+  failure path of `uci_apply`/rollback, per-tool command lines, MCP contract tests (names,
+  annotations, schemas, README and preset sync, read-only claims), fuzz targets with
+  independent oracles.
+
 ## 1.0.0 -- OpenWrt 25.12 port
 
 Retargeted from GL.iNet firmware 4.x (OpenWrt 21.02, opkg) to stock OpenWrt 25.12 (apk,

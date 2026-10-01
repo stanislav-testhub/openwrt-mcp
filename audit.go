@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -18,19 +19,32 @@ import (
 var secretKeySubstrings = []string{
 	"password", "passwd", "secret", "token", "credential",
 	"apikey", "api_key", "privatekey", "private_key", "passphrase",
-	"psk", "wgkey", "encryption_key",
+	"psk", "wgkey", "encryption_key", "preshared",
 }
 
 const redacted = "<redacted>"
 
+// reSecretOption matches UCI option names that hold a secret without saying so in a way
+// isSecretKey can see: wireless `key` (and WEP's key1..key4). A bare "key" is not in
+// secretKeySubstrings because keyId or publicKey are identifiers; here the context is known.
+var reSecretOption = regexp.MustCompile(`(?i)^key[0-9]*$`)
+
 func redact(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
+		// A uci_apply change names the option in one field and carries its value in another:
+		// {"option":"key","value":"<wifi password>"}. Redacting by field name alone would log
+		// that password, so a secret-named option hides the value that goes with it.
+		secretOption := false
+		if o, ok := t["option"].(string); ok {
+			secretOption = isSecretKey(o) || reSecretOption.MatchString(o)
+		}
 		out := make(map[string]any, len(t))
 		for k, val := range t {
-			if isSecretKey(k) {
+			switch {
+			case isSecretKey(k), secretOption && (k == "value" || k == "values"):
 				out[k] = redacted
-			} else {
+			default:
 				out[k] = redact(val)
 			}
 		}

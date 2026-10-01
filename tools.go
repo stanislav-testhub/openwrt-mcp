@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -104,10 +105,16 @@ func textResult(s string) *mcp.CallToolResult {
 	}
 	if len(s) > maxResultBytes {
 		// Marked loudly: a silently truncated result reads as a complete one.
-		s = s[:maxResultBytes] + fmt.Sprintf(
+		// Cut on a character boundary: a multi-byte character split in two reaches the model as
+		// a replacement character.
+		cut := maxResultBytes
+		for cut > 0 && !utf8.RuneStart(s[cut]) {
+			cut--
+		}
+		s = s[:cut] + fmt.Sprintf(
 			"\n\n[TRUNCATED: %d bytes total, %d shown. Output is cut mid-stream and may not parse. "+
 				"Narrow the request -- a more specific ubus method, a logread pattern, or a filter.]",
-			len(s), maxResultBytes)
+			len(s), cut)
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
 }
@@ -181,13 +188,14 @@ func pruneUbusJSON(out string) string {
 	if err != nil {
 		return out
 	}
-	// Belt and braces: re-indenting can outweigh what the pruning saved.
-	if len(b) >= len(out) {
-		return out
-	}
-	return fmt.Sprintf("%s\n\n[pruned: %d array element(s) dropped, arrays capped at %d; %d -> %d bytes. "+
+	res := fmt.Sprintf("%s\n\n[pruned: %d array element(s) dropped, arrays capped at %d; %d -> %d bytes. "+
 		"Use a narrower ubus method if you need the full series.]",
 		b, p.dropped, maxArrayElems, len(out), len(b))
+	// Belt and braces: re-indenting and the notice itself can outweigh what pruning saved.
+	if len(res) >= len(out) {
+		return out
+	}
+	return res
 }
 
 // mfaGate returns a refusal, or "" if the call may proceed. Named rather than inlined in the
@@ -295,6 +303,9 @@ var (
 	annRead = &mcp.ToolAnnotations{ReadOnlyHint: true}
 	annIdem = &mcp.ToolAnnotations{DestructiveHint: ptr(false), IdempotentHint: true}
 	annDest = &mcp.ToolAnnotations{DestructiveHint: ptr(true)}
+	// annWrite: changes state (a file in /tmp, say) but cannot destroy anything, and is not
+	// idempotent (each call makes a new file).
+	annWrite = &mcp.ToolAnnotations{DestructiveHint: ptr(false)}
 )
 
 func ptr[T any](v T) *T { return &v }
