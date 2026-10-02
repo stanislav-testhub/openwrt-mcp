@@ -268,7 +268,7 @@ across a real sysupgrade. Reports from other boards are welcome.
 
 Bug reports and pull requests are welcome -- see [CONTRIBUTING.md](CONTRIBUTING.md). Please
 report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in a public
-issue.
+issue. Planned work is in [ROADMAP.md](ROADMAP.md).
 
 ## Licence
 
