@@ -8,6 +8,16 @@ config server
 	option socket '/var/run/openwrt-mcp/mcp.sock'
 	option audit '/etc/openwrt-mcp/audit.jsonl'
 	option audit_max_mb '16'
+	# Second-factor limiter. This many wrong codes in a row lock a client out of mfa_unlock
+	# for mfa_lockout seconds (or '5m'), doubling on each repeat up to one hour. The state is
+	# in memory, so a restart clears it. Defaults shown.
+	# option mfa_max_failures '5'
+	# option mfa_lockout '300'
+	# Tool output hides the value of secret options (key, psk, password, private_key, token, ...)
+	# in uci_get, uci_apply, pkg_config_diff, system_status and ubus_call. Only a literal '0'
+	# turns it off, and doing so leaves an audit entry. redact_extra adds your own option names.
+	# option redact_output '1'
+	# list redact_extra 'vendor_blob'
 
 # No policies by default: every gated tool is denied until you grant it.
 # ubus_list and mfa_unlock are the exceptions -- introspection and the second factor itself.

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // ---------------------------------------------------------------- network_clients
@@ -65,9 +66,13 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 				continue
 			}
 			c := get(f[1])
-			addIP(c, f[2])
+			// The file is dnsmasq's, but a leases file is just text: only a real address is
+			// shown as one.
+			if _, err := netip.ParseAddr(f[2]); err == nil {
+				addIP(c, f[2])
+			}
 			if f[3] != "*" {
-				c.Host = f[3]
+				c.Host = trunc(f[3], maxFieldBytes)
 			}
 			c.LeaseEnd, _ = strconv.ParseInt(f[0], 10, 64)
 			c.HasLease = true
@@ -87,7 +92,7 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 					c := get(m)
 					c.Static = true
 					if n := t.get(sec, "name"); n != "" && c.Host == "" {
-						c.Host = n
+						c.Host = trunc(n, maxFieldBytes)
 					}
 					addIP(c, t.get(sec, "ip"))
 				}
@@ -111,10 +116,10 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 				addIP(c, n.Dst)
 			}
 			if c.Dev == "" {
-				c.Dev = n.Dev
+				c.Dev = trunc(n.Dev, maxFieldBytes)
 			}
 			if len(n.State) > 0 && c.Neigh == "" {
-				c.Neigh = strings.ToLower(n.State[0])
+				c.Neigh = trunc(strings.ToLower(n.State[0]), maxFieldBytes)
 			}
 		}
 	} else {
@@ -152,7 +157,7 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 			}
 			for _, a := range assoc.Results {
 				c := get(a.MAC)
-				c.Wireless, c.Dev, c.SSID = true, dev, info.SSID
+				c.Wireless, c.Dev, c.SSID = true, trunc(dev, maxFieldBytes), trunc(info.SSID, maxFieldBytes)
 				c.Signal, c.Conn = a.Signal, a.Connected
 				c.RxRate, c.TxRate = a.Rx.Rate, a.Tx.Rate
 			}
@@ -217,7 +222,11 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 		line := fmt.Sprintf("%-22s %-16s %-17s %-28s %-7s %-9s %-11s %s",
 			trunc(orDefault(c.Host, "?"), 22), ip, c.MAC, trunc(via, 28), signal, conn, rate, lease)
 		if len(c.IPs) > 1 {
-			line += "  also " + strings.Join(c.IPs[1:], " ")
+			extra := c.IPs[1:]
+			if len(extra) > maxExtraIPs {
+				extra = append(extra[:maxExtraIPs:maxExtraIPs], fmt.Sprintf("(+%d)", len(c.IPs)-1-maxExtraIPs))
+			}
+			line += "  also " + strings.Join(extra, " ")
 		}
 		if filter != "" && !strings.Contains(strings.ToLower(line), filter) {
 			continue
@@ -236,11 +245,23 @@ var reMAC = regexp.MustCompile(`^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`)
 
 func isMAC(s string) bool { return reMAC.MatchString(s) }
 
+// maxFieldBytes bounds any one field a network client can influence (host name, SSID,
+// interface name, neighbour state); maxExtraIPs bounds the addresses listed after the first.
+const (
+	maxFieldBytes = 64
+	maxExtraIPs   = 4
+)
+
+// trunc cuts s to at most n bytes, on a character boundary, ending in "~" when it cut.
 func trunc(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n-1] + "~"
+	cut := n - 1
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "~"
 }
 
 // ---------------------------------------------------------------- firewall_show

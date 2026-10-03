@@ -56,8 +56,8 @@ type uciTokenIn struct {
 // uciConfDir is /etc/config on the router and a fixture directory in tests.
 var uciConfDir = "/etc/config"
 
-func (s *Server) pendingPath() string  { return path.Join(s.statePath, "pending.json") }
-func (s *Server) snapshotRoot() string { return path.Join(s.statePath, "rollback") }
+func (s *Server) pendingPath() string  { return pendingPath(s.statePath) }
+func (s *Server) snapshotRoot() string { return rollbackDir(s.statePath) }
 
 func (s *Server) pendingSummary() string {
 	s.mu.RLock()

@@ -54,6 +54,70 @@ type MFAStore struct {
 	secrets map[string]string    // client -> base32 secret
 	unlocks map[string]time.Time // client -> unlocked until
 	lastCtr map[string]uint64    // client -> last accepted time-step, for replay
+
+	// Failed-attempt limiter. In memory only, and in the store rather than the Policy: a
+	// Policy is rebuilt on every config reload, which would hand an attacker a fresh budget
+	// each time `allow` or any other edit touches the file.
+	fails    map[string]*failState
+	maxFails int
+	lockout  time.Duration
+}
+
+// failState is one client's run of wrong codes. streak counts lockouts since the last success,
+// so a repeat offender waits twice as long each time.
+type failState struct {
+	count  int
+	streak int
+	until  time.Time
+}
+
+// Limiter defaults and bounds. One hour is the longest a lockout can grow: an attacker holding
+// only a client's token can lock the operator out of mfa_unlock for that long, and no longer.
+const (
+	defaultMFAMaxFailures = 5
+	defaultMFALockout     = 300 * time.Second
+	maxMFAMaxFailures     = 100
+	maxMFALockout         = time.Hour
+)
+
+// LockoutError is returned while a client is locked out of mfa_unlock.
+type LockoutError struct{ RetryAfter time.Duration }
+
+func (e *LockoutError) Error() string {
+	return fmt.Sprintf("too many failed codes: mfa_unlock is locked for this client; retry in %s",
+		e.RetryAfter.Round(time.Second))
+}
+
+// SetLimit sets how many consecutive wrong codes lock a client out and for how long the first
+// lockout lasts. A value that is not positive keeps the default; both are capped.
+func (m *MFAStore) SetLimit(maxFails int, lockout time.Duration) {
+	if maxFails <= 0 {
+		maxFails = defaultMFAMaxFailures
+	}
+	if maxFails > maxMFAMaxFailures {
+		maxFails = maxMFAMaxFailures
+	}
+	if lockout <= 0 {
+		lockout = defaultMFALockout
+	}
+	if lockout > maxMFALockout {
+		lockout = maxMFALockout
+	}
+	m.mu.Lock()
+	m.maxFails, m.lockout = maxFails, lockout
+	m.mu.Unlock()
+}
+
+// lockoutFor is base doubled once per earlier lockout, capped at an hour.
+func lockoutFor(base time.Duration, streak int) time.Duration {
+	d := base
+	for i := 0; i < streak && d < maxMFALockout; i++ {
+		d *= 2
+	}
+	if d > maxMFALockout {
+		d = maxMFALockout
+	}
+	return d
 }
 
 // reloadLocked re-reads the secret file when it has changed on disk. Callers hold m.mu.
@@ -82,6 +146,7 @@ func (m *MFAStore) reloadLocked() {
 		if fresh[client] != old {
 			delete(m.unlocks, client)
 			delete(m.lastCtr, client)
+			delete(m.fails, client) // a rotated secret is the recovery path from a lockout
 		}
 	}
 	m.secrets, m.mtime = fresh, st.ModTime()
@@ -113,7 +178,9 @@ func LoadMFA(path string) (*MFAStore, error) {
 		secrets: map[string]string{},
 		unlocks: map[string]time.Time{},
 		lastCtr: map[string]uint64{},
+		fails:   map[string]*failState{},
 	}
+	m.maxFails, m.lockout = defaultMFAMaxFailures, defaultMFALockout
 	fresh, err := parseMFAFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -163,6 +230,7 @@ func (m *MFAStore) Enrol(client, issuer, device string) (secret, uri string, err
 	m.secrets[client] = secret
 	delete(m.unlocks, client) // a new secret must not inherit an old unlock
 	delete(m.lastCtr, client)
+	delete(m.fails, client) // and re-enrolling is how a locked-out operator recovers
 	snapshot := make(map[string]string, len(m.secrets))
 	for k, v := range m.secrets {
 		snapshot[k] = v
@@ -204,7 +272,7 @@ func (m *MFAStore) save(secrets map[string]string) error {
 		return err
 	}
 	// Write-and-rename so a crash mid-write cannot leave a half-file that locks you out.
-	tmp := m.path + ".new"
+	tmp := mfaTmpPath(m.path)
 	if err := os.WriteFile(tmp, []byte(b.String()), mfaFileMode); err != nil {
 		return err
 	}
@@ -231,12 +299,53 @@ func (m *MFAStore) Clients() []string {
 
 // Unlock validates a code and opens the window. The error text is deliberately the same for
 // "no secret" and "wrong code" -- distinguishing them tells an attacker which clients are
-// worth attacking.
+// worth attacking, so a client with no secret is counted and locked out exactly like one with.
+//
+// maxFails consecutive wrong codes lock the client out for the lockout time, doubling on each
+// repeat to one hour. During a lockout every code is refused without being checked, so a
+// correct one is not consumed. The wrong code that trips the limit already returns the
+// lockout, which is what makes the start of a lockout visible in the audit log.
 func (m *MFAStore) Unlock(client, code string, window time.Duration, now time.Time) (time.Time, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.reloadLocked()
 
+	if f := m.fails[client]; f != nil && now.Before(f.until) {
+		return time.Time{}, &LockoutError{RetryAfter: f.until.Sub(now)}
+	}
+	until, err := m.checkLocked(client, code, window, now)
+	if err == nil {
+		delete(m.fails, client) // success clears the count and the streak
+		return until, nil
+	}
+	if m.fails == nil {
+		m.fails = map[string]*failState{}
+	}
+	f := m.fails[client]
+	if f == nil {
+		f = &failState{}
+		m.fails[client] = f
+	}
+	f.count++
+	limit, base := m.maxFails, m.lockout
+	if limit <= 0 {
+		limit = defaultMFAMaxFailures
+	}
+	if base <= 0 {
+		base = defaultMFALockout
+	}
+	if f.count >= limit {
+		d := lockoutFor(base, f.streak)
+		f.streak++
+		f.count = 0
+		f.until = now.Add(d)
+		return time.Time{}, &LockoutError{RetryAfter: d}
+	}
+	return time.Time{}, err
+}
+
+// checkLocked is the code check proper. Callers hold m.mu and have handled the lockout.
+func (m *MFAStore) checkLocked(client, code string, window time.Duration, now time.Time) (time.Time, error) {
 	secret := m.secrets[client]
 	code = strings.TrimSpace(code)
 	if secret == "" || len(code) != totpDigits {

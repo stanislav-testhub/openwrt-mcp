@@ -105,7 +105,7 @@ func runStatus(configPath, statePath string, auditLines int, asJSON bool) error 
 
 	// Pairings come from the token store, not from the policy list: a client can be paired
 	// with nothing granted, and that is worth seeing rather than hiding.
-	if ts, err := LoadTokens(statePath + "/tokens"); err == nil {
+	if ts, err := LoadTokens(tokensPath(statePath)); err == nil {
 		names := ts.Clients()
 		sort.Strings(names)
 		for _, n := range names {
@@ -113,7 +113,7 @@ func runStatus(configPath, statePath string, auditLines int, asJSON bool) error 
 		}
 	}
 
-	if b, err := os.ReadFile(statePath + "/pending.json"); err == nil {
+	if b, err := os.ReadFile(pendingPath(statePath)); err == nil {
 		var list []pendingApply
 		if json.Unmarshal(b, &list) == nil {
 			for _, p := range list {
@@ -198,8 +198,8 @@ func tailAudit(path string, n int) []auditRow {
 			continue
 		}
 		out = append(out, auditRow{
-			Time: e.Time, Client: e.Client, Tool: e.Tool, Scope: e.Scope,
-			Outcome: string(e.Outcome), Summary: e.Summary, Error: firstLine(e.Error),
+			Time: e.Time, Client: sanitizeText(e.Client), Tool: sanitizeText(e.Tool), Scope: sanitizeText(e.Scope),
+			Outcome: sanitizeText(string(e.Outcome)), Summary: sanitizeText(e.Summary), Error: sanitizeText(firstLine(e.Error)),
 		})
 	}
 	return out

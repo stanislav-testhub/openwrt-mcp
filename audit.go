@@ -19,7 +19,7 @@ import (
 var secretKeySubstrings = []string{
 	"password", "passwd", "secret", "token", "credential",
 	"apikey", "api_key", "privatekey", "private_key", "passphrase",
-	"psk", "wgkey", "encryption_key", "preshared",
+	"psk", "wgkey", "encryption_key", "preshared", "pwd",
 }
 
 const redacted = "<redacted>"
@@ -29,6 +29,12 @@ const redacted = "<redacted>"
 // secretKeySubstrings because keyId or publicKey are identifiers; here the context is known.
 var reSecretOption = regexp.MustCompile(`(?i)^key[0-9]*$`)
 
+// isSecretOption is the one rule for "does this option or key hold a secret". The audit log and
+// the output masker both call it, so they cannot drift apart.
+func isSecretOption(name string) bool {
+	return isSecretKey(name) || reSecretOption.MatchString(name)
+}
+
 func redact(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
@@ -37,7 +43,7 @@ func redact(v any) any {
 		// that password, so a secret-named option hides the value that goes with it.
 		secretOption := false
 		if o, ok := t["option"].(string); ok {
-			secretOption = isSecretKey(o) || reSecretOption.MatchString(o)
+			secretOption = isSecretOption(o)
 		}
 		out := make(map[string]any, len(t))
 		for k, val := range t {
@@ -103,9 +109,19 @@ func NewAuditor(p string, maxMB int) *Auditor { return &Auditor{path: p, maxMB: 
 func (a *Auditor) Record(e AuditEvent) {
 	if e.Args != nil {
 		e.Args = redact(e.Args)
+		// A TOTP code is a credential for the next 90 seconds and the only secret mfa_unlock
+		// takes. It is masked here, for that tool, because "code" is too common a name to hide
+		// in every tool's arguments.
+		if m, ok := e.Args.(map[string]any); ok && e.Tool == "mfa_unlock" {
+			if _, has := m["code"]; has {
+				m["code"] = redacted
+			}
+		}
 	}
-	e.Summary = truncate(e.Summary, 240)
-	e.Error = truncate(e.Error, 240)
+	// Summaries and errors can carry router output; the log holds no control characters, so a
+	// terminal that tails it is safe too.
+	e.Summary = truncate(sanitizeText(e.Summary), 240)
+	e.Error = truncate(sanitizeText(e.Error), 240)
 	line, err := json.Marshal(e)
 	if err != nil {
 		return
@@ -129,7 +145,7 @@ func (a *Auditor) rotateLocked() {
 	if err != nil || st.Size() < int64(a.maxMB)*1024*1024 {
 		return
 	}
-	_ = os.Rename(a.path, a.path+".1") // one generation is enough; eMMC is 64GB but logs are not the point
+	_ = os.Rename(a.path, auditRotatedPath(a.path)) // one generation is enough; eMMC is 64GB but logs are not the point
 }
 
 func truncate(s string, n int) string {

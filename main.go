@@ -16,7 +16,7 @@ import (
 //
 // Released under the MIT Licence. See the LICENSE file.
 
-var version = "1.0.0"
+var version = "1.1.0"
 
 const sourceURL = "https://github.com/stanislav-testhub/openwrt-mcp (based on github.com/GlassOnTin/openwrt-mcp)"
 
@@ -45,6 +45,9 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+	// Every command that touches state refuses a web-served directory, not just `serve`: `pair`
+	// would otherwise write token digests there.
+	must(checkNotWebServed(*statePath))
 
 	switch args[0] {
 	case "serve":
@@ -87,7 +90,7 @@ func main() {
 		if len(args) != 2 {
 			die("usage: openwrt-mcp pair <client-name>")
 		}
-		ts, err := LoadTokens(*statePath + "/tokens")
+		ts, err := LoadTokens(tokensPath(*statePath))
 		must(err)
 		raw, err := ts.Mint(args[1])
 		must(err)
@@ -98,12 +101,12 @@ func main() {
 		if len(args) != 2 {
 			die("usage: openwrt-mcp unpair <client-name>")
 		}
-		ts, err := LoadTokens(*statePath + "/tokens")
+		ts, err := LoadTokens(tokensPath(*statePath))
 		must(err)
 		fmt.Printf("revoked %d token(s) for %q\n", ts.Revoke(args[1]), args[1])
 
 	case "clients":
-		ts, err := LoadTokens(*statePath + "/tokens")
+		ts, err := LoadTokens(tokensPath(*statePath))
 		must(err)
 		for _, c := range ts.Clients() {
 			fmt.Println(c)
@@ -159,7 +162,7 @@ func main() {
 	case "mfa":
 		// Enrolment is CLI-only for the same reason pair/allow are: the secret is credential
 		// material, and nothing reachable over the network should be able to mint or read it.
-		ms, err := LoadMFA(*statePath + "/mfa")
+		ms, err := LoadMFA(mfaPath(*statePath))
 		must(err)
 		sub := ""
 		if len(args) > 1 {

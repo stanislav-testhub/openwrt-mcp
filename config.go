@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"strconv"
@@ -132,6 +133,15 @@ type Config struct {
 	AuditPath  string
 	AuditMaxMB int
 	Policies   []*Policy
+
+	// Failed-attempt limiter for mfa_unlock (see MFAStore.Unlock).
+	MFAMaxFailures int
+	MFALockout     time.Duration
+
+	// Output redaction (see redact_output.go). On unless the config says '0'; RedactExtra names
+	// further options to treat as secret, lowercased.
+	RedactOutput bool
+	RedactExtra  []string
 }
 
 const (
@@ -141,8 +151,19 @@ const (
 	defaultAuditMaxMB = 16
 )
 
+// parseLockout reads mfa_lockout: bare seconds ('300') or a duration ('5m'). Junk or a value
+// that is not positive is reported as !ok, so the caller keeps the default.
+func parseLockout(s string) (time.Duration, bool) {
+	if n, err := strconv.Atoi(s); err == nil {
+		return time.Duration(n) * time.Second, n > 0
+	}
+	d, err := parseDuration(s)
+	return d, err == nil && d > 0
+}
+
 func LoadConfig(configPath string) (*Config, error) {
-	c := &Config{Listen: defaultListen, Socket: defaultSocket, AuditPath: defaultAuditPath, AuditMaxMB: defaultAuditMaxMB}
+	c := &Config{Listen: defaultListen, Socket: defaultSocket, AuditPath: defaultAuditPath, AuditMaxMB: defaultAuditMaxMB,
+		MFAMaxFailures: defaultMFAMaxFailures, MFALockout: defaultMFALockout, RedactOutput: true}
 	f, err := os.Open(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -158,14 +179,38 @@ func LoadConfig(configPath string) (*Config, error) {
 			if v := s.Options["listen"]; v != "" {
 				c.Listen = v
 			}
+			// A path under the web root or a CGI directory keeps the default, like any other
+			// nonsense value: publishing the audit log or a root-owned socket is never wanted.
 			if v, ok := s.Options["socket"]; ok {
-				c.Socket = v // '' turns the stdio bridge off
+				if err := checkNotWebServed(v); err != nil {
+					log.Printf("openwrt-mcp: ignoring option socket: %v", err)
+				} else {
+					c.Socket = v // '' turns the stdio bridge off
+				}
 			}
 			if v := s.Options["audit"]; v != "" {
-				c.AuditPath = v
+				if err := checkNotWebServed(v); err != nil {
+					log.Printf("openwrt-mcp: ignoring option audit: %v", err)
+				} else {
+					c.AuditPath = v
+				}
 			}
 			if v, err := strconv.Atoi(s.Options["audit_max_mb"]); err == nil && v > 0 {
 				c.AuditMaxMB = v
+			}
+			if v, err := strconv.Atoi(s.Options["mfa_max_failures"]); err == nil && v > 0 {
+				c.MFAMaxFailures = min(v, maxMFAMaxFailures)
+			}
+			if d, ok := parseLockout(s.Options["mfa_lockout"]); ok {
+				c.MFALockout = min(d, maxMFALockout)
+			}
+			// Only a literal 0 turns redaction off: a typo must not.
+			if v, ok := s.Options["redact_output"]; ok {
+				c.RedactOutput = v != "0"
+			}
+			names := append(strings.Fields(s.Options["redact_extra"]), s.Lists["redact_extra"]...)
+			for _, n := range names {
+				c.RedactExtra = append(c.RedactExtra, strings.ToLower(strings.TrimSpace(n)))
 			}
 		case "policy":
 			p, err := policyFromSection(s)
@@ -484,7 +529,7 @@ func (ts *TokenStore) save() error {
 		fmt.Fprintf(&b, "%s %s\n", h, c)
 	}
 	ts.mu.RUnlock()
-	tmp := ts.path + ".tmp"
+	tmp := tokensTmpPath(ts.path)
 	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
 		return err
 	}

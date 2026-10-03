@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -103,24 +103,13 @@ func textResult(s string) *mcp.CallToolResult {
 	if strings.TrimSpace(s) == "" {
 		s = "(no output)"
 	}
-	if len(s) > maxResultBytes {
-		// Marked loudly: a silently truncated result reads as a complete one.
-		// Cut on a character boundary: a multi-byte character split in two reaches the model as
-		// a replacement character.
-		cut := maxResultBytes
-		for cut > 0 && !utf8.RuneStart(s[cut]) {
-			cut--
-		}
-		s = s[:cut] + fmt.Sprintf(
-			"\n\n[TRUNCATED: %d bytes total, %d shown. Output is cut mid-stream and may not parse. "+
-				"Narrow the request -- a more specific ubus method, a logread pattern, or a filter.]",
-			len(s), cut)
-	}
-	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: s}}}
+	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: capBytes(s, maxResultBytes)}}}
 }
 
 func errResult(s string) *mcp.CallToolResult {
-	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: s}}}
+	// Bounded like a result: an error that carries a command's whole output can flood a
+	// context window just as well.
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: capBytes(s, maxResultBytes)}}}
 }
 
 // maxArrayElems is how many elements of a long array survive pruning.
@@ -213,6 +202,60 @@ func (s *Server) mfaGate(p *Policy, client, tool string, now time.Time) string {
 		"it stays unlocked for %s", tool, client, p.MFAWindow)
 }
 
+// maskOutput applies the redaction rule for one tool, with the config as it is now.
+func (s *Server) maskOutput(tool string, in any, out string) string {
+	c := s.cfg()
+	return maskForTool(tool, in, out, c.RedactExtra, c.RedactOutput)
+}
+
+// presentOutput is the one path every tool result and error text takes to the caller:
+// sanitise, then mask, then bound, then label. Sanitising comes first so that a control or
+// zero-width character inside an option name cannot hide a secret line from the masker; the
+// marker comes last so that nothing can cut it off.
+func (s *Server) presentOutput(tool string, in any, text string) string {
+	text = sanitizeText(text)
+	text = s.maskOutput(tool, in, text)
+	if _, uncapped := uncappedTools[tool]; !uncapped {
+		text = capLines(text, maxLineBytes)
+	}
+	return labelUntrusted(tool, text)
+}
+
+// noteRedaction records, as a system event, that output redaction was switched on or off by
+// the config file. Running unredacted is the operator's call, but it must leave a trace.
+func (s *Server) noteRedaction(on bool, why string) {
+	state := "ENABLED"
+	if !on {
+		state = "DISABLED"
+	}
+	s.audit.Record(AuditEvent{Time: nowISO(), Client: "<system>", Tool: "redact_output", Outcome: OutcomeOK,
+		Summary: "tool output redaction " + state + ": " + why})
+}
+
+// mfaUnlock is the mfa_unlock handler, named and given the clock so a test can drive it. It
+// applies the configured failed-attempt limit before every attempt: the config can change
+// under a running daemon, and the store outlives each version of it.
+func (s *Server) mfaUnlock(client, code string, now time.Time) (string, string, error) {
+	cfg := s.cfg()
+	s.mfa.SetLimit(cfg.MFAMaxFailures, cfg.MFALockout)
+	window := defaultMFAWindow
+	// Use the window from any policy that names this client, so a policy saying
+	// 5m is not silently stretched to the default.
+	for _, p := range cfg.Policies {
+		if p.Client == client && p.Enabled && len(p.MFATools) > 0 {
+			window = p.MFAWindow
+			break
+		}
+	}
+	until, err := s.mfa.Unlock(client, code, window, now)
+	if err != nil {
+		// Returned as an error so a wrong code audits as ERROR, distinct from a policy DENIED.
+		// A lockout is a *LockoutError, which addTool records as DENIED: that one is a decision.
+		return "", "mfa_unlock", err
+	}
+	return fmt.Sprintf("Unlocked until %s (%s).", until.Format(time.RFC3339), window), "mfa_unlock", nil
+}
+
 // ungatedTools need no policy. ubus_list is introspection only -- method names and argument
 // types, never configuration data -- and without it an agent cannot discover what to ask
 // for. mfa_unlock is how you satisfy the second factor, so gating it would be a deadlock;
@@ -265,9 +308,18 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				if out != "" {
 					msg += "\n" + out
 				}
-				return finish(errResult(msg), OutcomeError, summary, err.Error())
+				// Staged changes are echoed in some error texts, and err.Error() is what the
+				// audit log records: both are masked.
+				msg = s.presentOutput(name, in, msg)
+				errMsg := sanitizeText(s.maskOutput(name, in, err.Error()))
+				outcome := OutcomeError
+				var lock *LockoutError
+				if errors.As(err, &lock) {
+					outcome = OutcomeDenied // "we said no", not "it broke"
+				}
+				return finish(errResult(msg), outcome, summary, errMsg)
 			}
-			return finish(textResult(out), OutcomeOK, summary, "")
+			return finish(textResult(s.presentOutput(name, in, out)), OutcomeOK, summary, "")
 		})
 }
 

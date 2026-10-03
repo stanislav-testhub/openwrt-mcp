@@ -130,6 +130,43 @@ func TestUnlockUnenrolledIsIndistinguishableFromWrongCode(t *testing.T) {
 	}
 }
 
+// An enrolment that cannot be written is reported, not swallowed.
+func TestEnrolReportsAWriteFailure(t *testing.T) {
+	m, _ := newMFA(t)
+	blocker := filepath.Join(t.TempDir(), "file")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m.path = filepath.Join(blocker, "mfa") // a directory cannot be made under a file
+	if _, _, err := m.Enrol("a", "openwrt-mcp", "testrouter"); err == nil {
+		t.Fatal("Enrol reported success although nothing could be written")
+	}
+}
+
+// A secrets file that cannot be read (here, replaced by a directory) must not wipe the secrets
+// already loaded: one bad write would otherwise lock every operator out.
+func TestUnreadableSecretFileKeepsTheLoadedSecrets(t *testing.T) {
+	m, dir := newMFA(t)
+	if _, _, err := m.Enrol("a", "openwrt-mcp", "testrouter"); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "mfa")
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(p, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(5 * time.Second) // a changed mtime is what triggers the reload
+	if err := os.Chtimes(p, future, future); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(1700000000, 0)
+	if _, err := m.Unlock("a", codeNow(t, m, "a", now), time.Minute, now); err != nil {
+		t.Fatalf("an unreadable secrets file wiped the loaded secrets: %v", err)
+	}
+}
+
 func TestEnrolPersistsAndRotates(t *testing.T) {
 	m, dir := newMFA(t)
 	s1, uri, err := m.Enrol("a", "openwrt-mcp", "testrouter")

@@ -246,3 +246,60 @@ func TestWGScopesAreLiterals(t *testing.T) {
 		t.Error("a grant for wg0 does not cover an explicit request for wg0")
 	}
 }
+
+// wg_new_client prints the new client's private key and a QR code, and both are the point of
+// the tool. The sanitiser, the masker and the line cap all sit on its path now, so the one thing
+// worth asserting end to end is that the wrapper hands the operator exactly what the tool built:
+// the key line unmasked, and the QR (block characters, many short lines) intact.
+func TestWgNewClientThroughTheWrapperIsUntouched(t *testing.T) {
+	withFixtureRoot(t)
+	f := wgFake(t, 0)
+	f.on("uci -q show ddns", "ddns.myddns_ipv4=service\nddns.myddns_ipv4.enabled='0'\nddns.myddns_ipv4.lookup_host='yourhost.example.com'\n")
+	f.on("ubus call network.interface dump", `{"interface":[{"interface":"WAN","up":true,"metric":1,
+		"ipv4-address":[{"address":"100.72.1.2","mask":15}],
+		"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
+	f.on("wg genkey", "CLIENTPRIV=\n")
+	f.on("wg pubkey", "CLIENTPUB=\n")
+	f.on("uci add network wireguard_wg0", "cfg1496fc\n")
+	f.on("uci set", "")
+	f.on("uci add_list", "")
+	f.on("uci commit network", "")
+	f.on("wg set wg0", "")
+
+	// The client name is echoed back in the output. Its shape, a UCI option assignment with a
+	// secret name, is exactly what the masker looks for, so only a real exemption leaves it alone.
+	const name = "lab.x.psk=hunter2"
+	s := testServer(t, grantAll())
+	direct, _, err := s.wgNewClient(context.Background(), wgNewClientIn{Name: name})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapped, isErr := callText(t, connectClient(t, s, "c"), "wg_new_client", map[string]any{"name": name})
+	if isErr {
+		t.Fatalf("the tool failed through the wrapper:\n%s", wrapped)
+	}
+
+	// The test would prove nothing if the output had no key and no QR to damage.
+	if !strings.Contains(direct, "PrivateKey = CLIENTPRIV=") || !strings.Contains(direct, "psk=hunter2") {
+		t.Fatalf("setup: the output lacks the private key line or the echoed name:\n%s", direct)
+	}
+	blocks := 0
+	for _, line := range strings.Split(direct, "\n") {
+		if strings.ContainsAny(line, "█▀▄") {
+			blocks++
+		}
+	}
+	if blocks < 10 {
+		t.Fatalf("setup: only %d QR lines in the output:\n%s", blocks, direct)
+	}
+
+	if wrapped != direct {
+		t.Errorf("the wrapper changed wg_new_client's output (it is exempt from masking and from the line cap, and has nothing to sanitise)\n direct  %q\n wrapped %q", direct, wrapped)
+	}
+	if !strings.Contains(wrapped, "PrivateKey = CLIENTPRIV=") || !strings.Contains(wrapped, "psk=hunter2") {
+		t.Error("something a masker would hide was hidden from the operator (wg_new_client is exempt)")
+	}
+	if strings.Contains(wrapped, "untrusted text") {
+		t.Error("wg_new_client output carries an untrusted-text marker")
+	}
+}

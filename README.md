@@ -159,8 +159,9 @@ openwrt-mcp policies | status | clients
 
 Neither preset includes `exec` or unrestricted `ubus_call`; both bypass the safety rails. The
 read-only ubus list is explicit `object.method` pairs, not `*.list`-style globs, because
-`session.list` returns LuCI session ids. `uci_get '*'` does read secrets (Wi-Fi keys), as any
-config read on OpenWrt does.
+`session.list` returns LuCI session ids. `uci_get '*'` reads every config, but the values of
+secret options (Wi-Fi keys, WireGuard keys, passwords, tokens) come back as `<redacted>`; see
+*Safety model*. `exec` is not masked.
 
 A refusal names the uncovered scope and prints the exact `allow` line that would cover it.
 
@@ -169,6 +170,14 @@ A refusal names the uncovered scope and prints the exact `allow` line that would
 Unchanged from upstream: `openwrt-mcp mfa enrol <client>` prints an `otpauth://` URI; then in a
 policy `list mfa_tools 'uci_apply'`, `option mfa_window '15m'`. One code opens a time-boxed
 window; codes are single-use; unlocks live in memory only.
+
+Wrong codes are limited: in the `config server` section, `option mfa_max_failures '5'` consecutive
+wrong codes lock that client out of `mfa_unlock` for `option mfa_lockout '300'` seconds (`'5m'` also
+works), doubling on each repeat to one hour. A correct code during the lockout is refused and not
+spent. A client with no secret counts the same, so the limit reveals nothing about enrolment, and
+the counters are in memory (a restart, `mfa enrol` or a rotated secret clears them). Each wrong code
+is audited as `ERROR` and a lockout as `DENIED`; the code itself is never logged. The price: whoever
+holds a client's token can keep that client locked out for up to an hour.
 
 ---
 
@@ -200,6 +209,23 @@ window; codes are single-use; unlocks live in memory only.
 - **Credentials.** `wg_new_client` output contains a new private key; the audit log records
   arguments and a summary, never tool output, and redacts secret-looking fields. The server
   private key is read from `wg show dump` and discarded.
+- **Secrets are masked in tool output.** `uci_get`, `uci_apply` (diff and errors), `pkg_config_diff`,
+  `pkg_config_resolve`, `uci_confirm`, `uci_rollback`, `system_status` and `ubus_call` keep the shape
+  of a line and replace the value of a secret option (`key`, `key1`..`key4`, `psk`, `password`,
+  `sae_password`, `passphrase`, `private_key`, `preshared_key`, `token`, `pwd`, anything containing
+  `secret`...) with `<redacted>`. The audit log uses the same rule. `exec`, `logread` and the
+  diagnostics are not masked, and `wg_new_client` is exempt on purpose. In the `config server`
+  section: `list redact_extra 'vendor_blob'` adds names; `option redact_output '0'` turns masking
+  off, and is audited. A masked diff does not show what changed in a secret.
+- **Router output is untrusted.** Host names, SSIDs, log lines and DNS answers are chosen by other
+  devices. Every result has terminal escape sequences, control characters, bidi and zero-width
+  characters and invalid UTF-8 removed, and lines are cut at 1024 bytes (not `exec`, `ubus_call`,
+  `wg_new_client` or the configuration tools). `network_clients`, `logread` and `net_diag` start with
+  an `[untrusted text: ...]` line. That lowers the odds a model obeys such text; it does not remove
+  them, so keep write scopes out of sessions that read it.
+- **State stays off the web.** The state directory, audit log and socket are refused if they sit
+  under `/www`, a `cgi-bin` directory or uhttpd's `home`, even through a symlink.
+- **A threat model** is in [SECURITY.md](SECURITY.md).
 - **Upstream's findings still hold:** rpcd ACLs do not bind a root process on the local ubus
   socket, so they are not relied on; rpcd's own apply/rollback keeps its state in rpcd memory
   and tmpfs, which is why the snapshot is ours and on flash.
@@ -230,6 +256,19 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   after 6 s and it rolled the change back at startup.
 - **Refusals:** `exec`, `ubus_call session.list`, out-of-scope `uci_apply` (each naming the
   grant line), any `uci_apply` on the policy config, unauthenticated HTTP (audited).
+- **Output safety (1.1.0), on the same board:** `uci_get wireless` and `ubus_call
+  network.wireless status` return `<redacted>` for every Wi-Fi `key`, while `ssid`,
+  `encryption` and look-alike names such as `wpa_disable_eapol_key_retries` are untouched
+  (numbers, booleans and arrays in the JSON reply too). A `uci_apply` dry run that sets a key
+  shows it redacted and leaves nothing staged. `network_clients` and `logread` start with the
+  untrusted-text marker. Five wrong `mfa_unlock` codes from a client with no secret lock it out
+  for 5 minutes (the sixth is refused with a retry time); the audit log records four `ERROR`
+  entries then `DENIED`, and none of the submitted codes appear in it. A syslog line written
+  with `ubus call log write` that held CSI and OSC sequences, a colour code, BEL and a bidi
+  override (all present in the router's own log) came back through `logread` with only the
+  text and the tab left, and an over-long line was cut at 1024 bytes with a `[+N bytes]` note.
+  The syntax of `uci changes` (`+=`, `-=`, `'\''`, a bare `-path` for a delete) was captured
+  from the router and is a test fixture.
 
 Unit and end-to-end tests (real MCP client over in-memory transport and over the bridge
 handshake) run on any OS against a fake router: apply/confirm/rollback/timeout, **restart
@@ -238,7 +277,7 @@ add/list/remove against a captured 25.12 config, client join, log filtering, apk
 `.apk-new` resolution with rollback, preset contents, scope glob semantics.
 
 **Not yet verified on hardware** (covered by the fake-router tests only): `service_control`,
-`pkg_change` with `commit`, the LuCI page rendering, a
+`pkg_change` with `commit`, the LuCI page rendering, the web-root guard on a real `/www` path or symlink, a
 real power cycle (the recovery path is the same one the `SIGKILL` test exercises), and keep.d
 across a real sysupgrade. Reports from other boards are welcome.
 

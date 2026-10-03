@@ -50,8 +50,12 @@ func (s *Server) cfg() *Config {
 		if stale {
 			if fresh, err := LoadConfig(s.configPath); err == nil {
 				s.mu.Lock()
+				was := s.config
 				s.config, s.cfgTime = fresh, st.ModTime()
 				s.mu.Unlock()
+				if was != nil && was.RedactOutput != fresh.RedactOutput {
+					s.noteRedaction(fresh.RedactOutput, "config file changed")
+				}
 				log.Printf("openwrt-mcp: reloaded config (%d policies)", len(fresh.Policies))
 			} else {
 				s.mu.Lock()
@@ -71,11 +75,14 @@ func NewServer(configPath, statePath string) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	mfa, err := LoadMFA(path.Join(statePath, "mfa"))
+	if err := checkStatePaths(statePath, cfg); err != nil {
+		return nil, err
+	}
+	mfa, err := LoadMFA(mfaPath(statePath))
 	if err != nil {
 		return nil, err
 	}
-	tokens, err := LoadTokens(path.Join(statePath, "tokens"))
+	tokens, err := LoadTokens(tokensPath(statePath))
 	if err != nil {
 		return nil, err
 	}
@@ -88,6 +95,9 @@ func NewServer(configPath, statePath string) (*Server, error) {
 		audit:      NewAuditor(cfg.AuditPath, cfg.AuditMaxMB),
 		servers:    map[string]*mcp.Server{},
 		pending:    map[string]*pendingApply{},
+	}
+	if !cfg.RedactOutput {
+		s.noteRedaction(false, "option redact_output '0' at startup")
 	}
 	s.recoverPending()
 	return s, nil

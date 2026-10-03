@@ -39,6 +39,11 @@ updates and a `goldenCalls` entry in `contract_test.go`.
 
 Close the remaining ways secrets and attacker-controlled text reach the model. The code changes are small.
 
+**Status: shipped in 1.1.0** (see `CHANGELOG.md` and the threat model in `SECURITY.md`). Not done from
+the list below: the per-policy opt-out in 1.1 (only the global `redact_output` option exists), and
+masking of "future search output", since no search tool exists yet. The line cap applies to every tool
+except those listed as exempt, which is wider than the four tools named in 1.2.
+
 ### 1.1 Redact secrets in tool output
 
 - **Problem.** The audit log redacts secret options, but tool results do not. `uci_get` on a whole `wireless` or
