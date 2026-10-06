@@ -271,7 +271,10 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 	scopeOf func(In) []string,
 	fn func(context.Context, In) (string, string, error),
 ) {
-	mcp.AddTool(srv, &mcp.Tool{Name: name, Description: desc, Annotations: ann},
+	a := *ann // the presets are shared; the title and openWorldHint belong to this tool
+	a.Title = toolTitles[name]
+	a.OpenWorldHint = ptr(openWorldTools[name])
+	mcp.AddTool(srv, &mcp.Tool{Name: name, Title: a.Title, Description: desc, Annotations: &a},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 			started := time.Now()
 			scopes := scopeOf(in)
@@ -355,6 +358,8 @@ var (
 	annRead = &mcp.ToolAnnotations{ReadOnlyHint: true}
 	annIdem = &mcp.ToolAnnotations{DestructiveHint: ptr(false), IdempotentHint: true}
 	annDest = &mcp.ToolAnnotations{DestructiveHint: ptr(true)}
+	// annDestIdem: removes something, and a repeat with the same arguments changes nothing more.
+	annDestIdem = &mcp.ToolAnnotations{DestructiveHint: ptr(true), IdempotentHint: true}
 	// annWrite: changes state (a file in /tmp, say) but cannot destroy anything, and is not
 	// idempotent (each call makes a new file).
 	annWrite = &mcp.ToolAnnotations{DestructiveHint: ptr(false)}

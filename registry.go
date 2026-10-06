@@ -208,7 +208,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		"Remove a WireGuard peer (by name, public key or section) from the running interface and the config. "+
 			"Refuses a peer connected in the last 3 minutes unless force=true. "+
 			"Policy scope: 'wireguard.<iface>.<name>' ('_' for iface when omitted).",
-		annDest, wgRemoveScope,
+		annDestIdem, wgRemoveScope,
 		func(ctx context.Context, in wgRemoveIn) (string, string, error) {
 			return s.wgRemoveClient(ctx, client, in)
 		})
@@ -233,6 +233,43 @@ var allToolNames = []string{
 	"net_diag", "uci_get", "uci_apply", "uci_confirm", "uci_rollback", "service_list", "service_control",
 	"pkg_query", "pkg_change", "pkg_config_diff", "pkg_config_resolve", "sysupgrade", "wg_list_clients",
 	"wg_new_client", "wg_remove_client", "mfa_unlock",
+}
+
+// toolTitles is each tool's display name. Clients show title, then annotations.title, then
+// the name; addTool sets both title fields from here.
+var toolTitles = map[string]string{
+	"ubus_list":          "List ubus objects",
+	"ubus_call":          "Call a ubus method",
+	"exec":               "Run a command (no shell)",
+	"system_status":      "Router status",
+	"logread":            "System log",
+	"network_clients":    "Network clients",
+	"firewall_show":      "Firewall ruleset",
+	"net_diag":           "Network diagnostics",
+	"uci_get":            "Read configuration",
+	"uci_apply":          "Change configuration (auto-rollback)",
+	"uci_confirm":        "Confirm pending change",
+	"uci_rollback":       "Roll back pending change",
+	"service_list":       "List services",
+	"service_control":    "Control a service",
+	"pkg_query":          "Query packages",
+	"pkg_change":         "Install, remove or upgrade packages",
+	"pkg_config_diff":    "Review new package configs",
+	"pkg_config_resolve": "Resolve a package config",
+	"sysupgrade":         "Firmware checks and backup (never flashes)",
+	"wg_list_clients":    "List WireGuard peers",
+	"wg_new_client":      "Add WireGuard peer",
+	"wg_remove_client":   "Remove WireGuard peer",
+	"mfa_unlock":         "Unlock MFA-gated tools",
+}
+
+// openWorldTools can reach past the router itself: the internet, a host named in the
+// arguments, or an arbitrary program or ubus method. The hint is per tool, so one such mode is
+// enough (pkg_query refresh runs apk update, sysupgrade check asks the owut server, uci_apply
+// probes ping and resolve). The spec default is true, so every other tool says false.
+var openWorldTools = map[string]bool{
+	"net_diag": true, "uci_apply": true, "pkg_query": true, "pkg_change": true,
+	"sysupgrade": true, "ubus_call": true, "exec": true,
 }
 
 // ---------------------------------------------------------------- small tool inputs

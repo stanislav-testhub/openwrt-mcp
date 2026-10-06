@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+Changed
+- **Tool titles and hints (ROADMAP 3.4).**
+  - Every tool now has a display `title`, set both at the top level and in `annotations.title`
+    for older clients.
+  - Every tool states `openWorldHint` explicitly; the spec default is `true`, so every tool
+    used to claim it. It is `true` for the seven tools that can reach past the router:
+    - `net_diag`;
+    - `uci_apply`, whose probes ping and resolve;
+    - `pkg_query`, whose `refresh` runs `apk update`;
+    - `pkg_change`;
+    - `sysupgrade`, whose `check` runs `owut`;
+    - `ubus_call`;
+    - `exec`.
+  - `wg_remove_client` is now marked idempotent: removing the same peer again changes nothing.
+  - A contract test pins the title and the four hints of every tool.
+
 ## 1.2.0 -- Reliable changes
 
 Closes ROADMAP milestone 2 (items 2.1 to 2.6). No tool is added: every item is a parameter or a

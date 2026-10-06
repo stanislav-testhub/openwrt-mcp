@@ -253,6 +253,94 @@ func TestAnnotationsAgreeWithThePresets(t *testing.T) {
 	}
 }
 
+// Every tool's display title and behaviour hints, written out from the tool documentation
+// (ROADMAP 3.4), not copied from registry.go. openWorld means the tool can reach past the
+// router itself: the internet, a host named in its arguments, or an arbitrary program or ubus
+// method. Text that LAN devices write (host names, SSIDs) does not make a tool open-world;
+// that is what the untrusted-output markers are for. destructive is nil where the spec makes
+// it meaningless (read-only tools).
+func TestToolTitlesAndHints(t *testing.T) {
+	yes, no := true, false
+	want := map[string]struct {
+		title                  string
+		readOnly, idempotent   bool
+		destructive, openWorld *bool
+	}{
+		"system_status":      {"Router status", true, false, nil, &no},
+		"logread":            {"System log", true, false, nil, &no},
+		"network_clients":    {"Network clients", true, false, nil, &no},
+		"firewall_show":      {"Firewall ruleset", true, false, nil, &no},
+		"net_diag":           {"Network diagnostics", true, false, nil, &yes},
+		"uci_get":            {"Read configuration", true, false, nil, &no},
+		"uci_apply":          {"Change configuration (auto-rollback)", false, false, &yes, &yes},
+		"uci_confirm":        {"Confirm pending change", false, true, &no, &no},
+		"uci_rollback":       {"Roll back pending change", false, true, &no, &no},
+		"service_list":       {"List services", true, false, nil, &no},
+		"service_control":    {"Control a service", false, false, &yes, &no},
+		"pkg_query":          {"Query packages", true, false, nil, &yes},
+		"pkg_change":         {"Install, remove or upgrade packages", false, false, &yes, &yes},
+		"pkg_config_diff":    {"Review new package configs", true, false, nil, &no},
+		"pkg_config_resolve": {"Resolve a package config", false, false, &yes, &no},
+		"sysupgrade":         {"Firmware checks and backup (never flashes)", false, false, &no, &yes},
+		"wg_list_clients":    {"List WireGuard peers", true, false, nil, &no},
+		"wg_new_client":      {"Add WireGuard peer", false, false, &yes, &no},
+		"wg_remove_client":   {"Remove WireGuard peer", false, true, &yes, &no},
+		"ubus_list":          {"List ubus objects", true, false, nil, &no},
+		"ubus_call":          {"Call a ubus method", false, false, &yes, &yes},
+		"exec":               {"Run a command (no shell)", false, false, &yes, &yes},
+		"mfa_unlock":         {"Unlock MFA-gated tools", false, true, &no, &no},
+	}
+	str := func(b *bool) string {
+		if b == nil {
+			return "unset"
+		}
+		if *b {
+			return "true"
+		}
+		return "false"
+	}
+	cs := connectClient(t, testServer(t, ""), "c")
+	seen := map[string]bool{}
+	for _, tl := range listedTools(t, cs) {
+		seen[tl.Name] = true
+		w, ok := want[tl.Name]
+		if !ok {
+			t.Errorf("%s: no row in this table; add its title and hints", tl.Name)
+			continue
+		}
+		if tl.Title != w.title {
+			t.Errorf("%s: title %q, want %q", tl.Name, tl.Title, w.title)
+		}
+		a := tl.Annotations
+		if a == nil {
+			t.Errorf("%s: no annotations", tl.Name)
+			continue
+		}
+		// Older clients read the title from the annotations only.
+		if a.Title != w.title {
+			t.Errorf("%s: annotations.title %q, want %q", tl.Name, a.Title, w.title)
+		}
+		if a.ReadOnlyHint != w.readOnly {
+			t.Errorf("%s: readOnlyHint %v, want %v", tl.Name, a.ReadOnlyHint, w.readOnly)
+		}
+		if a.IdempotentHint != w.idempotent {
+			t.Errorf("%s: idempotentHint %v, want %v", tl.Name, a.IdempotentHint, w.idempotent)
+		}
+		if str(a.DestructiveHint) != str(w.destructive) {
+			t.Errorf("%s: destructiveHint %s, want %s", tl.Name, str(a.DestructiveHint), str(w.destructive))
+		}
+		if str(a.OpenWorldHint) != str(w.openWorld) {
+			t.Errorf("%s: openWorldHint %s, want %s (the spec default is true, so it must be explicit)",
+				tl.Name, str(a.OpenWorldHint), str(w.openWorld))
+		}
+	}
+	for name := range want {
+		if !seen[name] {
+			t.Errorf("%s is in this table but not listed by the server", name)
+		}
+	}
+}
+
 func TestPresetsNestAndKeepTheDangerousToolsOut(t *testing.T) {
 	grants := func(preset string) map[string]map[string]bool {
 		out := map[string]map[string]bool{}

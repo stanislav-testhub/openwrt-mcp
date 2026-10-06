@@ -266,6 +266,8 @@ also fixes the catalog-level defects a measurement of `tools/list` found. **It a
 
 ### 3.4 Accurate annotations
 
+**Status: done on `main`, not yet released** (`TestToolTitlesAndHints` pins the table).
+
 - **Problem.** No tool has a `title`, and `openWorldHint` is unset everywhere. The spec default is `true`, so every
   tool claims to reach the open world. Clients use these hints to decide what to auto-approve.
 - **Ships.** `title` on every tool. `openWorldHint` set explicitly: false for closed-world router tools, true for

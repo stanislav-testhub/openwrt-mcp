@@ -23,8 +23,10 @@ cross-compiles every supported architecture.
 - **No shell.** Commands are argv slices passed to `run`/`runJSON`; validate every name that
   ends up in an argv, and refuse values that start with `-`.
 - **Every new tool** needs a scope that a policy can grant narrowly, an annotation
-  (`annRead`, `annIdem` or `annDest`), a place in the `@readonly` or `@operator` preset (or a
-  reason it is in neither), a row in the README tool table and tests against `fakeRouter`.
+  (`annRead`, `annIdem`, `annDest`, `annDestIdem` or `annWrite`), a title in `toolTitles`
+  (and an entry in `openWorldTools` if it can reach past the router), a place in the
+  `@readonly` or `@operator` preset (or a reason it is in neither), a row in the README tool
+  table and tests against `fakeRouter`.
 - **Changes that write configuration** go through the snapshot / arm / confirm path in
   `rollback.go`, never a bare `uci commit`.
 - **Fixtures must not contain real data.** Use `192.168.1.x`, `10.x`, `aa:bb:cc:...` MACs,
