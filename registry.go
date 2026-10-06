@@ -95,9 +95,17 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 	addTool(s, srv, client, "uci_get",
 		"Read configuration as config.section.option=value lines. Give a config to dump it, a section to narrow, "+
 			"an option for one value; ids=true shows anonymous sections by stable id. Includes secrets such as "+
-			"Wi-Fi keys. Policy scope: '<config>', '<config>.<section>' or '<config>.<section>.<option>' "+
+			"Wi-Fi keys. The output ends with '# revision of <config>: <hex>' for uci_apply expected_revisions. "+
+			"history=list|diff:<id> shows the kept versions of a config from before each confirmed change. "+
+			"Policy scope: '<config>', '<config>.<section>' or '<config>.<section>.<option>' "+
 			"('<config>.*' covers section/option reads, not the whole config).",
-		annRead, uciGetScope, uciGet)
+		annRead, uciGetScope,
+		func(ctx context.Context, in uciGetIn) (string, string, error) {
+			if in.History != "" {
+				return s.uciHistory(ctx, in)
+			}
+			return uciGet(ctx, in)
+		})
 
 	addTool(s, srv, client, "uci_apply",
 		"Change configuration safely. Stages the changes, commits, reloads the affected services, and ARMS A "+
@@ -108,7 +116,14 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 			"  {config:dhcp, section:pi, op:create, type:host}\n"+
 			"  {config:dhcp, section:pi, option:mac, value:'88:a2:9e:8a:e4:15'}\n"+
 			"  {config:dhcp, section:pi, option:ip, value:'192.168.1.141'}\n"+
-			"Changes run in order. Policy scope per change: '<config>.<section>.<option>' or '<config>.<section>'.",
+			"Changes run in order. The dry run also asks the service's own checker where one exists (fw4 check for "+
+			"firewall) and lists only NEW problems; a real apply refuses them unless force=true. "+
+			"expected_revisions (from uci_get) refuses the call if a config changed meanwhile. probe=[{kind:ping|"+
+			"resolve, target}] checks the router after the reload; a change to the management path (LAN interface, "+
+			"SSH listener, the rules that let SSH in) needs a probe or force. restore=<id> (from uci_get "+
+			"history=list) puts a past version of one config back the same way. "+
+			"Policy scope per change: '<config>.<section>.<option>' or '<config>.<section>'; restore: '<config>'; "+
+			"each probe: 'probe.<kind>.<target>'.",
 		annDest, uciScopes,
 		func(ctx context.Context, in uciApplyIn) (string, string, error) { return s.uciApply(ctx, client, in) })
 
@@ -134,6 +149,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 	addTool(s, srv, client, "service_control",
 		"start / stop / restart / reload / enable / disable an init script via procd. Stopping or disabling "+
 			"dropbear, network, rpcd or openwrt-mcp is refused (it would cut the path to this tool). "+
+			"Waits up to `wait` seconds for the state to settle and says if it did not. "+
 			"Policy scope: \"<service>.<action>\".",
 		annDest, serviceControlScope, serviceControl)
 
@@ -184,14 +200,18 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 			"contains a NEW PRIVATE KEY: show it to the operator, never store it. One config per device. "+
 			"Policy scope: 'wireguard.<iface>' (or 'wireguard' when iface is omitted).",
 		annDest, wgNewScope,
-		func(ctx context.Context, in wgNewClientIn) (string, string, error) { return s.wgNewClient(ctx, in) })
+		func(ctx context.Context, in wgNewClientIn) (string, string, error) {
+			return s.wgNewClient(ctx, client, in)
+		})
 
 	addTool(s, srv, client, "wg_remove_client",
 		"Remove a WireGuard peer (by name, public key or section) from the running interface and the config. "+
 			"Refuses a peer connected in the last 3 minutes unless force=true. "+
 			"Policy scope: 'wireguard.<iface>.<name>' ('_' for iface when omitted).",
 		annDest, wgRemoveScope,
-		func(ctx context.Context, in wgRemoveIn) (string, string, error) { return s.wgRemoveClient(ctx, in) })
+		func(ctx context.Context, in wgRemoveIn) (string, string, error) {
+			return s.wgRemoveClient(ctx, client, in)
+		})
 
 	// ---- second factor
 

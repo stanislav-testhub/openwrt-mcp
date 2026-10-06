@@ -29,6 +29,7 @@ type Server struct {
 	tokens     *TokenStore
 
 	applyMu sync.Mutex // serialises uci staging: /tmp/.uci is shared by every uci user
+	histMu  sync.Mutex // serialises writes to the config history
 
 	mu      sync.RWMutex
 	config  *Config

@@ -276,6 +276,7 @@ func serviceList(ctx context.Context, in serviceListIn) (string, string, error) 
 type serviceControlIn struct {
 	Name   string `json:"name" jsonschema:"init script name as listed by service_list, e.g. 'dnsmasq'"`
 	Action string `json:"action" jsonschema:"start | stop | restart | reload | enable | disable"`
+	Wait   int    `json:"wait,omitempty" jsonschema:"seconds to wait for the service state to settle after the action (default 10, max 60)"`
 }
 
 var serviceActions = map[string]bool{"start": true, "stop": true, "restart": true, "reload": true, "enable": true, "disable": true}
@@ -286,9 +287,14 @@ var serviceActions = map[string]bool{"start": true, "stop": true, "restart": tru
 // says. Restarting them is allowed -- they come back.
 var lifelineServices = map[string]bool{"dropbear": true, "network": true, "rpcd": true, "openwrt-mcp": true}
 
-// serviceSettle is how long service_control waits before reading the state back. A variable
-// so tests need not sleep for real.
-var serviceSettle = time.Second
+// service_control reads the state back every servicePoll until serviceStableReads identical
+// reads in a row (a service that comes up and dies again is not "running"), or the wait runs
+// out. Variables so tests need not sleep for real.
+var (
+	servicePoll        = 500 * time.Millisecond
+	serviceWaitUnit    = time.Second
+	serviceStableReads = 3
+)
 
 func serviceControlScope(in serviceControlIn) []string { return []string{in.Name + "." + in.Action} }
 
@@ -314,12 +320,62 @@ func serviceControl(ctx context.Context, in serviceControlIn) (string, string, e
 	if err != nil {
 		return out, "", fmt.Errorf("%s %s: %w", in.Action, in.Name, err)
 	}
-	// rc init returns before a procd service has settled; give it a moment.
-	time.Sleep(serviceSettle)
-	after, _ := rcList(ctx)
-	e := after[in.Name]
-	return fmt.Sprintf("%s %s: done. Now enabled=%v running=%v.", in.Action, in.Name, e.Enabled, e.Running),
-		in.Action + " " + in.Name, nil
+	// rc init returns before a procd service has settled.
+	wait := time.Duration(clampInt(in.Wait, 10, 1, 60)) * serviceWaitUnit
+	e, took, settled := awaitService(ctx, in.Name, wait)
+	if !settled {
+		return fmt.Sprintf("%s %s: done, but the state did not settle within %s (last read enabled=%v running=%v; "+
+				"it kept changing, which looks like a crash loop). Check logread.", in.Action, in.Name, wait, e.Enabled, e.Running),
+			in.Action + " " + in.Name, nil
+	}
+	msg := fmt.Sprintf("%s %s: done. Now enabled=%v running=%v. Settled after %s.",
+		in.Action, in.Name, e.Enabled, e.Running, took.Round(100*time.Millisecond))
+	if why := contradiction(in.Action, e); why != "" {
+		msg += " Note: " + why + " -- check logread."
+	}
+	return msg, in.Action + " " + in.Name, nil
+}
+
+// awaitService polls rc list until the service's state has been the same for serviceStableReads
+// reads in a row. settled is false if wait ran out first (or ctx ended); e is the last state read.
+func awaitService(ctx context.Context, name string, wait time.Duration) (e rcEntry, took time.Duration, settled bool) {
+	start := time.Now()
+	same := 0
+	for first := true; ; first = false {
+		if m, err := rcList(ctx); err == nil {
+			cur := m[name]
+			if !first && cur == e {
+				same++
+			} else {
+				same = 1
+			}
+			e = cur
+		} else {
+			same = 0
+		}
+		if same >= serviceStableReads {
+			return e, time.Since(start), true
+		}
+		if time.Since(start) >= wait || ctx.Err() != nil {
+			return e, time.Since(start), false
+		}
+		time.Sleep(servicePoll)
+	}
+}
+
+// contradiction names what the final state should have been when it is not.
+func contradiction(action string, e rcEntry) string {
+	switch {
+	case (action == "start" || action == "restart" || action == "reload") && !e.Running:
+		return "expected running=true (a one-shot init script without a procd instance always reports stopped)"
+	case action == "stop" && e.Running:
+		return "expected running=false"
+	case action == "enable" && !e.Enabled:
+		return "expected enabled=true"
+	case action == "disable" && e.Enabled:
+		return "expected enabled=false"
+	}
+	return ""
 }
 
 // ---------------------------------------------------------------- logread

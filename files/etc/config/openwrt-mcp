@@ -18,6 +18,10 @@ config server
 	# turns it off, and doing so leaves an audit entry. redact_extra adds your own option names.
 	# option redact_output '1'
 	# list redact_extra 'vendor_blob'
+	# After a change is confirmed, the config as it was before is kept (uci_get history=list,
+	# uci_apply restore=<id>). This many versions per config; 0 turns history off, at most 20.
+	# The entries hold secrets like /etc/config does and are part of a sysupgrade backup.
+	# option history_keep '5'
 
 # No policies by default: every gated tool is denied until you grant it.
 # ubus_list and mfa_unlock are the exceptions -- introspection and the second factor itself.

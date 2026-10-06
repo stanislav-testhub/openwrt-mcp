@@ -101,7 +101,7 @@ func TestLogreadSince(t *testing.T) {
 func TestServiceControlRefusesToCutTheLifeline(t *testing.T) {
 	f := newFakeRouter(t)
 	f.on("ubus call rc list", `{"dropbear":{"enabled":true,"running":true},"network":{"enabled":true}}`)
-	for _, in := range []serviceControlIn{{"dropbear", "stop"}, {"network", "disable"}, {"openwrt-mcp", "stop"}} {
+	for _, in := range []serviceControlIn{{Name: "dropbear", Action: "stop"}, {Name: "network", Action: "disable"}, {Name: "openwrt-mcp", Action: "stop"}} {
 		if _, _, err := serviceControl(context.Background(), in); err == nil {
 			t.Errorf("%s %s was allowed", in.Action, in.Name)
 		}
@@ -110,10 +110,10 @@ func TestServiceControlRefusesToCutTheLifeline(t *testing.T) {
 		t.Error("rc init reached for a refused action")
 	}
 	f.on("ubus call rc init", "")
-	if _, _, err := serviceControl(context.Background(), serviceControlIn{"dropbear", "restart"}); err != nil {
+	if _, _, err := serviceControl(context.Background(), serviceControlIn{Name: "dropbear", Action: "restart"}); err != nil {
 		t.Errorf("restart of dropbear should be allowed: %v", err)
 	}
-	if _, _, err := serviceControl(context.Background(), serviceControlIn{"nosuch", "restart"}); err == nil {
+	if _, _, err := serviceControl(context.Background(), serviceControlIn{Name: "nosuch", Action: "restart"}); err == nil {
 		t.Error("unknown service accepted")
 	}
 }

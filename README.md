@@ -55,10 +55,10 @@ Nothing in the code is specific to that board.
 | `network_clients` | tool | DHCP leases + static hosts + neighbour table + every AP's association list, joined by MAC: name, IP, SSID, signal, rates, connected time, lease. |
 | `firewall_show` | tool | `nft list ruleset`, `fw4 print`, `fw4 check`, one table or chain. |
 | `net_diag` | `<action>[.<target>]` | ping / traceroute / nslookup (optionally from a given interface), routes, policy rules, neighbours. |
-| `uci_get` | `<config>[.<section>[.<option>]]` | `uci show`, optionally with stable `cfgXXXXXX` ids. |
-| `uci_apply` | `<config>.<section>[.<option>]` per change | Stage, commit, reload, **rollback armed**. `dry_run` shows exactly what would change. |
+| `uci_get` | `<config>[.<section>[.<option>]]` | `uci show`, optionally with stable `cfgXXXXXX` ids. Ends with the config's **revision**. `history=list` / `diff:<id>` shows the kept versions from before each confirmed change. |
+| `uci_apply` | `<config>.<section>[.<option>]` per change; `<config>` for `restore`; `probe.<kind>.<target>` per probe | Stage, check, commit, reload, **rollback armed**. `dry_run` shows exactly what would change and what the service's own checker says. `expected_revisions` refuses if a config moved meanwhile, `probe` checks the router afterwards, `restore=<id>` puts a past version back. |
 | `uci_confirm` / `uci_rollback` | tool | Make a pending change permanent / undo it now. |
-| `service_list` / `service_control` | tool / `<service>.<action>` | procd services; stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. |
+| `service_list` / `service_control` | tool / `<service>.<action>` | procd services; stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. `service_control` waits for the state to settle (`wait`) and says if it did not. |
 | `pkg_query` | tool | installed, upgradable, search, info, files, owner, policy, `apk audit`, world. |
 | `pkg_change` | `<action>.<pkg>` / `upgrade` | apk add/del/upgrade; **simulates unless `commit=true`**; reports new `.apk-new` files. |
 | `pkg_config_diff` | tool | Every `.apk-new` as a diff against the live file -- for `/etc/config/*` by setting (`uci show`), so quoting/indentation noise disappears. |
@@ -192,6 +192,26 @@ holds a client's token can keep that client locked out for up to an hour.
 - **Nobody else's edits.** Every committing tool refuses to run while the configs it would
   commit have uncommitted changes from another session, and while an unconfirmed apply is
   pending.
+- **Checked before it reloads.** The dry run runs each service's own checker on the staged config
+  where one exists (`fw4 check` for the firewall) and lists only the problems the change *adds*.
+  A real apply refuses them unless `force=true`; a config that was already broken can still be
+  fixed. dnsmasq, dropbear and the rest have no checker that sees staged changes: they are
+  reported "not checked", not "passed".
+- **No silent overwrite.** `uci_get` ends with the config's revision. Pass it back as
+  `expected_revisions` and the apply is refused with `CONFLICT` if the config changed meanwhile
+  (LuCI, another client).
+- **The management path is guarded.** A change to the LAN interface or its bridge, the SSH
+  listener, or the firewall zone and rule that let SSH in is refused unless the call names a
+  `probe` (ping the gateway, resolve a name) or `force=true`. Probes run after the reload and are
+  reported with the result; the rollback window defaults to 180 s for such a change. The rule set
+  is static (LAN plus whatever dropbear names), so it covers the common layout, not every
+  topology.
+- **History and restore.** Confirming a change keeps the version of the config from before it
+  (newest `history_keep`, default 5, per config, in `/etc/openwrt-mcp/history/`).
+  `uci_get history=list` shows them, `history=diff:<id>` compares one with now, and
+  `uci_apply restore=<id>` puts one back through the same snapshot, checks and rollback timer.
+  Entries contain secrets, like the snapshots: `0600`, masked when shown, and part of a
+  `sysupgrade` backup. `option history_keep '0'` turns it off.
 - **No self-promotion.** `uci_apply` and `pkg_config_resolve` refuse the openwrt-mcp policy
   config whatever the grant, so a client cannot write itself a wider policy. Policies change
   only through `openwrt-mcp allow` / `revoke` on the router.

@@ -224,8 +224,8 @@ func TestServiceListReportsBootStateRunningStateAndOrderSorted(t *testing.T) {
 }
 
 func TestServiceControlNeverStopsOrDisablesALifelineWhateverTheService(t *testing.T) {
-	serviceSettle = 0
-	t.Cleanup(func() { serviceSettle = time.Second })
+	servicePoll = 0
+	t.Cleanup(func() { servicePoll = 500 * time.Millisecond })
 	f := newFakeRouter(t)
 	f.on("ubus call rc list", rcFixture)
 	f.on("ubus call rc init", "")
@@ -255,9 +255,9 @@ func TestServiceControlNeverStopsOrDisablesALifelineWhateverTheService(t *testin
 func TestServiceControlRejectsMalformedRequestsBeforeTouchingTheRouter(t *testing.T) {
 	f := newFakeRouter(t)
 	for _, in := range []serviceControlIn{
-		{"", "restart"}, {"a b", "restart"}, {"../x", "restart"}, {"x;reboot", "restart"}, {"$(id)", "restart"},
-		{"a\nb", "restart"}, {"dnsmasq", ""}, {"dnsmasq", "STOP"}, {"dnsmasq", "stop "}, {"dnsmasq", "kill"},
-		{"dnsmasq", "status"}, {"dnsmasq", "restart;reboot"},
+		{Name: "", Action: "restart"}, {Name: "a b", Action: "restart"}, {Name: "../x", Action: "restart"}, {Name: "x;reboot", Action: "restart"}, {Name: "$(id)", Action: "restart"},
+		{Name: "a\nb", Action: "restart"}, {Name: "dnsmasq", Action: ""}, {Name: "dnsmasq", Action: "STOP"}, {Name: "dnsmasq", Action: "stop "}, {Name: "dnsmasq", Action: "kill"},
+		{Name: "dnsmasq", Action: "status"}, {Name: "dnsmasq", Action: "restart;reboot"},
 	} {
 		if _, _, err := serviceControl(context.Background(), in); err == nil {
 			t.Errorf("%+v accepted", in)
@@ -267,8 +267,8 @@ func TestServiceControlRejectsMalformedRequestsBeforeTouchingTheRouter(t *testin
 }
 
 func TestServiceControlSendsExactlyOneRcInitAndReportsTheStateItFound(t *testing.T) {
-	serviceSettle = 0
-	t.Cleanup(func() { serviceSettle = time.Second })
+	servicePoll = 0
+	t.Cleanup(func() { servicePoll = 500 * time.Millisecond })
 	f := newFakeRouter(t)
 	lists := 0
 	f.onFn("ubus call rc list", func([]string, string) (string, error) {
@@ -307,9 +307,95 @@ func TestServiceControlSendsExactlyOneRcInitAndReportsTheStateItFound(t *testing
 	}
 }
 
+// rcSequence plays back one rc list answer per call (the first is the "before" read), then
+// repeats the last one.
+func rcSequence(f *fakeRouter, states ...string) *int {
+	calls := new(int)
+	f.onFn("ubus call rc list", func([]string, string) (string, error) {
+		i := min(*calls, len(states)-1)
+		*calls++
+		return `{"svc":` + states[i] + `}`, nil
+	})
+	return calls
+}
+
+const (
+	svcDown = `{"enabled":true,"running":false}`
+	svcUp   = `{"enabled":true,"running":true}`
+)
+
+// Settled means three identical reads in a row (about a second at the real poll interval), so a
+// service that comes up and dies again is not reported as running.
+func TestServiceControlWaitsUntilTheStateStopsChanging(t *testing.T) {
+	servicePoll = 0
+	t.Cleanup(func() { servicePoll = 500 * time.Millisecond })
+	f := newFakeRouter(t)
+	f.on("ubus call rc init", "")
+	calls := rcSequence(f, svcDown, svcDown, svcUp, svcDown, svcUp, svcUp, svcUp)
+
+	out, _, err := serviceControl(context.Background(), serviceControlIn{Name: "svc", Action: "start"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "Now enabled=true running=true. Settled after") {
+		t.Errorf("want the settled state after the flapping:\n%s", out)
+	}
+	// before, then reads: down, up, down, up, up, up -- the third identical "up" ends it.
+	if *calls != 7 {
+		t.Errorf("%d rc list reads, want 7", *calls)
+	}
+}
+
+func TestServiceControlSaysSoWhenTheStateNeverSettles(t *testing.T) {
+	servicePoll, serviceWaitUnit = 0, 2*time.Millisecond
+	t.Cleanup(func() { servicePoll, serviceWaitUnit = 500*time.Millisecond, time.Second })
+	f := newFakeRouter(t)
+	f.on("ubus call rc init", "")
+	n := 0
+	f.onFn("ubus call rc list", func([]string, string) (string, error) {
+		n++
+		if n%2 == 0 {
+			return `{"svc":` + svcUp + `}`, nil
+		}
+		return `{"svc":` + svcDown + `}`, nil
+	})
+	out, _, err := serviceControl(context.Background(), serviceControlIn{Name: "svc", Action: "restart", Wait: 3})
+	if err != nil {
+		t.Fatalf("the action itself succeeded, so this is a result, not an error: %v", err)
+	}
+	if !strings.Contains(out, "did not settle within 6ms") || !strings.Contains(out, "crash loop") {
+		t.Errorf("an unsettled service must be reported as such:\n%s", out)
+	}
+}
+
+func TestServiceControlFlagsAFinalStateThatContradictsTheAction(t *testing.T) {
+	servicePoll = 0
+	t.Cleanup(func() { servicePoll = 500 * time.Millisecond })
+	for _, tc := range []struct{ action, state, want string }{
+		{"start", svcDown, "expected running=true"},
+		{"restart", svcDown, "expected running=true"},
+		{"stop", svcUp, "expected running=false"},
+		{"enable", `{"enabled":false,"running":false}`, "expected enabled=true"},
+		{"disable", svcUp, "expected enabled=false"},
+		{"start", svcUp, ""},
+		{"stop", svcDown, ""},
+	} {
+		f := newFakeRouter(t)
+		f.on("ubus call rc init", "")
+		rcSequence(f, tc.state)
+		out, _, err := serviceControl(context.Background(), serviceControlIn{Name: "svc", Action: tc.action})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := strings.Contains(out, "expected "); tc.want == "" && got || tc.want != "" && !strings.Contains(out, tc.want) {
+			t.Errorf("%s ending %s: want %q, got:\n%s", tc.action, tc.state, tc.want, out)
+		}
+	}
+}
+
 func TestServiceControlPolicyScopeIsServiceDotAction(t *testing.T) {
-	serviceSettle = 0
-	t.Cleanup(func() { serviceSettle = time.Second })
+	servicePoll = 0
+	t.Cleanup(func() { servicePoll = 500 * time.Millisecond })
 	f := newFakeRouter(t)
 	f.on("ubus call rc list", rcFixture)
 	f.on("ubus call rc init", "")

@@ -10,8 +10,8 @@ import (
 )
 
 // Where the daemon keeps what must never be public: token digests, TOTP secrets, rollback
-// snapshots of the whole UCI tree (Wi-Fi keys and WireGuard private keys included) and the
-// audit log. uhttpd serves /www and executes anything under a cgi-bin directory, so a state
+// snapshots and history of the whole UCI tree (Wi-Fi keys and WireGuard private keys included)
+// and the audit log. uhttpd serves /www and executes anything under a cgi-bin directory, so a state
 // path that resolves there would hand that material to the LAN. A published advisory in a
 // comparable tool was exactly this: backups written into a web-served directory.
 //
@@ -22,18 +22,19 @@ func tokensPath(state string) string       { return path.Join(state, "tokens") }
 func mfaPath(state string) string          { return path.Join(state, "mfa") }
 func pendingPath(state string) string      { return path.Join(state, "pending.json") }
 func rollbackDir(state string) string      { return path.Join(state, "rollback") }
+func historyDir(state string) string       { return path.Join(state, "history") }
 func tokensTmpPath(tokens string) string   { return tokens + ".tmp" }
 func mfaTmpPath(mfa string) string         { return mfa + ".new" }
 func auditRotatedPath(audit string) string { return audit + ".1" }
 
 // statePaths lists every file or directory the daemon creates, writes or listens on. The
-// rollback directory stands for everything beneath it. A disabled socket is not a path.
+// rollback and history directories stand for everything beneath them. A disabled socket is not a path.
 func statePaths(state string, cfg *Config) []string {
 	tokens, mfa := tokensPath(state), mfaPath(state)
 	out := []string{
 		tokens, tokensTmpPath(tokens),
 		mfa, mfaTmpPath(mfa),
-		pendingPath(state), rollbackDir(state),
+		pendingPath(state), rollbackDir(state), historyDir(state),
 	}
 	if cfg != nil {
 		if cfg.AuditPath != "" {

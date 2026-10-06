@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -44,9 +45,18 @@ type pendingApply struct {
 }
 
 type uciApplyIn struct {
-	Changes []UCIChange `json:"changes" jsonschema:"the UCI changes to make, applied in order and committed together"`
+	Changes []UCIChange `json:"changes,omitempty" jsonschema:"the UCI changes to make, applied in order and committed together. Omit when restoring"`
 	Timeout int         `json:"timeout,omitempty" jsonschema:"seconds before automatic rollback if uci_confirm is not called (default 90, max 600)"`
 	DryRun  bool        `json:"dry_run,omitempty" jsonschema:"stage the changes, report exactly what uci would change, then revert. Nothing is committed or reloaded."`
+
+	Force bool `json:"force,omitempty" jsonschema:"apply even though validation found NEW problems, or the change touches the management path and no probe is given. Only after reading why; the rollback timer still applies"`
+
+	Probe     []probeSpec `json:"probe,omitempty" jsonschema:"checks run after the reload, each retried until it passes or probe_wait runs out: {kind: ping|resolve, target, server?}, at most 5. Needed when the change touches the management path (LAN interface or bridge, SSH listener, the zone and rule that let SSH in)"`
+	ProbeWait int         `json:"probe_wait,omitempty" jsonschema:"seconds each probe may keep retrying (default 15, max 60)"`
+
+	ExpectedRevisions map[string]string `json:"expected_revisions,omitempty" jsonschema:"config name -> the revision uci_get printed for it. If that config changed since (LuCI, another client) the call is refused with CONFLICT instead of overwriting it"`
+
+	Restore string `json:"restore,omitempty" jsonschema:"put a past version of one config back instead of making changes: an id from uci_get history=list. Same rollback-armed apply; give no changes"`
 }
 
 type uciTokenIn struct {
@@ -71,6 +81,9 @@ func (s *Server) pendingSummary() string {
 }
 
 func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (string, string, error) {
+	if in.Restore != "" {
+		return s.uciRestore(ctx, client, in)
+	}
 	if len(in.Changes) == 0 {
 		return "", "", fmt.Errorf("changes must not be empty")
 	}
@@ -92,22 +105,21 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 		names = append(names, c)
 	}
 	sort.Strings(names)
-
-	// One staging operation at a time: uci's staging area (/tmp/.uci) is shared.
-	s.applyMu.Lock()
-	defer s.applyMu.Unlock()
-
-	if !in.DryRun {
-		if p := s.pendingSummary(); p != "" {
-			return "", "", fmt.Errorf("an apply is already pending confirmation: %s\n"+
-				"call uci_confirm or uci_rollback first", p)
-		}
+	if err := validateExpectedRevisions(in.ExpectedRevisions, names); err != nil {
+		return "", "", err
 	}
-	for _, c := range names {
-		if out, err := uncommitted(ctx, c); err == nil && out != "" {
-			return "", "", fmt.Errorf("refusing to apply: %s already has uncommitted changes "+
-				"(someone else's edit in progress):\n%s", c, out)
-		}
+	if err := validateProbes(in.Probe); err != nil {
+		return "", "", err
+	}
+
+	// One staging operation at a time: uci's staging area (/tmp/.uci) is shared. Probes wait on
+	// the network, so the lock is dropped before they run.
+	s.applyMu.Lock()
+	unlock := sync.OnceFunc(s.applyMu.Unlock)
+	defer unlock()
+
+	if err := s.preflight(ctx, names, in); err != nil {
+		return "", "", err
 	}
 
 	revertAll := func() {
@@ -115,7 +127,14 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 			_, _ = run(ctx, defaultCmdTimeout, "uci", "revert", c)
 		}
 	}
+	mgmt := mgmtReasons(ctx, in.Changes)
+	baseline := checkAll(ctx, names)
+	var skipped []string
 	for _, c := range in.Changes {
+		if c.op() == opAddList && listHas(ctx, uciKey(c), c.Value) {
+			skipped = append(skipped, uciKey(c)+"="+c.Value)
+			continue
+		}
 		for _, cmd := range uciCmds(c) {
 			if out, err := run(ctx, defaultCmdTimeout, cmd.argv...); err != nil && !cmd.mayFail {
 				revertAll()
@@ -134,15 +153,31 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 	if staged == "" {
 		staged = "(no effective change -- every value was already set)"
 	}
+	if len(skipped) > 0 {
+		staged += "\n(already present, skipped: " + strings.Join(skipped, ", ") + ")"
+	}
+
+	report, fresh := validationReport(names, baseline, checkAll(ctx, names))
 
 	if in.DryRun {
 		revertAll()
-		return fmt.Sprintf("DRY RUN -- nothing was committed. uci would change:\n%s\n\n"+
-				"Call uci_apply again without dry_run to apply this with a rollback timer.", staged),
+		return fmt.Sprintf("DRY RUN -- nothing was committed. uci would change:\n%s\n\n%s\n\n%s"+
+				"Call uci_apply again without dry_run to apply this with a rollback timer. To refuse the apply "+
+				"if a config changes first, pass expected_revisions with: %s", staged, report, mgmtNote(mgmt), revisionList(names)),
 			fmt.Sprintf("dry run of %d change(s)", len(in.Changes)), nil
 	}
+	if fresh != "" && !in.Force {
+		revertAll()
+		return "", "", fmt.Errorf("refusing to apply: validation found new problems, so the service would ignore or "+
+			"reject part of this change. Nothing was committed.\n%s\nFix the change, or pass force=true to apply it anyway", fresh)
+	}
 
-	timeout := clampSec(in.Timeout, 90, 600)
+	if err := mgmtGate(mgmt, in); err != nil {
+		revertAll()
+		return "", "", err
+	}
+
+	timeout := clampSec(in.Timeout, applyDefaultSec(mgmt), 600)
 	p, err := s.snapshot(names, client, fmt.Sprintf("%d uci change(s)", len(in.Changes)), timeout)
 	if err != nil {
 		revertAll()
@@ -163,14 +198,169 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 	}
 	reloadOut := reloadConfigs(ctx, names, false)
 
-	return fmt.Sprintf(
-		"Applied to %s and reloaded. Changes:\n%s\n\n"+
-			"ROLLBACK ARMED: reverts automatically at %s (in %s) unless you call\n"+
-			"  uci_confirm {\"token\": \"%s\"}\n"+
-			"or undo it now with uci_rollback. The snapshot is on flash, so a reboot inside the\n"+
-			"window also rolls back.\n\nVerify the router is still reachable and behaving BEFORE confirming.%s",
-		strings.Join(names, ", "), staged, p.Deadline.Format(time.RFC3339), timeout, p.Token, indentOut(reloadOut),
-	), fmt.Sprintf("applied %d change(s) to %s, rollback armed %s", len(in.Changes), strings.Join(names, ","), timeout), nil
+	unlock()
+	msg := fmt.Sprintf("Applied to %s and reloaded. Changes:\n%s\n\n%s\n\n%s\nRevision after apply: %s%s",
+		strings.Join(names, ", "), staged, report, armedNotice(p, timeout), revisionList(names), indentOut(reloadOut))
+	return msg + probeSection(ctx, in, timeout), fmt.Sprintf("applied %d change(s) to %s, rollback armed %s",
+		len(in.Changes), strings.Join(names, ","), timeout), nil
+}
+
+// mgmtNote is the dry-run paragraph about the management path, with its trailing blank line.
+func mgmtNote(reasons []string) string {
+	if len(reasons) == 0 {
+		return ""
+	}
+	return "management path: this change touches it (" + strings.Join(reasons, "; ") + "). A real apply needs probe " +
+		"entries that prove the router is still reachable (ping the gateway, resolve a name), or force=true; its " +
+		fmt.Sprintf("rollback window then defaults to %ds.\n\n", mgmtRollbackSec)
+}
+
+// mgmtGate refuses a change to the management path that names no probe, unless forced.
+func mgmtGate(reasons []string, in uciApplyIn) error {
+	if len(reasons) == 0 || len(in.Probe) > 0 || in.Force {
+		return nil
+	}
+	return fmt.Errorf("refusing to apply: this change touches the management path (%s), and a bad one would cut the "+
+		"session that has to confirm it. Nothing was committed. Pass probe entries that prove the router is still "+
+		"reachable afterwards (for example ping its gateway and resolve a name), or force=true", strings.Join(reasons, "; "))
+}
+
+func applyDefaultSec(mgmt []string) int {
+	if len(mgmt) > 0 {
+		return mgmtRollbackSec
+	}
+	return 90
+}
+
+// probeSection runs the probes, if any, and returns the paragraph to append to the result.
+// They get at most half the rollback window; the caller has released the staging lock.
+func probeSection(ctx context.Context, in uciApplyIn, timeout time.Duration) string {
+	if len(in.Probe) == 0 {
+		return ""
+	}
+	text, _ := runProbes(ctx, in.Probe, probeWait(in.ProbeWait), timeout/2)
+	return "\n\n" + text
+}
+
+// preflight is what every apply needs to be true before it stages or replaces anything.
+// The caller holds applyMu.
+func (s *Server) preflight(ctx context.Context, names []string, in uciApplyIn) error {
+	if !in.DryRun {
+		if p := s.pendingSummary(); p != "" {
+			return fmt.Errorf("an apply is already pending confirmation: %s\n"+
+				"call uci_confirm or uci_rollback first", p)
+		}
+	}
+	for _, c := range names {
+		if out, err := uncommitted(ctx, c); err == nil && out != "" {
+			return fmt.Errorf("refusing to apply: %s already has uncommitted changes "+
+				"(someone else's edit in progress):\n%s", c, out)
+		}
+	}
+	return checkRevisions(in.ExpectedRevisions)
+}
+
+func armedNotice(p *pendingApply, timeout time.Duration) string {
+	return fmt.Sprintf("ROLLBACK ARMED: reverts automatically at %s (in %s) unless you call\n"+
+		"  uci_confirm {\"token\": \"%s\"}\n"+
+		"or undo it now with uci_rollback. The snapshot is on flash, so a reboot inside the\n"+
+		"window also rolls back.\n\nVerify the router is still reachable and behaving BEFORE confirming.",
+		p.Deadline.Format(time.RFC3339), timeout, p.Token)
+}
+
+// uciRestore is uci_apply restore=<id>: a past version of one config put back through the same
+// pipeline as any apply. uci import cannot stage it (measured on the router: it writes the file
+// at once), so the file is replaced like pkg_config_resolve does, and the checkers run on the
+// installed file before anything reloads.
+func (s *Server) uciRestore(ctx context.Context, client string, in uciApplyIn) (string, string, error) {
+	if len(in.Changes) > 0 {
+		return "", "", fmt.Errorf("restore replaces a whole config: give restore or changes, not both")
+	}
+	config, _, err := parseHistoryID(in.Restore)
+	if err != nil {
+		return "", "", err
+	}
+	if s.isPolicyFile(filepath.Join(uciConfDir, config)) {
+		return "", "", errPolicyFile
+	}
+	names := []string{config}
+	if err := validateExpectedRevisions(in.ExpectedRevisions, names); err != nil {
+		return "", "", err
+	}
+	if err := validateProbes(in.Probe); err != nil {
+		return "", "", err
+	}
+	e, body, err := s.loadHistory(in.Restore)
+	if err != nil {
+		return "", "", err
+	}
+
+	s.applyMu.Lock()
+	unlock := sync.OnceFunc(s.applyMu.Unlock)
+	defer unlock()
+	if err := s.preflight(ctx, names, in); err != nil {
+		return "", "", err
+	}
+	var mgmt []string
+	if mgmtConfigs[config] {
+		mgmt = []string{"restoring " + config + " replaces the whole config, which carries the management path"}
+	}
+	cur, _ := os.ReadFile(filepath.Join(uciConfDir, config))
+	diff := fmt.Sprintf("--- current  +++ %s\n%s", in.Restore, settingsDiff(ctx, config, string(cur), string(body)))
+	if in.DryRun {
+		return fmt.Sprintf("DRY RUN -- nothing was changed. Restoring %s would change:\n%s\n\n"+
+				"%sValidation runs on a real restore, before the reload. Call uci_apply again without dry_run to restore "+
+				"with a rollback timer. To refuse it if the config changes first, pass expected_revisions with: %s",
+				config, diff, mgmtNote(mgmt), revisionList(names)),
+			"dry run of restore " + in.Restore, nil
+	}
+
+	if err := mgmtGate(mgmt, in); err != nil {
+		return "", "", err
+	}
+	baseline := checkAll(ctx, names)
+	timeout := clampSec(in.Timeout, applyDefaultSec(mgmt), 600)
+	p, err := s.snapshot(names, client, "restoring "+config+" to "+in.Restore, timeout)
+	if err != nil {
+		return "", "", err
+	}
+	s.arm(p, timeout)
+	undo := func(why error) (string, string, error) {
+		var rerr error
+		if s.take(p.Token) != nil {
+			rerr = s.restore(ctx, p, false)
+			s.savePending()
+		}
+		return "", "", fmt.Errorf("%w (restore of the previous version: %v)", why, rerr)
+	}
+	mode := os.FileMode(e.Mode)
+	if mode == 0 {
+		mode = 0o644
+	}
+	if err := installConfig(config, body, mode); err != nil {
+		return undo(fmt.Errorf("installing %s failed: %w", config, err))
+	}
+	report, fresh := validationReport(names, baseline, checkAll(ctx, names))
+	if fresh != "" && !in.Force {
+		return undo(fmt.Errorf("refusing to restore: validation found new problems, so the service would ignore or "+
+			"reject part of that version. Nothing was reloaded and the current version is back.\n%s\n"+
+			"Pass force=true to restore it anyway", fresh))
+	}
+	reloadOut := reloadConfigs(ctx, names, false)
+	unlock()
+	msg := fmt.Sprintf("Restored %s from %s and reloaded. Changes:\n%s\n\n%s\n\n%s\nRevision after apply: %s%s",
+		config, in.Restore, diff, report, armedNotice(p, timeout), revisionList(names), indentOut(reloadOut))
+	return msg + probeSection(ctx, in, timeout),
+		fmt.Sprintf("restored %s from %s, rollback armed %s", config, in.Restore, timeout), nil
+}
+
+// installConfig atomically replaces /etc/config/<name> with body.
+func installConfig(name string, body []byte, mode os.FileMode) error {
+	tmp := filepath.Join(uciConfDir, "."+name+".openwrt-mcp-restore")
+	if err := writeSynced(tmp, body, mode); err != nil {
+		return err
+	}
+	return os.Rename(tmp, filepath.Join(uciConfDir, name))
 }
 
 // snapshot copies the named configs to flash and records a pending apply, not yet armed.
@@ -236,6 +426,7 @@ func (s *Server) uciConfirm(_ context.Context, token string) (string, string, er
 	if p == nil {
 		return "", "", fmt.Errorf("no pending apply with token %q (it may have already rolled back)", token)
 	}
+	s.promoteHistory(p)
 	_ = os.RemoveAll(p.Dir)
 	s.savePending()
 	return fmt.Sprintf("Confirmed. Rollback cancelled; %s to %s are permanent.", p.What, strings.Join(p.Configs, ", ")),
@@ -294,12 +485,7 @@ func (s *Server) restore(ctx context.Context, p *pendingApply, atBoot bool) erro
 		if mode == 0 {
 			mode = 0o644
 		}
-		tmp := filepath.Join(uciConfDir, "."+c+".openwrt-mcp-restore")
-		if err := writeSynced(tmp, b, mode); err != nil {
-			failed = append(failed, c+": "+err.Error())
-			continue
-		}
-		if err := os.Rename(tmp, dst); err != nil {
+		if err := installConfig(c, b, mode); err != nil {
 			failed = append(failed, c+": "+err.Error())
 		}
 	}

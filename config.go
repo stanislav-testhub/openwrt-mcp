@@ -142,6 +142,9 @@ type Config struct {
 	// further options to treat as secret, lowercased.
 	RedactOutput bool
 	RedactExtra  []string
+
+	// How many confirmed past versions of each UCI config are kept (see history.go); 0 is off.
+	HistoryKeep int
 }
 
 const (
@@ -163,7 +166,8 @@ func parseLockout(s string) (time.Duration, bool) {
 
 func LoadConfig(configPath string) (*Config, error) {
 	c := &Config{Listen: defaultListen, Socket: defaultSocket, AuditPath: defaultAuditPath, AuditMaxMB: defaultAuditMaxMB,
-		MFAMaxFailures: defaultMFAMaxFailures, MFALockout: defaultMFALockout, RedactOutput: true}
+		MFAMaxFailures: defaultMFAMaxFailures, MFALockout: defaultMFALockout, RedactOutput: true,
+		HistoryKeep: defaultHistoryKeep}
 	f, err := os.Open(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -203,6 +207,10 @@ func LoadConfig(configPath string) (*Config, error) {
 			}
 			if d, ok := parseLockout(s.Options["mfa_lockout"]); ok {
 				c.MFALockout = min(d, maxMFALockout)
+			}
+			// 0 is a real setting here (history off), so only junk and negatives keep the default.
+			if v, err := strconv.Atoi(s.Options["history_keep"]); err == nil && v >= 0 {
+				c.HistoryKeep = min(v, maxHistoryKeep)
 			}
 			// Only a literal 0 turns redaction off: a typo must not.
 			if v, ok := s.Options["redact_output"]; ok {

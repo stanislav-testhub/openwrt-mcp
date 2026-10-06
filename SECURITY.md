@@ -107,13 +107,40 @@ Everything a tool returns goes through one path: sanitise, mask, bound, label.
 The state directory (`/etc/openwrt-mcp`) holds token digests, TOTP secrets (raw, since TOTP is
 symmetric), the pending-apply record and, while an apply is unconfirmed, a full copy of every
 config it touches, secrets included. Files are `0600`, directories `0700`; a snapshot is deleted
-on confirm or a successful rollback and kept after a failed one. These files are as sensitive as
+on a successful rollback and kept after a failed one. On confirm it becomes a **history entry**:
+the version of the config from before the change, kept with the newest `history_keep` (default 5,
+`0` turns history off) per config under `/etc/openwrt-mcp/history/`. The `wg_*` tools record the
+file just before they commit. History entries are whole config files, secrets included, so they
+are held to the same modes, are masked when shown through `uci_get history=diff`, and travel in a
+`sysupgrade` backup like the rest of the state directory. These files are as sensitive as
 `/etc/config` itself.
 
 The state directory, the audit log and the socket are checked against the web root: a path under
 `/www`, under any `cgi-bin` directory or under uhttpd's configured `home`, directly or through a
 symlink, is refused. `-state` there stops the command; an `audit` or `socket` option there is
 ignored with a log line and keeps its default.
+
+### Change safety
+
+`uci_apply` adds checks that narrow what a mistaken or manipulated call can do. None widens what a
+grant allows, except where stated.
+
+- **Validation before reload.** Where a service has a checker that sees staged changes (`fw4 check`
+  for the firewall), a real apply is refused if the change adds a problem the config did not have;
+  `force=true` overrides, and the rollback timer still applies. A config with no such checker is
+  reported "not checked", never "passed".
+- **Revisions.** `uci_get` prints a revision (a digest of the committed file) and
+  `expected_revisions` makes `uci_apply` refuse a config that changed in between. It prevents
+  overwriting someone else's edit; it is not an integrity check, because the caller supplies it.
+- **Management path.** A change to the LAN interface or its bridge, the SSH listener, or the
+  firewall zone and rule that let SSH in is refused unless the call names a probe (or `force=true`).
+  The rule set is static and covers the common layout; a router managed through an unusual
+  interface should not rely on it.
+- **Probes** make the router ping or resolve a name on the caller's behalf, which a grant on
+  `uci_apply` alone never allowed. Each probe target is therefore its own policy scope,
+  `probe.<kind>.<target>`; `*` covers them, `<config>.*` does not.
+- **Restore** replaces a whole config, so its scope is the whole-config key `<config>`, which
+  `<config>.*` does not cover. It runs the same snapshot, rollback timer and checks as any apply.
 
 ### Second factor
 

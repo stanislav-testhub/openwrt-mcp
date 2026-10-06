@@ -78,6 +78,20 @@ func fakeUCIShow(name, body string) string {
 	return strings.Join(out, "\n")
 }
 
+// redactHistory is a server whose wireless history holds one old version (secret + "-old") and
+// whose live file holds another (secret + "-live"), with uci show stood in by fakeUCIShow.
+func redactHistory(t *testing.T, name, secret string) (*Server, string) {
+	t.Helper()
+	s, f, root := redactServer(t, "")
+	f.onFn("uci -q -c", func(argv []string, _ string) (string, error) {
+		b, err := os.ReadFile(filepath.Join(argv[3], "wireless"))
+		return fakeUCIShow("wireless", string(b)), err
+	})
+	writeFixture(t, root, "etc/config/wireless", wirelessFile(name, secret+"-live"))
+	s.saveHistory("wireless", []byte(wirelessFile(name, secret+"-old")), 0o644, "c", "test", "seed")
+	return s, s.historyEntries("wireless")[0].id()
+}
+
 type readPath struct {
 	name string
 	run  func(t *testing.T, name, secret string) string
@@ -146,6 +160,22 @@ var readPaths = []readPath{
 		out, _ := callText(t, connectClient(t, s, "c"), "pkg_config_diff", map[string]any{"path": "/etc/config/wireless"})
 		if !strings.Contains(out, "settings diff via uci show") {
 			t.Fatalf("expected the settings diff:\n%s", out)
+		}
+		return out
+	}},
+	{"uci_get history diff", func(t *testing.T, name, secret string) string {
+		s, id := redactHistory(t, name, secret)
+		out, _ := callText(t, connectClient(t, s, "c"), "uci_get", map[string]any{"config": "wireless", "history": "diff:" + id})
+		if !strings.Contains(out, "before that change") {
+			t.Fatalf("expected the history diff:\n%s", out)
+		}
+		return out
+	}},
+	{"uci_apply restore dry run diff", func(t *testing.T, name, secret string) string {
+		s, id := redactHistory(t, name, secret)
+		out, _ := callText(t, connectClient(t, s, "c"), "uci_apply", map[string]any{"restore": id, "dry_run": true})
+		if !strings.Contains(out, "Restoring wireless would change") {
+			t.Fatalf("expected the restore dry run:\n%s", out)
 		}
 		return out
 	}},

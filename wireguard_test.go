@@ -111,7 +111,7 @@ func TestNewClientAllocatesConfiguresAndHotAdds(t *testing.T) {
 	f.on("wg set wg0", "")
 
 	s := testServer(t, "")
-	out, summary, err := s.wgNewClient(context.Background(), wgNewClientIn{Name: "laptop"})
+	out, summary, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +152,7 @@ func TestNewClientAllocatesConfiguresAndHotAdds(t *testing.T) {
 func TestNewClientRefusesADuplicateName(t *testing.T) {
 	wgFake(t, 0)
 	s := testServer(t, "")
-	if _, _, err := s.wgNewClient(context.Background(), wgNewClientIn{Name: "tablet"}); err == nil ||
+	if _, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "tablet"}); err == nil ||
 		!strings.Contains(err.Error(), "already exists") {
 		t.Errorf("duplicate name accepted: %v", err)
 	}
@@ -162,7 +162,7 @@ func TestNewClientRefusesOnTopOfStagedNetworkEdits(t *testing.T) {
 	f := wgFake(t, 0)
 	f.on("uci changes network", "network.lan.ipaddr='10.0.0.1'")
 	s := testServer(t, "")
-	if _, _, err := s.wgNewClient(context.Background(), wgNewClientIn{Name: "x"}); err == nil ||
+	if _, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "x"}); err == nil ||
 		!strings.Contains(err.Error(), "uncommitted") {
 		t.Errorf("committed over someone else's staged network edit: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestNewClientRefusesOnTopOfStagedNetworkEdits(t *testing.T) {
 func TestRemoveAmbiguousNameAsksToNarrow(t *testing.T) {
 	wgFake(t, 0)
 	s := testServer(t, "")
-	_, _, err := s.wgRemoveClient(context.Background(), wgRemoveIn{Name: "phone"})
+	_, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{Name: "phone"})
 	if err == nil || !strings.Contains(err.Error(), "2 peers match") {
 		t.Fatalf("ambiguous removal not refused: %v", err)
 	}
@@ -183,11 +183,11 @@ func TestRemoveRefusesALiveTunnelUnlessForced(t *testing.T) {
 	f.on("uci delete network.cfg1396fc", "")
 	f.on("uci commit network", "")
 	s := testServer(t, "")
-	if _, _, err := s.wgRemoveClient(context.Background(), wgRemoveIn{Name: "tablet"}); err == nil ||
+	if _, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{Name: "tablet"}); err == nil ||
 		!strings.Contains(err.Error(), "connected right now") {
 		t.Fatalf("removed a peer with a live handshake: %v", err)
 	}
-	if _, _, err := s.wgRemoveClient(context.Background(), wgRemoveIn{Name: "tablet", Force: true}); err != nil {
+	if _, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{Name: "tablet", Force: true}); err != nil {
 		t.Fatal(err)
 	}
 	if !f.ran("uci delete network.cfg1396fc") || !f.ran("wg set wg0 peer PEERC= remove") {
@@ -270,7 +270,7 @@ func TestWgNewClientThroughTheWrapperIsUntouched(t *testing.T) {
 	// secret name, is exactly what the masker looks for, so only a real exemption leaves it alone.
 	const name = "lab.x.psk=hunter2"
 	s := testServer(t, grantAll())
-	direct, _, err := s.wgNewClient(context.Background(), wgNewClientIn{Name: name})
+	direct, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: name})
 	if err != nil {
 		t.Fatal(err)
 	}

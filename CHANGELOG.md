@@ -1,5 +1,68 @@
 # Changelog
 
+## 1.2.0 -- Reliable changes
+
+Closes ROADMAP milestone 2 (items 2.1 to 2.6). No tool is added: every item is a parameter or a
+mode of an existing tool.
+
+Added
+- **Validation before reload (2.1).** `uci_apply` runs each config's own checker before staging
+  (the baseline) and after (the candidate) and reports `validation` in the dry run. For the
+  firewall that is `fw4 check`. Measured on the router: it sees changes staged in `/tmp/.uci`, but
+  it exits 0 even for an invalid value and only prints `[!]` lines for what it will ignore, so the
+  verdict is those lines, compared as counted lines with section indexes normalised (a warning
+  that merely moved is not new). A real apply is refused when the candidate has a problem the
+  baseline did not, unless `force=true`; a config that was already broken can still be fixed.
+  Configs without a checker (dnsmasq has none that sees staged changes: `dnsmasq --test` reads a
+  file generated at service start) are reported "not checked".
+- **Revision locking (2.2).** `uci_get` ends with `# revision of <config>: <12 hex>`, the digest of
+  the committed file, even for a narrowed read. `uci_apply` takes `expected_revisions`
+  (`{config: revision}`) and refuses with `CONFLICT` if a config changed since; a revision for a
+  config the call does not change, or one that is not 12 hex digits, is an error rather than
+  ignored. Dry runs print the revisions to pass; applies print the new ones.
+- **Probes and management-path detection (2.3).** `probe` (up to 5 of `{kind: ping|resolve, target,
+  server?}`) runs after the reload, each retried for `probe_wait` seconds (default 15, max 60) and
+  never longer than half the rollback window. A failed probe is reported and the change stays
+  armed: the timer undoes it, as for a caller that lost its connection. The staging lock is
+  released before probes run. A change to the LAN interface or its bridge, the SSH listener, or
+  the firewall zone and rule that let SSH in is refused unless it names a probe or `force=true`,
+  and its default rollback window is 180 s. The rule set is static: it does not know which
+  interface the current session arrived on, because the stdio bridge's origin address does not
+  reach the tool handlers (a session-aware rule is future work).
+- **History and restore (2.4).** Confirming a change keeps the config as it was before, per config,
+  newest `history_keep` (default 5, `0` off, at most 20), under `/etc/openwrt-mcp/history/` with
+  `0600` files. `uci_get history=list` and `history=diff:<id>` read them; `uci_apply restore=<id>`
+  puts one back through the same snapshot, checks, rollback timer and probes. `uci import` writes
+  the file at once (measured), so a restore replaces the file as `pkg_config_resolve` does, and
+  runs the checkers on the installed file before anything reloads; its dry run shows the settings
+  diff only. A rolled-back change leaves no entry. `wg_new_client` and `wg_remove_client`, which
+  commit without a rollback, record the file just before they commit.
+- **Polling instead of sleeping (2.5).** `service_control` reads the state every 500 ms until it
+  has been the same for three reads, or `wait` seconds (default 10, max 60) pass, and says which
+  happened. It also notes a final state that contradicts the action (a service still running after
+  `stop`).
+- **Write-path parity (2.6).** `add_list` skips an element already in the list: libuci appends a
+  duplicate (measured). `del_list` of a missing element already succeeds as a no-op (measured), and
+  a test pins it. `set_list` now refuses an empty element like `add_list` and `del_list` did, and
+  one table test runs every option-writing op against the same hostile names and values.
+
+Security
+- A probe has the router ping or resolve a name for the caller, which a grant on `uci_apply` never
+  allowed, so each probe target is a policy scope of its own, `probe.<kind>.<target>`. Targets
+  that could read as an option are refused. A restore replaces a whole config, so its scope is
+  `<config>`, which `<config>.*` does not cover.
+- History entries hold whole config files, secrets included. They get the snapshots' protection
+  (`0700` directory, `0600` files, state-path guard), are masked when shown, and are in
+  `sysupgrade` backups because `keep.d` keeps the whole state directory.
+
+Changed
+- `uci_apply`'s `changes` is optional in the schema (a restore has none).
+- `wg_new_client` and `wg_remove_client` take the calling client's name, for the history entry.
+
+Not done
+- Out of scope: the `wg_*` tools still commit with no snapshot or rollback. History in RAM for
+  low-flash boards (ROADMAP open question) is not built.
+
 ## 1.1.0 -- Output safety
 
 Closes ROADMAP milestone 1 (items 1.1 to 1.5), and carries the fixes found by a test-coverage

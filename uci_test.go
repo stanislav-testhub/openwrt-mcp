@@ -219,6 +219,56 @@ func TestValidateChangeRejectsKeyInjection(t *testing.T) {
 	}
 }
 
+// Every op that writes an option goes through the same name and value guards: a guard that
+// only the create path had once let a hostile name through the update path in another server.
+func TestWritePathsShareOneSetOfGuards(t *testing.T) {
+	build := func(op, cfg, sec, opt, val string) UCIChange {
+		c := UCIChange{Op: op, Config: cfg, Section: sec, Option: opt, Value: val}
+		if op == opSetList {
+			c.Value, c.Values = "", []string{val}
+		}
+		return c
+	}
+	ops := []string{opSet, opAddList, opDelList, opSetList}
+	for _, tc := range []struct {
+		name, cfg, sec, opt, val string
+		ok                       bool
+	}{
+		{"config with a dot", "a.b", "x", "o", "v", false},
+		{"config starting with a dash", "-x", "x", "o", "v", false},
+		{"section with a dot", "dhcp", "x.y", "o", "v", false},
+		{"section with an equals", "dhcp", "x=1", "o", "v", false},
+		{"option with an equals", "dhcp", "x", "o=1", "v", false},
+		{"option with a dot", "dhcp", "x", "o.p", "v", false},
+		{"value with a newline", "dhcp", "x", "o", "a\nb", false},
+		{"value with a carriage return", "dhcp", "x", "o", "a\rb", false},
+		{"value with a NUL", "dhcp", "x", "o", "a\x00b", false},
+		{"plain", "dhcp", "x", "o", "v", true},
+		{"indexed section", "firewall", "@rule[-1]", "proto", "udp", true},
+		{"value with spaces and an equals", "dhcp", "x", "o", "a=b c", true},
+	} {
+		for _, op := range ops {
+			err := validateChange(build(op, tc.cfg, tc.sec, tc.opt, tc.val))
+			if tc.ok && err != nil {
+				t.Errorf("%s via %s: rejected a valid change: %v", tc.name, op, err)
+			}
+			if !tc.ok && err == nil {
+				t.Errorf("%s via %s: accepted", tc.name, op)
+			}
+		}
+	}
+	// An empty scalar is a real setting; an empty list element never is.
+	for _, op := range ops {
+		err := validateChange(build(op, "dhcp", "x", "o", ""))
+		if op == opSet && err != nil {
+			t.Errorf("set to an empty value rejected: %v", err)
+		}
+		if op != opSet && err == nil {
+			t.Errorf("%s accepted an empty list element", op)
+		}
+	}
+}
+
 func TestListOpsArgv(t *testing.T) {
 	add := uciCmds(UCIChange{Config: "dhcp", Section: "@dnsmasq[0]", Option: "server", Op: "add_list", Value: "1.1.1.1"})
 	if strings.Join(add[0].argv, " ") != "uci add_list dhcp.@dnsmasq[0].server=1.1.1.1" {

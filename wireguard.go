@@ -360,7 +360,7 @@ func (s *Server) guardNetworkCommit(ctx context.Context) error {
 	return nil
 }
 
-func (s *Server) wgNewClient(ctx context.Context, in wgNewClientIn) (string, string, error) {
+func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientIn) (string, string, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" || strings.ContainsAny(name, "\x00\n\r'") {
 		return "", "", fmt.Errorf("a plain name is required")
@@ -477,6 +477,7 @@ func (s *Server) wgNewClient(ctx context.Context, in wgNewClientIn) (string, str
 			return out, "", fmt.Errorf("staging peer: %w", err)
 		}
 	}
+	s.recordHistory("network", client, "wg_new_client "+name)
 	if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", "network"); err != nil {
 		return out, "", fmt.Errorf("committing peer: %w", err)
 	}
@@ -572,7 +573,7 @@ func wgRemoveScope(in wgRemoveIn) []string {
 	return []string{"wireguard." + orDefault(in.Iface, "_") + "." + who}
 }
 
-func (s *Server) wgRemoveClient(ctx context.Context, in wgRemoveIn) (string, string, error) {
+func (s *Server) wgRemoveClient(ctx context.Context, client string, in wgRemoveIn) (string, string, error) {
 	if in.Name == "" && in.PublicKey == "" && in.Section == "" {
 		return "", "", fmt.Errorf("give a name, public_key or section")
 	}
@@ -618,6 +619,7 @@ func (s *Server) wgRemoveClient(ctx context.Context, in wgRemoveIn) (string, str
 		if out, err := run(ctx, defaultCmdTimeout, "uci", "delete", "network."+p.Section); err != nil {
 			return out, "", fmt.Errorf("deleting section: %w", err)
 		}
+		s.recordHistory("network", client, "wg_remove_client "+p.Name)
 		if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", "network"); err != nil {
 			return out, "", fmt.Errorf("committing: %w", err)
 		}

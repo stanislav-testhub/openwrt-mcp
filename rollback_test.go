@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -103,6 +104,150 @@ func TestApplyThenRollbackRestoresTheFile(t *testing.T) {
 	}
 	if _, err := os.Stat(s.pendingPath()); !os.IsNotExist(err) {
 		t.Error("pending record left behind after rollback")
+	}
+}
+
+// A config's revision is the first 12 hex digits of the sha256 of its committed file. The
+// literal is the digest of origDHCP computed outside the code under test.
+const origDHCPRevision = "707f2b1ba4b6"
+
+func TestUciGetPrintsTheRevisionOfTheWholeConfig(t *testing.T) {
+	_, f, _ := applyFixture(t)
+	f.on("uci show dhcp.lan", "dhcp.lan=dhcp\ndhcp.lan.start='100'")
+	out, _, err := uciGet(context.Background(), uciGetIn{Config: "dhcp", Section: "lan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(out, "\n# revision of dhcp: "+origDHCPRevision) {
+		t.Errorf("a section read must still end with the whole config's revision:\n%s", out)
+	}
+}
+
+func TestApplyRefusesAStaleRevisionBeforeStagingAnything(t *testing.T) {
+	s, f, _ := applyFixture(t)
+	_, _, err := s.uciApply(context.Background(), "c", uciApplyIn{Changes: leaseChanges,
+		ExpectedRevisions: map[string]string{"dhcp": "000000000000"}})
+	if err == nil || !strings.HasPrefix(err.Error(), "CONFLICT: dhcp changed") ||
+		!strings.Contains(err.Error(), origDHCPRevision) || !strings.Contains(err.Error(), "uci_get") {
+		t.Fatalf("want a CONFLICT naming the config, the current revision and uci_get, got %v", err)
+	}
+	if f.ran("uci set") || f.ran("uci commit") {
+		t.Errorf("a refused apply touched uci:\n%s", f.allCalls())
+	}
+	if readConf(t, "dhcp") != origDHCP || s.pendingSummary() != "" {
+		t.Error("a refused apply changed the file or armed a rollback")
+	}
+}
+
+func TestApplyRefusesAStaleRevisionOnADryRunToo(t *testing.T) {
+	s, _, _ := applyFixture(t)
+	_, _, err := s.uciApply(context.Background(), "c", uciApplyIn{DryRun: true, Changes: leaseChanges,
+		ExpectedRevisions: map[string]string{"dhcp": "000000000000"}})
+	if err == nil || !strings.HasPrefix(err.Error(), "CONFLICT") {
+		t.Fatalf("a dry run must not bless a stale revision, got %v", err)
+	}
+}
+
+// What a dry run prints is what the next call can pass, and what an apply prints is what uci_get
+// will show afterwards, so calls chain without a read in between.
+func TestRevisionsChainFromDryRunToApplyToGet(t *testing.T) {
+	s, f, _ := applyFixture(t)
+	f.on("uci show dhcp", "")
+	dry, _, err := s.uciApply(context.Background(), "c", uciApplyIn{DryRun: true, Changes: leaseChanges,
+		ExpectedRevisions: map[string]string{"dhcp": origDHCPRevision}})
+	if err != nil || !strings.Contains(dry, "expected_revisions") || !strings.Contains(dry, "dhcp="+origDHCPRevision) {
+		t.Fatalf("dry run with the current revision: err=%v\n%s", err, dry)
+	}
+	out, _, err := s.uciApply(context.Background(), "c", uciApplyIn{Changes: leaseChanges,
+		ExpectedRevisions: map[string]string{"dhcp": origDHCPRevision}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, after, ok := strings.Cut(out, "Revision after apply: dhcp=")
+	if !ok || len(after) < 12 || after[:12] == origDHCPRevision {
+		t.Fatalf("the apply must print the new revision, which differs from the old one:\n%s", out)
+	}
+	got, _, err := uciGet(context.Background(), uciGetIn{Config: "dhcp"})
+	if err != nil || !strings.HasSuffix(got, "# revision of dhcp: "+after[:12]) {
+		t.Errorf("uci_get after the apply does not show the revision the apply printed (%v):\n%s", err, got)
+	}
+}
+
+func TestExpectedRevisionsMustNameAChangedConfigAndLookLikeARevision(t *testing.T) {
+	s, f, _ := applyFixture(t)
+	for name, exp := range map[string]map[string]string{
+		"config not in the changes": {"firewall": origDHCPRevision},
+		"typo in the config name":   {"dhpc": origDHCPRevision},
+		"not hex":                   {"dhcp": "not-a-revision"},
+		"too short":                 {"dhcp": "707f2b"},
+		"empty":                     {"dhcp": ""},
+	} {
+		_, _, err := s.uciApply(context.Background(), "c", uciApplyIn{DryRun: true, Changes: leaseChanges, ExpectedRevisions: exp})
+		if err == nil {
+			t.Errorf("%s: accepted %v", name, exp)
+		}
+	}
+	if f.ran("uci set") {
+		t.Error("input validation must come before staging")
+	}
+}
+
+// libuci's add_list appends even when the element is already there (verified on the router:
+// 'p' becomes 'p' 'p'), so the server reads the list first. Staged edits count, so the same
+// element twice in one batch is added once.
+func TestAddListSkipsAnElementThatIsAlreadyThere(t *testing.T) {
+	s, f, _ := applyFixture(t)
+	var list []string
+	f.onFn("uci add_list", func(argv []string, _ string) (string, error) {
+		_, v, _ := strings.Cut(argv[len(argv)-1], "=")
+		list = append(list, v)
+		return "", nil
+	})
+	f.onFn("uci -q show dhcp.lan.server", func([]string, string) (string, error) {
+		if len(list) == 0 {
+			return "", errors.New("exit status 1") // uci -q show of a missing option
+		}
+		return "dhcp.lan.server='" + strings.Join(list, "' '") + "'", nil
+	})
+	f.on("uci -q show dhcp.lan.dns", "dhcp.lan.dns='1.1.1.1' '9.9.9.9' '11.2.3.45'")
+	add := func(opt, v string) UCIChange {
+		return UCIChange{Op: "add_list", Config: "dhcp", Section: "lan", Option: opt, Value: v}
+	}
+	out, _, err := s.uciApply(context.Background(), "c", uciApplyIn{DryRun: true, Changes: []UCIChange{
+		add("dns", "1.1.1.1"), add("dns", "8.8.8.8"), add("dns", "1.2.3.4"), // 1.2.3.4 is inside 11.2.3.45, not an element
+		add("server", "a"), add("server", "a"), add("server", "b"),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var added []string
+	for _, a := range f.argvList() {
+		if len(a) > 1 && a[1] == "add_list" {
+			added = append(added, a[2])
+		}
+	}
+	want := "dhcp.lan.dns=8.8.8.8,dhcp.lan.dns=1.2.3.4,dhcp.lan.server=a,dhcp.lan.server=b"
+	if got := strings.Join(added, ","); got != want {
+		t.Errorf("add_list commands = %s, want %s", got, want)
+	}
+	for _, skipped := range []string{"dhcp.lan.dns=1.1.1.1", "dhcp.lan.server=a"} {
+		if !strings.Contains(out, "already present, skipped") || !strings.Contains(out, skipped) {
+			t.Errorf("result does not say %s was skipped:\n%s", skipped, out)
+		}
+	}
+}
+
+// del_list of an element that is not there already succeeds in libuci (verified on the
+// router), so it is passed straight through with no read first.
+func TestDelListIsPassedThroughWithoutARead(t *testing.T) {
+	s, f, _ := applyFixture(t)
+	_, _, err := s.uciApply(context.Background(), "c", uciApplyIn{DryRun: true, Changes: []UCIChange{
+		{Op: "del_list", Config: "dhcp", Section: "lan", Option: "dns", Value: "9.9.9.9"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !f.ran("uci del_list dhcp.lan.dns=9.9.9.9") || f.ran("uci -q show") {
+		t.Errorf("del_list should run once and unread:\n%s", f.allCalls())
 	}
 }
 

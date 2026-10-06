@@ -78,6 +78,15 @@ func validValue(v string) error {
 	return nil
 }
 
+// validListElement is validValue for one list element: an empty one is never meaningful, so
+// add_list, del_list and set_list all refuse it (set may still write an empty scalar).
+func validListElement(v string) error {
+	if v == "" {
+		return fmt.Errorf("a list element must not be empty")
+	}
+	return validValue(v)
+}
+
 func validateChange(c UCIChange) error {
 	if c.Config == "" || c.Section == "" {
 		return fmt.Errorf("each change needs at least a config and a section")
@@ -118,14 +127,14 @@ func validateChange(c UCIChange) error {
 		if c.Option == "" || c.Value == "" {
 			return fmt.Errorf("%s: %s needs an option and a value", key, c.op())
 		}
-		return validValue(c.Value)
+		return validListElement(c.Value)
 	case opSetList:
 		if c.Option == "" || len(c.Values) == 0 {
 			return fmt.Errorf("%s: set_list needs an option and at least one value (use delete to clear a list)", key)
 		}
 		for _, v := range c.Values {
-			if err := validValue(v); err != nil {
-				return err
+			if err := validListElement(v); err != nil {
+				return fmt.Errorf("%s: %w", key, err)
 			}
 		}
 	default:
@@ -172,6 +181,18 @@ func uciCmds(c UCIChange) []uciCmd {
 	return []uciCmd{{argv: []string{"uci", "set", key + "=" + c.Value}}}
 }
 
+// listHas reports whether the list option already holds value, staged edits included. libuci's
+// add_list appends a duplicate rather than refusing, so add_list is skipped when this is true.
+// An unreadable or missing option counts as "not there", so the add goes ahead.
+func listHas(ctx context.Context, key, value string) bool {
+	out, err := run(ctx, defaultCmdTimeout, "uci", "-q", "show", key)
+	if err != nil {
+		return false
+	}
+	_, v, ok := strings.Cut(strings.TrimSpace(out), "=")
+	return ok && contains(splitUCIValue(v), value)
+}
+
 // uciArgv is the single-command form, kept for the common case and its tests.
 func uciArgv(c UCIChange) []string { return uciCmds(c)[0].argv }
 
@@ -179,11 +200,18 @@ func uciArgv(c UCIChange) []string { return uciCmds(c)[0].argv }
 // is a different permission from "dhcp.pi.ip" (set an option in it), and a policy must cover
 // each on its own terms.
 func uciScopes(in uciApplyIn) []string {
+	if in.Restore != "" {
+		// A restore replaces a whole config, so its scope is the whole-config key, like a whole-config read.
+		if config, _, err := parseHistoryID(in.Restore); err == nil {
+			return append([]string{config}, probeScopes(in.Probe)...)
+		}
+		return []string{in.Restore} // matches nothing but "*"; uci_apply then rejects it
+	}
 	var out []string
 	for _, c := range in.Changes {
 		out = append(out, uciKey(c))
 	}
-	return out
+	return append(out, probeScopes(in.Probe)...)
 }
 
 // ---------------------------------------------------------------- uci_get
@@ -193,6 +221,8 @@ type uciGetIn struct {
 	Section string `json:"section,omitempty" jsonschema:"section to narrow to, e.g. 'lan' or '@wifi-iface[0]'. Omit to read the whole config."`
 	Option  string `json:"option,omitempty" jsonschema:"option to read a single value. Omit to read the whole section."`
 	IDs     bool   `json:"ids,omitempty" jsonschema:"show anonymous sections by their stable internal id (cfgXXXXXX) instead of @type[n]; ids survive reordering, indexes do not"`
+
+	History string `json:"history,omitempty" jsonschema:"'list' shows the kept past versions of the config (from before each confirmed change); 'diff:<id>' compares one with the current config. Whole config only: give no section or option"`
 }
 
 // uciGetScope is the read counterpart of uciScopes: a read is scoped with the same identity
@@ -230,6 +260,12 @@ func uciGet(ctx context.Context, in uciGetIn) (string, string, error) {
 		argv = []string{"uci", "-X", "show", sel}
 	}
 	out, err := run(ctx, defaultCmdTimeout, argv...)
+	if err == nil {
+		// Always the whole config's revision, even for a narrowed read: it is what uci_apply compares.
+		if rev, rerr := configRevision(in.Config); rerr == nil {
+			out = strings.TrimRight(out, "\n") + "\n# revision of " + in.Config + ": " + rev
+		}
+	}
 	return out, "read " + sel, err
 }
 

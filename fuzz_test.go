@@ -326,3 +326,33 @@ func FuzzAValidatedUCIChangeAddressesExactlyTheKeyItWasScopedAs(f *testing.F) {
 		}
 	})
 }
+
+// ---------------------------------------------------------------- history ids
+
+// A history id names files under the state directory and arrives from the caller. Whatever
+// parses must be exactly "<config>:<stamp>", and neither half may be able to leave the
+// history directory or start like an option.
+func FuzzParseHistoryIDNeverYieldsAPathOrAnOption(f *testing.F) {
+	for _, s := range []string{
+		"dhcp:20261007-100000.001-abcdef12", "", ":", "dhcp:", "../x:20261007-100000.001-abcdef12",
+		"dhcp:../../etc/passwd", "-x:20261007-100000.001-abcdef12", "dhcp:20261007-100000.001-abcdef12\n",
+		"a:b:20261007-100000.001-abcdef12", "dhcp:20261007-100000.001-abcdef12.json", "dhcp\x00:20261007-100000.001-abcdef12",
+	} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, id string) {
+		config, stamp, err := parseHistoryID(id)
+		if err != nil {
+			return
+		}
+		if config+":"+stamp != id {
+			t.Fatalf("%q parsed to %q and %q: the id is not what was parsed", id, config, stamp)
+		}
+		for _, part := range []string{config, stamp} {
+			if part == "" || strings.ContainsAny(part, "/\\\x00\n\r :") || strings.Contains(part, "..") ||
+				strings.HasPrefix(part, "-") || strings.HasPrefix(part, ".") {
+				t.Fatalf("%q parsed, but %q could act as a path or an option", id, part)
+			}
+		}
+	})
+}

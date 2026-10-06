@@ -100,6 +100,23 @@ except those listed as exempt, which is wider than the four tools named in 1.2.
 
 Make `uci_apply` catch mistakes before the reload and prove the result after it.
 
+**Status: shipped in 1.2.0** (see `CHANGELOG.md`). Where the build differs from the text below:
+
+- 2.1: `fw4 check` exits 0 even for an invalid value, so the verdict is its `[!]` lines, compared
+  against the same check run before staging. dnsmasq has no check that sees staged changes, and
+  dropbear and uhttpd have none: those configs report "not checked".
+- 2.2: the revision is a digest of the committed file, not of `uci export`, and
+  `expected_revisions` is a `{config: revision}` map, so one call can guard several configs.
+- 2.3: the management-path rule set is static (LAN, its bridge, the SSH listener, the zone and
+  rule that let SSH in). It does not use the interface the current session arrived on, because the
+  bridge's origin address does not reach the tool handlers. Probes are `ping` and `resolve`, each
+  a policy scope of its own.
+- 2.4: `uci import` writes the file at once instead of staging it, so `restore` replaces the file
+  the way `pkg_config_resolve` does and checks it before the reload. History is recorded when a
+  change is confirmed (not when it is applied), and by the `wg_*` tools when they commit.
+- 2.5: `service_control` goes through rpcd's `rc` object, not procd, and polls that.
+- Not built: history in RAM for low-flash boards (the open question below stays open).
+
 ### 2.1 Validate before reload
 
 - **Problem.** The dry run shows the diff but does not ask the services whether they accept it.

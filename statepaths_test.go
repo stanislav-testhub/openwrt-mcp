@@ -27,7 +27,7 @@ func TestStatePathLayoutIsPinned(t *testing.T) {
 	got := statePaths("/var/lib/x", cfg)
 	want := []string{
 		"/a/audit.jsonl", "/a/audit.jsonl.1", "/run/x/mcp.sock",
-		"/var/lib/x/mfa", "/var/lib/x/mfa.new", "/var/lib/x/pending.json",
+		"/var/lib/x/history", "/var/lib/x/mfa", "/var/lib/x/mfa.new", "/var/lib/x/pending.json",
 		"/var/lib/x/rollback", "/var/lib/x/tokens", "/var/lib/x/tokens.tmp",
 	}
 	g := make([]string, len(got))
@@ -526,8 +526,8 @@ func pathBuildingLiterals(f *ast.File) []string {
 }
 
 func TestStateFileNamesLiveOnlyInStatepaths(t *testing.T) {
-	forbidden := map[string]bool{"tokens": true, "mfa": true, "pending.json": true, "rollback": true,
-		"/tokens": true, "/mfa": true, "/pending.json": true, "/rollback": true}
+	forbidden := map[string]bool{"tokens": true, "mfa": true, "pending.json": true, "rollback": true, "history": true,
+		"/tokens": true, "/mfa": true, "/pending.json": true, "/rollback": true, "/history": true}
 	for name, f := range nonTestSources(t) {
 		if name == "statepaths.go" {
 			continue
