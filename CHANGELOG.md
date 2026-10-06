@@ -59,6 +59,16 @@ Changed
 - `uci_apply`'s `changes` is optional in the schema (a restore has none).
 - `wg_new_client` and `wg_remove_client` take the calling client's name, for the history entry.
 
+Verified
+- On the GL-MT6000 (OpenWrt 25.12.5), through the daemon's stdio bridge: every refusal and dry-run
+  behaviour above, a real apply with probes then confirm, history list/diff, a byte-identical
+  restore, a failing probe followed by `uci_rollback`, and a `service_control` restart (see the
+  README *Verified* section). Not run on hardware: a management-path change applied with probes,
+  a failed probe left to the rollback timer, and history across a `sysupgrade`.
+- The mutation harness has 57 rows for the new rules; all but three (the `0600`/`0700` modes of the
+  history files and the restored file's mode, which need Linux to observe) are killed, and those
+  modes were confirmed on the router. `-race` and the description eval were not run locally.
+
 Not done
 - Out of scope: the `wg_*` tools still commit with no snapshot or rollback. History in RAM for
   low-flash boards (ROADMAP open question) is not built.

@@ -171,21 +171,30 @@ func TestHistoryListAndDiff(t *testing.T) {
 
 func TestHistoryRequestsAreValidated(t *testing.T) {
 	s, f, _ := applyFixture(t)
+	historyClock(t)
 	for name, in := range map[string]uciGetIn{
-		"unknown mode":         {Config: "dhcp", History: "show"},
-		"with a section":       {Config: "dhcp", Section: "lan", History: "list"},
-		"with an option":       {Config: "dhcp", Section: "lan", Option: "x", History: "list"},
-		"with ids":             {Config: "dhcp", History: "list", IDs: true},
-		"id of another config": {Config: "dhcp", History: "diff:network:20261007-100000.001-abcdef12"},
-		"malformed id":         {Config: "dhcp", History: "diff:dhcp:../../etc/shadow"},
-		"id without a stamp":   {Config: "dhcp", History: "diff:dhcp"},
-		"no such entry":        {Config: "dhcp", History: "diff:dhcp:20261007-100000.001-abcdef12"},
+		"unknown mode":       {Config: "dhcp", History: "show"},
+		"with a section":     {Config: "dhcp", Section: "lan", History: "list"},
+		"with an option":     {Config: "dhcp", Section: "lan", Option: "x", History: "list"},
+		"with ids":           {Config: "dhcp", History: "list", IDs: true},
+		"malformed id":       {Config: "dhcp", History: "diff:dhcp:../../etc/shadow"},
+		"id without a stamp": {Config: "dhcp", History: "diff:dhcp"},
+		"no such entry":      {Config: "dhcp", History: "diff:dhcp:20261007-100000.001-abcdef12"},
 	} {
 		if _, _, err := s.uciHistory(context.Background(), in); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
 	f.noCalls(t, "a rejected history request")
+
+	// An entry that exists for another config must not be served under this config's grant: the
+	// scope of the read is the config named in the call, not the one in the id.
+	s.saveHistory("network", []byte("config interface 'lan'\n"), 0o644, "c", "test", "seed")
+	other := s.historyEntries("network")[0].id()
+	if out, _, err := s.uciHistory(context.Background(), uciGetIn{Config: "dhcp", History: "diff:" + other}); err == nil ||
+		!strings.Contains(err.Error(), "not dhcp") {
+		t.Errorf("a version of network was served for dhcp: %v\n%s", err, out)
+	}
 }
 
 func TestParseHistoryID(t *testing.T) {
@@ -286,6 +295,17 @@ func TestRestoreRefusals(t *testing.T) {
 		if _, _, err := s.uciApply(ctx, "c", in); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+	// The policy file is refused as such even when a history entry for it exists (it cannot be
+	// made through uci_apply, but the id is the caller's and the file name is the config's).
+	s.saveHistory("openwrt-mcp", []byte("config server\n"), 0o600, "c", "test", "seed")
+	policyID := s.historyEntries("openwrt-mcp")[0].id()
+	fixtureDir := uciConfDir
+	uciConfDir = filepath.Dir(s.configPath) // the policy file really is "<uciConfDir>/openwrt-mcp"
+	_, _, err := s.uciApply(ctx, "c", uciApplyIn{Restore: policyID})
+	uciConfDir = fixtureDir
+	if err != errPolicyFile {
+		t.Errorf("restore of the policy config: %v, want errPolicyFile", err)
 	}
 	if readConf(t, "dhcp") != before || strings.Count(f.allCalls(), "/sbin/reload_config") != reloads {
 		t.Error("a refused restore changed the config or reloaded")

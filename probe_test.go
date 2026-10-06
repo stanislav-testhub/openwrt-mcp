@@ -393,6 +393,7 @@ func TestPortListedUnderstandsRangesAndLists(t *testing.T) {
 		{[]string{"2222"}, "22", false},
 		{[]string{"20-30"}, "22", true},
 		{[]string{"23-30"}, "22", false},
+		{[]string{"10-20"}, "22", false},
 		{[]string{"80 22 443"}, "22", true},
 		{[]string{"80,22"}, "22", true},
 		{[]string{"80", "22"}, "22", true},
@@ -403,5 +404,26 @@ func TestPortListedUnderstandsRangesAndLists(t *testing.T) {
 		if got := portListed(tc.values, tc.port); got != tc.want {
 			t.Errorf("portListed(%q, %q) = %v, want %v", tc.values, tc.port, got, tc.want)
 		}
+	}
+}
+
+// The LAN is a management network by name, whatever dropbear says about its interface.
+func TestTheLANIsManagementEvenWhenDropbearNamesNoInterface(t *testing.T) {
+	_, f := mgmtFixture(t)
+	f.on("uci -q show dropbear", "dropbear.@dropbear[0]=dropbear\n")
+	got := mgmtReasons(context.Background(), []UCIChange{chg("network", "lan", "ipaddr", "198.51.100.1/24")})
+	if len(got) != 1 || !strings.Contains(got[0], "network.lan") {
+		t.Errorf("reasons = %v, want the LAN interface", got)
+	}
+}
+
+// An interface dropbear is bound to is a management network too, whatever it is called.
+func TestAnInterfaceDropbearListensOnIsManagement(t *testing.T) {
+	_, f := mgmtFixture(t)
+	f.on("uci -q show dropbear", "dropbear.@dropbear[0]=dropbear\ndropbear.@dropbear[0].Interface='mgmt'\n")
+	f.on("uci -q show network", mgmtNetwork+"network.mgmt=interface\nnetwork.mgmt.proto='static'\nnetwork.mgmt.ipaddr='203.0.113.1/24'\n")
+	got := mgmtReasons(context.Background(), []UCIChange{chg("network", "mgmt", "ipaddr", "203.0.113.9/24")})
+	if len(got) != 1 || !strings.Contains(got[0], "network.mgmt") {
+		t.Errorf("reasons = %v, want the interface dropbear listens on", got)
 	}
 }

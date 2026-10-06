@@ -289,6 +289,20 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   text and the tab left, and an over-long line was cut at 1024 bytes with a `[+N bytes]` note.
   The syntax of `uci changes` (`+=`, `-=`, `'\''`, a bare `-path` for a delete) was captured
   from the router and is a test fixture.
+- **Reliable changes (1.2.0), on the same board, driven through the daemon's stdio bridge:**
+  `fw4 check` sees changes staged in uci (it exits 0 for an invalid value and prints `[!]` lines,
+  which is what validation reads): a dry run that sets a bogus zone value reports it as a NEW
+  problem, the real apply is refused, and nothing is left staged or snapshotted. A stale
+  `expected_revisions` is a `CONFLICT`; the current one passes; one for a config the call does not
+  change is refused. A dry run on the LAN interface names the management path, and a real apply
+  without a probe is refused with nothing staged. `add_list` of an element already in
+  `system.ntp.server` is skipped. On a scratch option in `luci`: an apply with a `ping` and a
+  `resolve` probe reports both OK after the reload and arms the rollback; confirming it leaves a
+  history entry (`0700` directory, `0600` files); `history=diff` shows what the change added;
+  `restore` brings the file back byte-identical with its mode, runs its probe, and leaves an entry
+  of its own; an apply with a failing probe reports `PROBE FAILED` with the rollback still armed,
+  and `uci_rollback` restores the file byte-identical. `service_control restart` of a daemon
+  reports "Settled after" its state.
 
 Unit and end-to-end tests (real MCP client over in-memory transport and over the bridge
 handshake) run on any OS against a fake router: apply/confirm/rollback/timeout, **restart
@@ -296,10 +310,12 @@ inside the window**, dry run, refusal on foreign staged edits, list ops, WireGua
 add/list/remove against a captured 25.12 config, client join, log filtering, apk simulation,
 `.apk-new` resolution with rollback, preset contents, scope glob semantics.
 
-**Not yet verified on hardware** (covered by the fake-router tests only): `service_control`,
-`pkg_change` with `commit`, the LuCI page rendering, the web-root guard on a real `/www` path or symlink, a
-real power cycle (the recovery path is the same one the `SIGKILL` test exercises), and keep.d
-across a real sysupgrade. Reports from other boards are welcome.
+**Not yet verified on hardware** (covered by the fake-router tests only): `pkg_change` with `commit`,
+the LuCI page rendering, the web-root guard on a real `/www` path or symlink, a real power cycle (the
+recovery path is the same one the `SIGKILL` test exercises), and keep.d across a real sysupgrade. For
+1.2.0 also: a management-path change applied *with* probes (only its refusal without one was run),
+a probe failure left to the rollback timer instead of `uci_rollback`, and history across a
+sysupgrade. Reports from other boards are welcome.
 
 ---
 

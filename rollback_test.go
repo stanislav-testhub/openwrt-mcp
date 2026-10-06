@@ -174,17 +174,23 @@ func TestRevisionsChainFromDryRunToApplyToGet(t *testing.T) {
 }
 
 func TestExpectedRevisionsMustNameAChangedConfigAndLookLikeARevision(t *testing.T) {
-	s, f, _ := applyFixture(t)
-	for name, exp := range map[string]map[string]string{
-		"config not in the changes": {"firewall": origDHCPRevision},
-		"typo in the config name":   {"dhpc": origDHCPRevision},
-		"not hex":                   {"dhcp": "not-a-revision"},
-		"too short":                 {"dhcp": "707f2b"},
-		"empty":                     {"dhcp": ""},
+	s, f, root := applyFixture(t)
+	writeFixture(t, root, "etc/config/firewall", "config zone\n")
+	fwRev, _ := configRevision("firewall") // a real, current revision of a config the call does not change
+	for name, tc := range map[string]struct {
+		exp  map[string]string
+		want string
+	}{
+		"config not in the changes":               {map[string]string{"firewall": origDHCPRevision}, "does not change"},
+		"current revision of an unchanged config": {map[string]string{"firewall": fwRev}, "does not change"},
+		"typo in the config name":                 {map[string]string{"dhpc": origDHCPRevision}, "does not change"},
+		"not hex":                                 {map[string]string{"dhcp": "not-a-revision"}, "not a revision"},
+		"too short":                               {map[string]string{"dhcp": "707f2b"}, "not a revision"},
+		"empty":                                   {map[string]string{"dhcp": ""}, "not a revision"},
 	} {
-		_, _, err := s.uciApply(context.Background(), "c", uciApplyIn{DryRun: true, Changes: leaseChanges, ExpectedRevisions: exp})
-		if err == nil {
-			t.Errorf("%s: accepted %v", name, exp)
+		_, _, err := s.uciApply(context.Background(), "c", uciApplyIn{DryRun: true, Changes: leaseChanges, ExpectedRevisions: tc.exp})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: want an error saying %q, got %v", name, tc.want, err)
 		}
 	}
 	if f.ran("uci set") {
