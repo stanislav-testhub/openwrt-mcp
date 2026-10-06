@@ -1,0 +1,105 @@
+name: release
+
+# A pushed tag vX.Y.Z builds every router architecture, packs each binary with the payload
+# under files/ (the same tree install.sh copies), writes SHA256SUMS, attests the build and
+# publishes a GitHub Release with the matching CHANGELOG section as notes.
+# workflow_dispatch releases a tag that already exists; this workflow is taken from the
+# default branch, the source from the tag.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: existing tag to release, e.g. v1.2.0
+        required: true
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+  artifact-metadata: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
+    steps:
+      - name: tag is vX.Y.Z
+        run: |
+          echo "$TAG" | grep -Eqx 'v[0-9]+\.[0-9]+\.[0-9]+' || { echo "not a release tag: $TAG"; exit 1; }
+
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ env.TAG }}
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: tag matches the version the binary reports
+        run: |
+          grep -qx "var version = \"${TAG#v}\"" main.go || { echo "main.go does not say version ${TAG#v}"; exit 1; }
+
+      - run: go vet ./...
+      - run: go test -race -count=1 ./...
+
+      - name: build and pack
+        run: |
+          set -eu
+          ver=${TAG#v}
+          mkdir -p dist
+          # label  GOARCH  GOARM/GOMIPS -- the targets install.sh maps DISTRIB_ARCH to
+          while read -r label arch sub; do
+            stage=$(mktemp -d)
+            mkdir -p "$stage/usr/bin"
+            case "$arch" in arm) export GOARM=$sub ;; mips|mipsle) export GOMIPS=$sub ;; esac
+            CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags="-s -w" \
+              -o "$stage/usr/bin/openwrt-mcp" .
+            unset GOARM GOMIPS
+            (cd files && tar -cf - .) | (cd "$stage" && tar -xf -)
+            tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$(git log -1 --format=%ct)" \
+              -C "$stage" -czf "dist/openwrt-mcp_${ver}_linux_${label}.tar.gz" .
+            rm -rf "$stage"
+          done <<'EOF'
+          arm64            arm64    -
+          armv7            arm      7
+          armv5            arm      5
+          mipsle_softfloat mipsle   softfloat
+          mips_softfloat   mips     softfloat
+          mips64le         mips64le -
+          mips64           mips64   -
+          amd64            amd64    -
+          386              386      -
+          riscv64          riscv64  -
+          EOF
+          (cd dist && sha256sum -- *.tar.gz > SHA256SUMS && cat SHA256SUMS)
+
+      - name: release notes from CHANGELOG
+        run: |
+          set -eu
+          ver=${TAG#v}
+          awk -v h="## $ver " 'index($0, h) == 1 { f = 1; print > "title.txt"; next } /^## / { if (f) exit } f' \
+            CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "CHANGELOG.md has no '## $ver ' section"; exit 1; }
+          cat >> notes.md <<'EOF'
+
+          ---
+          Install: pick the archive for your router's architecture (`install.sh` does this for you),
+          check it with `grep <archive> SHA256SUMS | sha256sum -c -` (works with BusyBox too), and
+          verify where it was built with `gh attestation verify <archive> --repo stanislav-testhub/openwrt-mcp`.
+          EOF
+
+      - uses: actions/attest@v4
+        with:
+          subject-path: dist/*.tar.gz
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          title="openwrt-mcp $(sed 's/^## //' title.txt)"
+          gh release create "$TAG" dist/* --verify-tag --title "$title" --notes-file notes.md

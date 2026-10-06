@@ -18,6 +18,15 @@ Changed
   - `wg_remove_client` is now marked idempotent: removing the same peer again changes nothing.
   - A contract test pins the title and the four hints of every tool.
 
+Added
+- **Release workflow (ROADMAP 3.1).**
+  - A pushed `vX.Y.Z` tag builds all ten router architectures. Each archive holds the binary
+    and the `files/` payload.
+  - The workflow writes `SHA256SUMS`, attests the build (`gh attestation verify`), and
+    publishes a GitHub Release with the CHANGELOG section as notes.
+  - It refuses a tag that disagrees with `main.go`.
+  - CI now also cross-builds `mips64` and `mips64le`, which `install.sh` already supported.
+
 ## 1.2.0 -- Reliable changes
 
 Closes ROADMAP milestone 2 (items 2.1 to 2.6). No tool is added: every item is a parameter or a

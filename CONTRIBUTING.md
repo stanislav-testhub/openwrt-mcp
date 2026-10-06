@@ -35,3 +35,19 @@ cross-compiles every supported architecture.
   (`.gitattributes` enforces this).
 
 Please describe what you tested on real hardware (board, OpenWrt release) in the PR.
+
+## Releasing (maintainers)
+
+1. Set `version` in `main.go` to `X.Y.Z`.
+2. Rename `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z -- <name>`.
+3. Commit, tag `vX.Y.Z` and push the tag.
+
+The `release` workflow then:
+
+- refuses a tag that does not match `main.go`, or a version with no CHANGELOG section;
+- runs the tests;
+- builds every architecture `install.sh` supports and packs each binary with `files/`;
+- writes `SHA256SUMS` and attests the build;
+- publishes the release with that CHANGELOG section as notes.
+
+To release a tag that already exists, run the workflow by hand with the tag as input.

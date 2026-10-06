@@ -22,7 +22,7 @@ jobs:
       - name: cross-build
         run: |
           set -eu
-          for t in "arm64" "arm 7" "arm 5" "mipsle softfloat" "mips softfloat" "amd64" "386" "riscv64"; do
+          for t in "arm64" "arm 7" "arm 5" "mipsle softfloat" "mips softfloat" "mips64le" "mips64" "amd64" "386" "riscv64"; do
             set -- $t
             case "$1" in arm) export GOARM=$2 ;; mips*) export GOMIPS=$2 ;; esac
             CGO_ENABLED=0 GOOS=linux GOARCH=$1 go build -trimpath -ldflags="-s -w" -o /dev/null .
