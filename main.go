@@ -272,6 +272,10 @@ func main() {
 		must(fs.Parse(args[1:]))
 		must(runStatus(*configPath, *statePath, *lines, *asJSON, *all))
 
+	case "connect":
+		// Runs on the operator's PC, not the router: nothing here reads the router's config.
+		must(connectMain(args[1:]))
+
 	case "wg-show":
 		// Hands a client config left by wg_new_client to the operator's terminal, so the private
 		// key never has to pass through a model's context. Flags may come after the name.
@@ -396,6 +400,8 @@ func usage() {
   status   [--json] [--audit N] [--all]        daemon state, pairings, grants, recent audit
   mfa      enrol <client> [device] | status   optional TOTP second factor for gated tools
   wg-show  <client name> [--keep]             print a WireGuard client config left by wg_new_client, then delete it
+  connect  --client <c> --host <router> ...    (on your PC) make the key and set up an MCP client
+  connect doctor --host <router> ...           (on your PC) check key, forced command, daemon and tools
   version
 
 Connect an MCP client either way:

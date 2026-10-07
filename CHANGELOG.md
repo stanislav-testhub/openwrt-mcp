@@ -97,6 +97,35 @@ Changed
     `status --json` carries `shell_equivalent` (additive; empty grants omit it). That also
     covers a policy file written by hand, which the `allow` gate never sees.
   - Existing grants are not changed or revoked.
+- **`openwrt-mcp connect` and `connect doctor` (ROADMAP 3.2).** They run on the operator's PC.
+  - `connect --client claude-code|claude-desktop|codex|cursor|gemini|vscode --host <router>`:
+    - makes an ed25519 key with the PC's `ssh-keygen` if there is none (never overwrites);
+    - prints the two commands to run on the router (`authorize-key`, `allow ... @readonly 30d`),
+      built from `<type> <base64>` of the public key only, because the key's comment is free text
+      that would otherwise end up inside a pasted command;
+    - shows the client entry, and with `--write` adds it: Claude Code and Codex through their own
+      `mcp add`, Claude Desktop, Cursor, Gemini CLI and VS Code by merging one `openwrt` entry into
+      their JSON file. Other servers are kept, an existing different `openwrt` entry needs
+      `--replace`, the original file is kept once as `<file>.before-openwrt-mcp`, the write goes
+      through a temp file and a rename, and a file that is not plain JSON (VS Code allows comments)
+      is left alone with the snippet printed.
+    - the entry is `ssh` plus an argument list (`-T -i KEY -p PORT -o BatchMode=yes -o
+      IdentitiesOnly=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=3 user@host`), so no
+      quoting depends on the OS; the commands printed for a human are quoted for POSIX shells or
+      for Windows.
+    - `--host`, `--user`, `--name`, `--key` and `--port` are validated before anything is made, so a
+      value cannot become an `ssh` option.
+  - `connect doctor` starts the same `ssh` command a client would and speaks MCP over it. Steps,
+    in order: SSH reachable, host key (unknown, or changed), key accepted, forced command, daemon
+    socket, `initialize`, `tools/list`. It stops at the first failure and prints one fix. A test
+    drives it with a stand-in `ssh` for each fault: wrong key, key file too open or missing,
+    missing forced command, stopped daemon, disabled socket, unknown and changed host key,
+    unresolvable and refused and timed-out hosts, an empty tool list.
+  - Claude Desktop is Windows and macOS only; elsewhere `--file` names the config. Under WSL,
+    `connect` warns that a Windows-side client uses the Windows `ssh` and `~/.ssh`.
+  - The binary needs nothing OS-specific, and CI now builds and vets it for Windows and macOS.
+    Releases carry `windows_amd64`, `windows_arm64`, `darwin_amd64` and `darwin_arm64` archives
+    (a zip for Windows) with the binary and the licence, checksummed and attested like the rest.
 
 Fixed
 - **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each

@@ -125,7 +125,44 @@ rebuilds *packages*, not loose files -- the keep.d entry is what preserves this 
 
 ## Connect
 
-### stdio over SSH (recommended)
+### `openwrt-mcp connect` (recommended)
+
+The release has a binary for your PC too (`openwrt-mcp_<version>_windows_amd64.zip`, `darwin_arm64.tar.gz`
+and so on; a Linux PC can use the `linux_` archive). Unpack it anywhere on your `PATH`; it needs
+OpenSSH, which Windows 10 and later, macOS and Linux have. Then, on your PC:
+
+```sh
+openwrt-mcp connect --client claude-code --host 192.168.1.1          # or claude-desktop, codex, cursor, gemini, vscode
+```
+
+It makes a dedicated ed25519 key (`~/.ssh/openwrt_mcp`, never overwriting one), prints the two
+commands to run on the router once, and shows the entry to add to your client. Add `--write` and it
+does that last step: for Claude Code and Codex by running their own `mcp add`, for Claude Desktop,
+Cursor, Gemini CLI and VS Code by merging one `openwrt` entry into their JSON file (other servers
+stay; the original is kept once as `<file>.before-openwrt-mcp`; a file with comments is left alone and
+the snippet printed instead). The entry stores `ssh` and its arguments as a list, so spaces in a key
+path need no quoting, and it sets keep-alives so a router that rebooted is noticed.
+
+```sh
+openwrt-mcp connect doctor --host 192.168.1.1
+```
+
+checks the chain in order and stops at the first break, with one fix for it:
+
+```
+[ ok ] ssh reachable   192.168.1.1:22
+[ ok ] host key
+[ ok ] key accepted    /home/you/.ssh/openwrt_mcp
+[FAIL] forced command  the key logged in, but nothing answered as an MCP server (...)
+       fix: the key is probably authorized without its forced command ...
+[skip] daemon socket
+```
+
+The steps are: SSH reachable, host key, key accepted, forced command, daemon socket, `initialize`,
+`tools/list`. Wrong key, a missing forced command, a stopped daemon and a disabled socket each name
+their own step. The weekly reboot disconnects the bridge; the client reconnects on its next start.
+
+### stdio over SSH, by hand
 
 A dedicated key, bound on the router to the MCP bridge and nothing else:
 

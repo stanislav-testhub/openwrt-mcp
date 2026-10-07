@@ -228,6 +228,12 @@ also fixes the catalog-level defects a measurement of `tools/list` found. **It a
 
 ### 3.2 `connect` and `doctor`
 
+**Status: done on `main`, not yet released.** Not yet run against a real router from a PC: that is
+a hardware check before 1.3.0. Claude Code and Codex are configured through their own `mcp add`
+command, which is sturdier than editing their files; the others get a merged JSON entry. A
+`Windows hygiene` test set (UTF-8 without BOM, no CRLF, paths with spaces, `%APPDATA%`) is part of
+`connect_test.go` and `clientcfg_test.go`; WSL is detected and warned about, not tested.
+
 - **Problem.** The stdio bridge needs a dedicated key, an `authorize-key` line on the router and a client config
   entry. Each client stores that entry differently, and Windows and WSL add their own quoting and path problems.
 - **Ships.**

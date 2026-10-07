@@ -84,8 +84,30 @@ jobs:
           386              386      -
           riscv64          riscv64  -
           EOF
+          # The PC side of `openwrt-mcp connect`: the binary alone, for the machine the MCP client
+          # runs on. (A Linux PC can use the linux_ archive above; it carries the router payload too.)
+          mtime=$(git log -1 --format=%ct)
+          while read -r goos arch kind; do
+            stage=$(mktemp -d)
+            exe=openwrt-mcp; [ "$goos" = windows ] && exe=openwrt-mcp.exe
+            CGO_ENABLED=0 GOOS=$goos GOARCH=$arch go build -trimpath -ldflags="-s -w" -o "$stage/$exe" .
+            cp LICENSE "$stage/"
+            touch -d "@$mtime" "$stage"/*
+            name="openwrt-mcp_${ver}_${goos}_${arch}"
+            case "$kind" in
+              zip) (cd "$stage" && zip -q -X "$GITHUB_WORKSPACE/dist/$name.zip" -- *) ;;
+              tar) tar --sort=name --owner=0 --group=0 --numeric-owner --mtime="@$mtime" \
+                     -C "$stage" -czf "dist/$name.tar.gz" . ;;
+            esac
+            rm -rf "$stage"
+          done <<'EOF'
+          windows amd64 zip
+          windows arm64 zip
+          darwin  amd64 tar
+          darwin  arm64 tar
+          EOF
           cp tooling/install-router.sh dist/
-          (cd dist && sha256sum -- *.tar.gz install-router.sh > SHA256SUMS && cat SHA256SUMS)
+          (cd dist && sha256sum -- *.tar.gz *.zip install-router.sh > SHA256SUMS && cat SHA256SUMS)
 
       - name: release notes from CHANGELOG
         run: |
@@ -104,12 +126,16 @@ jobs:
 
           or from a PC with `./install.sh install --release`. Verify where a file was built with
           `gh attestation verify <file> --repo stanislav-testhub/openwrt-mcp`.
+
+          On your PC (Windows, macOS), `openwrt-mcp connect --client <name> --host <router>` makes the
+          SSH key and sets up your MCP client; unpack the `windows_*` or `darwin_*` archive for it.
           EOF
 
       - uses: actions/attest@v4
         with:
           subject-path: |
             dist/*.tar.gz
+            dist/*.zip
             dist/install-router.sh
 
       - name: publish

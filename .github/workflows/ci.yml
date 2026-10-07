@@ -44,6 +44,16 @@ jobs:
             unset GOARM GOMIPS
           done
 
+      # `openwrt-mcp connect` runs on the operator's PC, so the binary must build and vet there too.
+      - name: PC builds
+        run: |
+          set -eu
+          for t in "windows amd64" "windows arm64" "darwin amd64" "darwin arm64"; do
+            set -- $t
+            GOOS=$1 GOARCH=$2 go vet .
+            CGO_ENABLED=0 GOOS=$1 GOARCH=$2 go build -trimpath -ldflags="-s -w" -o /dev/null .
+          done
+
       - name: payload files are LF and parse
         run: |
           set -eu
