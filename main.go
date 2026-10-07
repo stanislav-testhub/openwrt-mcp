@@ -272,6 +272,14 @@ func main() {
 		must(fs.Parse(args[1:]))
 		must(runStatus(*configPath, *statePath, *lines, *asJSON, *all))
 
+	case "diag":
+		// Paste-ready for a bug report: see diag.go for what is masked and what is left out.
+		fs := flag.NewFlagSet("diag", flag.ExitOnError)
+		n := fs.Int("audit", 20, "how many recent audit entries to include (0 for none)")
+		detail := fs.Bool("detail", false, "also print each entry's scope, summary and error text (masked)")
+		must(fs.Parse(args[1:]))
+		must(runDiag(os.Stdout, *configPath, *n, *detail))
+
 	case "connect":
 		// Runs on the operator's PC, not the router: nothing here reads the router's config.
 		must(connectMain(args[1:]))
@@ -400,6 +408,7 @@ func usage() {
   status   [--json] [--audit N] [--all]        daemon state, pairings, grants, recent audit
   mfa      enrol <client> [device] | status   optional TOTP second factor for gated tools
   wg-show  <client name> [--keep]             print a WireGuard client config left by wg_new_client, then delete it
+  diag     [--audit N] [--detail]              version, board, policy shape and recent audit, with addresses and names masked
   connect  --client <c> --host <router> ...    (on your PC) make the key and set up an MCP client
   connect doctor --host <router> ...           (on your PC) check key, forced command, daemon and tools
   version

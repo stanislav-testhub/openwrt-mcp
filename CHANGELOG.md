@@ -133,6 +133,23 @@ Changed
   make is one `@readonly` allows, including the `ubus_call` objects and `sysupgrade` actions, so a
   read-only client can follow them to the end. Where a step would need more (`uci_apply`, the
   `sysupgrade` backup), the recipe stops at a proposal.
+- **`openwrt-mcp diag` (ROADMAP 3.9).** A bundle to paste into a bug report: version, Go and OS,
+  board and kernel (from `ubus`), daemon and bridge state, settings, the shape of every policy
+  (tools, scopes, rate, expiry, shell-equivalent marker) and the last `--audit N` (default 20)
+  audit lines.
+  - Every IPv4 (leading-zero spellings too), IPv6 and MAC address becomes `ip-N` or `mac-N`, except
+    loopback and the unspecified address. Host names, DHCP names (static and leased), SSIDs, the
+    domain and WireGuard peer names become `host-N`, `ssid-N`, `domain-N`, `peer-N`, matched
+    case-insensitively on whole words. They are read from `system`, `dhcp`, `wireless` and
+    `network` and the lease file; only those options are kept, so keys in the same output are read
+    and dropped. The same value always gets the same placeholder.
+  - Client names stay only if they name a program (`claude-code`, `cursor`, ...); any other
+    becomes `client-N`.
+  - Audit arguments are never printed. The scope, summary and error of an entry appear only with
+    `--detail`, masked like everything else.
+  - The test generates addresses and names in the contexts a log has them in and fails if any
+    survives; a whole-command test builds a router with private names in its UCI, policy and audit
+    log and checks the default and `--detail` output for leaks.
 
 Fixed
 - **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each

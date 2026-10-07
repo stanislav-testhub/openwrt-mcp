@@ -372,6 +372,9 @@ until 4.3 and 4.4 give them dedicated tools.
 
 ### 3.9 Sanitised diagnostic bundle
 
+**Status: done on `main`, not yet released.** Not yet read by eye on the hardware: the check before
+1.3.0 is to run it on the router and look for anything it should have hidden.
+
 - **Ships.** `openwrt-mcp diag` prints the version, the board, the policy shape and the last N audit entries, with
   IPs, MACs, SSIDs and host names masked. The output is ready to paste into a GitHub issue.
 - **Precedent.** ha-mcp's built-in issue-report tool, and unifi-mcp's sanitised support bundles.

@@ -99,6 +99,11 @@ Everything a tool returns goes through one path: sanitise, mask, bound, label.
   at reboot. A `sysupgrade` backup is created `0600` before it is written, and the tool keeps
   only the newest archive it made. A model that is told to run `wg_new_client` therefore never
   sees the key unless it also sets `reveal`, and a policy cannot yet tell the two apart.
+- **`openwrt-mcp diag` is made to be pasted into a public issue.** It masks IPv4, IPv6 and MAC
+  addresses by shape and names (host, DHCP, SSID, domain, WireGuard peer) by looking them up in
+  the router's own configuration, and it never prints audit arguments. A name that appears only in
+  free text and nowhere in the configuration is not recognised, so read the output before you post
+  it.
 - **Known gaps in masking:** a masked diff hides *what* changed in a secret; matching by substring
   also hides options such as `wpa_psk_file`; a secret in free text (a log line, a `description`)
   is not recognised. `option redact_output '0'` turns masking off; it is audited as a system

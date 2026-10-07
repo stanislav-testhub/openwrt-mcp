@@ -436,6 +436,15 @@ Bug reports and pull requests are welcome -- see [CONTRIBUTING.md](CONTRIBUTING.
 report vulnerabilities privately as described in [SECURITY.md](SECURITY.md), not in a public
 issue. Planned work is in [ROADMAP.md](ROADMAP.md).
 
+**Reporting a bug:** on the router run `openwrt-mcp diag` and paste the output into the issue. It
+prints the version, board, daemon state, the shape of the policy and the last 20 audit lines
+(`--audit N`), with every IPv4, IPv6 and MAC address, host name, DHCP name, SSID, domain and
+WireGuard peer name replaced by a placeholder (`ip-1`, `mac-1`, `host-1`, `ssid-1`) that stays
+the same for the same value. Audit arguments are never printed, and the scope, summary and error
+text of an entry only with `--detail`, masked the same way. Names are matched against what the
+router itself says they are, so read it once before pasting: a name that is only in free text, not
+in the router's configuration, is not recognised.
+
 ## Licence
 
 MIT -- see [LICENSE](LICENSE). Copyright (c) 2026 Ian Williams (upstream) and Stanislav Chupin
