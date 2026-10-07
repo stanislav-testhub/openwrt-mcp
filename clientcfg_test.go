@@ -263,8 +263,14 @@ func TestQuotingForDisplayPerShell(t *testing.T) {
 }
 
 func TestExpandHome(t *testing.T) {
+	// A Windows-style "~\" means the home directory on Windows, and is an ordinary file name elsewhere.
+	backslashHome := `~\.ssh\k` // left alone where a backslash is not a separator
+	if filepath.Separator == '\\' {
+		backslashHome = "/h/.ssh/k"
+	}
 	for in, want := range map[string]string{
-		"~": "/h", "~/.ssh/k": "/h/.ssh/k", `~\.ssh\k`: "/h/.ssh/k", "/abs/k": "/abs/k", "rel/k": "rel/k", "~user/k": "~user/k",
+		"~": "/h", "~/.ssh/k": "/h/.ssh/k", `~\.ssh\k`: backslashHome,
+		"/abs/k": "/abs/k", "rel/k": "rel/k", "~user/k": "~user/k",
 	} {
 		if got := filepath.ToSlash(expandHome(in, "/h")); got != want {
 			t.Errorf("expandHome(%q) = %q, want %q", in, got, want)

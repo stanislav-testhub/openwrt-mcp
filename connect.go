@@ -73,7 +73,9 @@ func expandHome(p, home string) string {
 	if p == "~" {
 		return home
 	}
-	if strings.HasPrefix(p, "~/") || strings.HasPrefix(p, `~\`) {
+	// "~\" is a home-relative path only where backslash separates directories; on Linux it is the
+	// start of a file name.
+	if strings.HasPrefix(p, "~/") || (filepath.Separator == '\\' && strings.HasPrefix(p, `~\`)) {
 		return filepath.Join(home, p[2:])
 	}
 	return p
