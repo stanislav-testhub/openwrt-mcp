@@ -584,6 +584,43 @@ func TestRunBridgeCarriesMCPBothWaysAndEndsWhenStdinCloses(t *testing.T) {
 	}
 }
 
+// A daemon restart closes the bridge's socket while the MCP client is idle. The bridge must
+// exit then, not on the client's next request: until it does, the client holds a dead
+// process and every restart leaves one more behind.
+func TestRunBridgeExitsWhenTheDaemonGoesAway(t *testing.T) {
+	sock := shortSocketPath(t)
+	if err := os.MkdirAll(filepath.Dir(sock), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Skipf("unix sockets unavailable here: %v", err)
+	}
+	defer ln.Close()
+	// The daemon: take the handshake, then die.
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		_, _ = bufio.NewReader(c).ReadString('\n')
+		c.Close()
+	}()
+	stdinW, _ := swapStdio(t)
+	defer stdinW.Close() // stays open for the whole test: the client is alive, just quiet
+
+	done := make(chan error, 1)
+	go func() { done <- runBridge(sock, "claude-code") }()
+	select {
+	case err := <-done:
+		if err == nil || !strings.Contains(err.Error(), "daemon closed the connection") {
+			t.Errorf("runBridge = %v, want an error saying the daemon closed the connection", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("runBridge still running a second after the daemon closed the socket")
+	}
+}
+
 func TestRunBridgeFailsClearly(t *testing.T) {
 	if err := runBridge("/nonexistent/m.sock", "../etc"); err == nil || !strings.Contains(err.Error(), "bad client name") {
 		t.Errorf("bad client name: %v", err)

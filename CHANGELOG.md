@@ -17,8 +17,24 @@ Changed
     - `exec`.
   - `wg_remove_client` is now marked idempotent: removing the same peer again changes nothing.
   - A contract test pins the title and the four hints of every tool.
+- **Expired grants no longer pile up.**
+  - `allow` replaces the client's expired grant with the same tools and scopes instead of
+    adding another block, so a daily `allow claude-code @operator 2h` keeps four blocks, not
+    four more each day.
+  - `status` folds expired grants into one count line; `status --all` lists them. `--json` is
+    unchanged and still carries every grant with its `expired` flag.
+  - Expired grants were already ignored when authorising, so this is cleanup, not security.
+
+Fixed
+- **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each
+  `openwrt-mcp stdio` process stayed alive until its client's next request, blocked reading
+  stdin. It now exits as soon as the daemon closes the socket, with "daemon closed the
+  connection" on stderr.
 
 Added
+- **`openwrt-mcp prune [--older-than <duration>]`** deletes expired grants, writes one
+  `prune` line to the audit log when it removes any, and refuses a negative age (that would
+  reach live grants). Comments, the server section and other blocks are kept byte for byte.
 - **Release workflow (ROADMAP 3.1).**
   - A pushed `vX.Y.Z` tag builds all ten router architectures. Each archive holds the binary
     and the `files/` payload.

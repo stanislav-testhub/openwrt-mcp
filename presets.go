@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
+	"time"
 )
 
 // Presets expand into several policy blocks, because a policy's scope globs apply to every
@@ -72,6 +74,29 @@ func validTool(t string) bool { return contains(allToolNames, t) }
 // returns how many went. Everything else -- comments, the server section, other clients --
 // is copied through byte for byte.
 func removePolicies(configPath, client string) (int, error) {
+	return removePoliciesWhere(configPath, func(s uciSection) bool { return s.Options["client"] == client })
+}
+
+// removeExpired deletes every grant that expired before cutoff and that match accepts. A block
+// that does not parse is left alone: LoadConfig reports it, and revoke removes it.
+func removeExpired(configPath string, cutoff time.Time, match func(*Policy) bool) (int, error) {
+	n, err := removePoliciesWhere(configPath, func(s uciSection) bool {
+		p, err := policyFromSection(s)
+		return err == nil && !p.Expires.IsZero() && p.Expires.Before(cutoff) && match(p)
+	})
+	if os.IsNotExist(err) {
+		return 0, nil // no config file: nothing was ever granted
+	}
+	return n, err
+}
+
+// sameSet reports whether a and b hold the same strings, in any order.
+func sameSet(a, b []string) bool {
+	return slices.Equal(slices.Sorted(slices.Values(a)), slices.Sorted(slices.Values(b)))
+}
+
+// removePoliciesWhere deletes every `config policy` block that drop matches, in the same way.
+func removePoliciesWhere(configPath string, drop func(uciSection) bool) (int, error) {
 	f, err := os.Open(configPath)
 	if err != nil {
 		return 0, err
@@ -98,7 +123,7 @@ func removePolicies(configPath, client string) (int, error) {
 	n := 0
 	for _, b := range blocks {
 		secs := parseUCI(bufio.NewScanner(strings.NewReader(strings.Join(b, "\n"))))
-		if len(secs) == 1 && secs[0].Type == "policy" && secs[0].Options["client"] == client {
+		if len(secs) == 1 && secs[0].Type == "policy" && drop(secs[0]) {
 			n++
 			continue
 		}

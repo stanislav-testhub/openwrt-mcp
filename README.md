@@ -177,8 +177,12 @@ openwrt-mcp allow claude-code @operator 7d           # + uci_apply/confirm/rollb
 openwrt-mcp allow claude-code uci_apply 'dhcp.* wireless.*.disabled' 30d
 openwrt-mcp allow claude-code service_control 'dnsmasq.restart adguardhome.*' 30d
 openwrt-mcp revoke claude-code                        # remove every policy for the client
-openwrt-mcp policies | status | clients
+openwrt-mcp prune --older-than 7d                     # delete grants that expired over a week ago (audited)
+openwrt-mcp policies | status [--all] | clients
 ```
+
+Granting the same tools and scopes again replaces the client's expired grant instead of adding
+a block. `status` counts expired grants in one line; `--all` lists them.
 
 Neither preset includes `exec` or unrestricted `ubus_call`; both bypass the safety rails. The
 read-only ubus list is explicit `object.method` pairs, not `*.list`-style globs, because

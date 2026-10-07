@@ -116,11 +116,14 @@ func main() {
 		if len(args) == 4 && strings.HasPrefix(args[2], "@") {
 			blocks, err := expandPreset(args[2])
 			must(err)
+			replaced := 0
 			for _, b := range blocks {
+				replaced += replaceExpired(*configPath, args[1], b.tools, b.scopes)
 				must(appendPolicy(*configPath, args[1], strings.Join(b.tools, ","), strings.Join(b.scopes, " "), args[3]))
 			}
 			fmt.Printf("granted %s preset %s (%d policy blocks) for %s; the daemon picks it up without a restart\n",
 				args[1], args[2], len(blocks), args[3])
+			printReplaced(replaced)
 			break
 		}
 		if len(args) != 5 {
@@ -128,14 +131,43 @@ func main() {
 				"       openwrt-mcp allow <client> @readonly|@operator <duration|never>\n" +
 				"  e.g. openwrt-mcp allow claude-code uci_apply 'dhcp.* wireless.*.disabled' 30d")
 		}
+		var tools []string
 		for _, t := range strings.Split(args[2], ",") {
 			if t = strings.TrimSpace(t); t != "" && !validTool(t) {
 				die("unknown tool %q (tools: %s)", t, strings.Join(allToolNames, ", "))
+			} else if t != "" {
+				tools = append(tools, t)
 			}
 		}
+		replaced := replaceExpired(*configPath, args[1], tools, strings.Fields(args[3]))
 		must(appendPolicy(*configPath, args[1], args[2], args[3], args[4]))
 		fmt.Printf("granted %s -> %s on '%s' for %s; the daemon picks it up without a restart\n",
 			args[1], args[2], args[3], args[4])
+		printReplaced(replaced)
+
+	case "prune":
+		fs := flag.NewFlagSet("prune", flag.ExitOnError)
+		olderThan := fs.String("older-than", "0s", "keep grants that expired less than this long ago, e.g. 7d")
+		must(fs.Parse(args[1:]))
+		if fs.NArg() != 0 {
+			die("usage: openwrt-mcp prune [--older-than <duration>]   (deletes expired grants)")
+		}
+		age, err := parseDuration(*olderThan)
+		if err != nil {
+			die("bad duration %q for --older-than", *olderThan)
+		}
+		if age < 0 {
+			die("--older-than must not be negative: that would delete grants that are still live")
+		}
+		cfg, err := LoadConfig(*configPath)
+		must(err)
+		n, err := removeExpired(*configPath, time.Now().Add(-age), func(*Policy) bool { return true })
+		must(err)
+		if n > 0 {
+			NewAuditor(cfg.AuditPath, cfg.AuditMaxMB).Record(AuditEvent{Time: nowISO(), Client: "<cli>", Tool: "prune",
+				Outcome: OutcomeOK, Summary: fmt.Sprintf("removed %d expired grant(s), --older-than %s", n, *olderThan)})
+		}
+		fmt.Printf("removed %d expired grant(s)\n", n)
 
 	case "policies":
 		cfg, err := LoadConfig(*configPath)
@@ -223,8 +255,9 @@ func main() {
 		fs := flag.NewFlagSet("status", flag.ExitOnError)
 		asJSON := fs.Bool("json", false, "emit JSON")
 		lines := fs.Int("audit", 20, "how many recent audit entries to include (0 for none)")
+		all := fs.Bool("all", false, "list expired grants too, not just their count")
 		must(fs.Parse(args[1:]))
-		must(runStatus(*configPath, *statePath, *lines, *asJSON))
+		must(runStatus(*configPath, *statePath, *lines, *asJSON, *all))
 
 	case "version":
 		fmt.Printf("openwrt-mcp %s\n", version)
@@ -282,6 +315,23 @@ func appendPolicy(configPath, client, tools, scopes, duration string) error {
 	return err
 }
 
+// replaceExpired deletes client's expired grants for exactly these tools and scopes, so that
+// granting the same thing again (`allow claude-code @operator 2h`, day after day) replaces the
+// old block instead of piling up another one.
+func replaceExpired(configPath, client string, tools, scopes []string) int {
+	n, err := removeExpired(configPath, time.Now(), func(p *Policy) bool {
+		return p.Client == client && sameSet(p.Tools, tools) && sameSet(p.Scopes, scopes)
+	})
+	must(err)
+	return n
+}
+
+func printReplaced(n int) {
+	if n > 0 {
+		fmt.Printf("replaced %d expired grant(s) with the same tools and scopes\n", n)
+	}
+}
+
 // parseDuration extends time.ParseDuration with 'd' for days, since grants are
 // naturally expressed in days and Go's parser stops at hours.
 func parseDuration(s string) (time.Duration, error) {
@@ -308,7 +358,8 @@ func usage() {
   allow    <client> @readonly|@operator <dur> grant a preset
   revoke   <client>                           remove every policy for a client (config: %s)
   policies                                    show current grants
-  status   [--json] [--audit N]                daemon state, pairings, grants, recent audit
+  prune    [--older-than <dur>]               delete expired grants (audited)
+  status   [--json] [--audit N] [--all]        daemon state, pairings, grants, recent audit
   mfa      enrol <client> [device] | status   optional TOTP second factor for gated tools
   version
 

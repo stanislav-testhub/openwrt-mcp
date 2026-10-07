@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -267,4 +268,203 @@ func TestCLIStdioRefusesWhenTheBridgeIsSwitchedOff(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.fails("stdio bridge is disabled", "stdio", "--client", "claude-code")
+}
+
+// ---------------------------------------------------------------- expired grants
+
+// grantBlock is one policy block as `allow` writes it; expires "" means never.
+func grantBlock(client, tool, scope, expires string) string {
+	b := "\nconfig policy\n\toption client\t'" + client + "'\n\tlist tools\t'" + tool + "'\n\tlist scopes\t'" + scope + "'\n"
+	if expires != "" {
+		b += "\toption expires\t'" + expires + "'\n"
+	}
+	return b + "\toption enabled\t'1'\n"
+}
+
+// cliHeader keeps the audit log in the test's directory: the default is /etc/openwrt-mcp.
+func (c *cliEnv) header() string {
+	return "config server\n\toption audit\t'" + filepath.ToSlash(filepath.Join(filepath.Dir(c.config), "audit.jsonl")) + "'\n# keep me\n"
+}
+
+func ago(d time.Duration) string { return time.Now().Add(-d).UTC().Format(time.RFC3339) }
+
+func TestCLIStatusFoldsExpiredGrantsIntoOneLine(t *testing.T) {
+	c := newCLI(t)
+	cfg := c.header() +
+		grantBlock("claude-code", "logread", "*", "2020-01-01T00:00:00Z") +
+		grantBlock("claude-code", "uci_get", "*", "2021-01-01T00:00:00Z") +
+		grantBlock("claude-code", "system_status", "*", "")
+	if err := os.WriteFile(c.config, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	const fold = "  2 expired grant(s) not shown: `openwrt-mcp status --all` lists them, `openwrt-mcp prune` deletes them\n"
+
+	out := c.ok("status", "--audit", "0")
+	if !strings.Contains(out, "  claude-code: system_status on *, 60/min, expires never\n") {
+		t.Errorf("the live grant is missing:\n%s", out)
+	}
+	if strings.Contains(out, "EXPIRED") || !strings.Contains(out, fold) {
+		t.Errorf("expired grants are not folded into one line:\n%s", out)
+	}
+
+	all := c.ok("status", "--all", "--audit", "0")
+	for _, want := range []string{
+		"  claude-code: logread on *, 60/min, expires 2020-01-01T00:00:00Z (EXPIRED)\n",
+		"  claude-code: uci_get on *, 60/min, expires 2021-01-01T00:00:00Z (EXPIRED)\n",
+		"  claude-code: system_status on *, 60/min, expires never\n",
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("status --all lacks %q:\n%s", want, all)
+		}
+	}
+	if strings.Contains(all, "not shown") {
+		t.Errorf("status --all still folds:\n%s", all)
+	}
+
+	// JSON backs the LuCI page, which marks expired rows itself: it keeps every grant.
+	var rep statusReport
+	if err := json.Unmarshal([]byte(c.ok("status", "--json", "--audit", "0")), &rep); err != nil || len(rep.Policies) != 3 {
+		t.Errorf("status --json: %d policies, %v; want all 3", len(rep.Policies), err)
+	}
+
+	c2 := newCLI(t)
+	c2.ok("allow", "claude-code", "@readonly", "never")
+	if out := c2.ok("status", "--audit", "0"); strings.Contains(out, "expired") {
+		t.Errorf("a fold line with nothing expired:\n%s", out)
+	}
+}
+
+func TestCLIPruneDeletesOnlyExpiredGrantsAndIsAudited(t *testing.T) {
+	c := newCLI(t)
+	old := grantBlock("claude-code", "logread", "*", ago(10*24*time.Hour))
+	oldOther := grantBlock("laptop", "uci_get", "*", ago(8*24*time.Hour))
+	recent := grantBlock("claude-code", "uci_get", "*", ago(time.Hour))
+	live := grantBlock("claude-code", "exec", "*", time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+	never := grantBlock("laptop", "system_status", "*", "")
+	if err := os.WriteFile(c.config, []byte(c.header()+old+recent+oldOther+live+never), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file := func() string {
+		b, err := os.ReadFile(c.config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(b)
+	}
+
+	if out := c.ok("prune", "--older-than", "7d"); !strings.Contains(out, "removed 2 expired grant(s)") {
+		t.Errorf("prune --older-than 7d: %q", out)
+	}
+	if got, want := file(), c.header()+recent+live+never; got != want {
+		t.Errorf("after prune --older-than 7d:\n%s\nwant:\n%s", got, want)
+	}
+	if out := c.ok("prune"); !strings.Contains(out, "removed 1 expired grant(s)") {
+		t.Errorf("prune: %q", out)
+	}
+	if got, want := file(), c.header()+live+never; got != want {
+		t.Errorf("after prune:\n%s\nwant:\n%s", got, want)
+	}
+	if out := c.ok("prune"); !strings.Contains(out, "removed 0 expired grant(s)") {
+		t.Errorf("prune with nothing expired: %q", out)
+	}
+
+	// One audit line per prune that removed something; a no-op leaves none.
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(c.config), "audit.jsonl"))
+	if err != nil {
+		t.Fatalf("prune was not audited: %v", err)
+	}
+	var sums []string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var ev AuditEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("audit line %q: %v", line, err)
+		}
+		if ev.Client != "<cli>" || ev.Tool != "prune" || ev.Outcome != OutcomeOK {
+			t.Errorf("audit event %+v", ev)
+		}
+		sums = append(sums, ev.Summary)
+	}
+	if len(sums) != 2 || !strings.Contains(sums[0], "removed 2 expired grant(s)") || !strings.Contains(sums[1], "removed 1 expired grant(s)") {
+		t.Errorf("audit summaries %q", sums)
+	}
+
+	c.fails("bad duration", "prune", "--older-than", "soon")
+	// A negative age would reach into the future and delete live grants.
+	c.fails("must not be negative", "prune", "--older-than", "-1h")
+	c.fails("usage", "prune", "extra")
+	if got, want := file(), c.header()+live+never; got != want {
+		t.Errorf("a refused prune changed the file:\n%s", got)
+	}
+}
+
+func TestCLIAllowReplacesAnExpiredGrantWithTheSameToolsAndScopes(t *testing.T) {
+	c := newCLI(t)
+	cfg := c.header() +
+		grantBlock("claude-code", "logread", "*", "2020-01-01T00:00:00Z") +
+		grantBlock("claude-code", "logread", "x.*", "2020-01-01T00:00:00Z") + // other scopes: kept
+		grantBlock("laptop", "logread", "*", "2020-01-01T00:00:00Z") + // other client: kept
+		grantBlock("claude-code", "uci_get", "*", time.Now().Add(time.Hour).UTC().Format(time.RFC3339)) // live: kept, even when granted again
+	if err := os.WriteFile(c.config, []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	type row struct {
+		client, tools, scopes string
+		expired               bool
+	}
+	rows := func() []row {
+		t.Helper()
+		cfg, err := LoadConfig(c.config)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out []row
+		for _, p := range cfg.Policies {
+			out = append(out, row{p.Client, strings.Join(p.Tools, ","), strings.Join(p.Scopes, " "), time.Now().After(p.Expires) && !p.Expires.IsZero()})
+		}
+		return out
+	}
+
+	if out := c.ok("allow", "claude-code", "logread", "*", "1d"); !strings.Contains(out, "replaced 1 expired grant(s)") {
+		t.Errorf("allow: %q", out)
+	}
+	if out := c.ok("allow", "claude-code", "uci_get", "*", "1d"); strings.Contains(out, "replaced") {
+		t.Errorf("allow replaced a live grant: %q", out)
+	}
+	want := []row{
+		{"claude-code", "logread", "x.*", true},
+		{"laptop", "logread", "*", true},
+		{"claude-code", "uci_get", "*", false},
+		{"claude-code", "logread", "*", false},
+		{"claude-code", "uci_get", "*", false},
+	}
+	if got := rows(); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("policies after allow:\n got %v\nwant %v", got, want)
+	}
+
+	// A preset: each of its blocks replaces its own expired twin, so re-granting does not pile up.
+	p := newCLI(t)
+	if err := os.WriteFile(p.config, []byte(p.header()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, b := range presets["operator"] {
+		if err := appendPolicy(p.config, "claude-code", strings.Join(b.tools, ","), strings.Join(b.scopes, " "), "-1h"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	n := len(presets["operator"])
+	if out := p.ok("allow", "claude-code", "@operator", "2h"); !strings.Contains(out, fmt.Sprintf("replaced %d expired grant(s)", n)) {
+		t.Errorf("allow @operator: %q", out)
+	}
+	got, err := LoadConfig(p.config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Policies) != n {
+		t.Errorf("%d policies after re-granting @operator, want %d", len(got.Policies), n)
+	}
+	for _, pol := range got.Policies {
+		if time.Now().After(pol.Expires) {
+			t.Errorf("an expired grant survived: %+v", pol)
+		}
+	}
 }

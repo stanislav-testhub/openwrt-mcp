@@ -41,7 +41,7 @@ config policy
 			`{"time":"2026-01-01T00:00:01Z","client":"a","tool":"exec","scope":"cat","outcome":"DENIED","error":"denied: no policy\n  grant it: openwrt-mcp allow a exec 'cat' 60m","duration_ms":0}`+"\n")
 
 	out := captureStdout(t, func() {
-		if err := runStatus(cfg, dir, 20, true); err != nil {
+		if err := runStatus(cfg, dir, 20, true, false); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -85,7 +85,7 @@ func TestStatusNeverExposesTokenMaterial(t *testing.T) {
 	}
 
 	out := captureStdout(t, func() {
-		if err := runStatus(cfg, dir, 20, true); err != nil {
+		if err := runStatus(cfg, dir, 20, true, false); err != nil {
 			t.Fatal(err)
 		}
 	})

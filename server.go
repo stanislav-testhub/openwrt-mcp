@@ -325,7 +325,18 @@ func runBridge(sock, client string) error {
 		_, _ = io.Copy(os.Stdout, conn)
 		close(done)
 	}()
-	_, _ = io.Copy(conn, os.Stdin)
+	stdinDone := make(chan struct{})
+	go func() {
+		_, _ = io.Copy(conn, os.Stdin)
+		close(stdinDone)
+	}()
+	select {
+	case <-stdinDone:
+	case <-done:
+		// The daemon went away (a restart, a crash). Exit now rather than on the client's next
+		// request: the stdin reader is left blocked, and the process exit ends it.
+		return fmt.Errorf("daemon closed the connection on %s", sock)
+	}
 	// stdin closed: the client has gone. Half-close so the daemon sees EOF and ends the
 	// session, then wait for anything it still had to say.
 	if uc, ok := conn.(*net.UnixConn); ok {

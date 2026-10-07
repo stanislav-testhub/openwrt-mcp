@@ -73,7 +73,9 @@ type auditRow struct {
 	Error   string `json:"error,omitempty"`
 }
 
-func runStatus(configPath, statePath string, auditLines int, asJSON bool) error {
+// all lists expired grants in the text output; without it they are one count line. JSON always
+// carries every grant, with its expired flag.
+func runStatus(configPath, statePath string, auditLines int, asJSON, all bool) error {
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
 		return err
@@ -128,7 +130,7 @@ func runStatus(configPath, statePath string, auditLines int, asJSON bool) error 
 	rep.Counts["audit_shown"] = len(rep.Audit)
 
 	if !asJSON {
-		return writeStatusText(os.Stdout, rep)
+		return writeStatusText(os.Stdout, rep, all)
 	}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
@@ -214,7 +216,7 @@ func firstLine(s string) string {
 	return s
 }
 
-func writeStatusText(w io.Writer, r statusReport) error {
+func writeStatusText(w io.Writer, r statusReport, all bool) error {
 	state := "stopped"
 	if r.Running {
 		state = "running"
@@ -224,7 +226,12 @@ func writeStatusText(w io.Writer, r statusReport) error {
 	for _, c := range r.Clients {
 		fmt.Fprintf(w, "  %s (%d policy/policies)\n", c.Name, c.Policies)
 	}
+	hidden := 0
 	for _, p := range r.Policies {
+		if p.Expired && !all {
+			hidden++
+			continue
+		}
 		exp := "never"
 		if p.Expires != "" {
 			exp = p.Expires
@@ -234,6 +241,9 @@ func writeStatusText(w io.Writer, r statusReport) error {
 		}
 		fmt.Fprintf(w, "  %s: %s on %s, %d/min, expires %s\n",
 			p.Client, strings.Join(p.Tools, ","), strings.Join(p.Scopes, " "), p.MaxPerMin, exp)
+	}
+	if hidden > 0 {
+		fmt.Fprintf(w, "  %d expired grant(s) not shown: `openwrt-mcp status --all` lists them, `openwrt-mcp prune` deletes them\n", hidden)
 	}
 	for _, a := range r.Audit {
 		fmt.Fprintf(w, "  %s %-7s %-12s %s\n", a.Time, a.Outcome, a.Tool, a.Scope)
