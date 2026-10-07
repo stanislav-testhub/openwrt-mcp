@@ -126,6 +126,13 @@ Changed
   - The binary needs nothing OS-specific, and CI now builds and vets it for Windows and macOS.
     Releases carry `windows_amd64`, `windows_arm64`, `darwin_amd64` and `darwin_arm64` archives
     (a zip for Windows) with the binary and the licence, checksummed and attested like the rest.
+- **MCP prompts (ROADMAP 3.8).** `router-health`, `who-is-online`, `secure-my-router`,
+  `wifi-doctor` and `upgrade-plan`: short recipes that name the tools to call and end in a report
+  or a proposal. They are text only, so no policy applies and nothing is audited. A test checks that
+  every tool they name exists (the ghost-tool test now reads them too) and that every call they
+  make is one `@readonly` allows, including the `ubus_call` objects and `sysupgrade` actions, so a
+  read-only client can follow them to the end. Where a step would need more (`uci_apply`, the
+  `sysupgrade` backup), the recipe stops at a proposal.
 
 Fixed
 - **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each

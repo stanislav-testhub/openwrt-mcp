@@ -267,6 +267,10 @@ func TestDocsOnlyNameToolsThatExist(t *testing.T) {
 		})
 	}
 	check("server instructions", serverInstructions)
+	for _, r := range recipes {
+		check("prompt "+r.name, r.body)
+		check("prompt "+r.name+" description", r.description)
+	}
 	if b, err := os.ReadFile("README.md"); err == nil {
 		check("README.md", string(b))
 	}

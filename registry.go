@@ -25,6 +25,8 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "openwrt-mcp", Version: version},
 		&mcp.ServerOptions{Instructions: serverInstructions})
 
+	addPrompts(srv)
+
 	// ---- discovery and generic access
 
 	addTool(s, srv, client, "ubus_list",

@@ -72,6 +72,13 @@ Nothing in the code is specific to that board.
 | `exec` | `argv[0]` | One program, no shell. A grant for `sh`, `find`, `awk`, `env`, `ssh` and the like is a root shell: `allow` refuses it without `--shell-equivalent`. |
 | `mfa_unlock` | *(ungated)* | Opens the TOTP window for MFA-gated tools. |
 
+**Prompts.** Clients that show MCP prompts (as slash commands, usually) get five recipes:
+`router-health`, `who-is-online`, `secure-my-router`, `wifi-doctor` and `upgrade-plan`. Each is a
+few lines that name the tools to call and end in a report or a proposal, never a change. They use
+only what the `@readonly` preset grants, so a read-only client can follow them to the end, and they
+cost nothing until used. Listing or fetching one runs nothing on the router, so no policy applies
+and nothing is audited.
+
 ---
 
 ## Install

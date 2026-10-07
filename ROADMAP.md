@@ -362,6 +362,10 @@ that write files (`wget`, `cp`, `dd`) are a different route to the same risk and
 
 ### 3.8 Prompts
 
+**Status: done on `main`, not yet released.** The recipes name only tools that exist today. The
+security and Wi-Fi ones are made of reads (`uci_get`, `firewall_show`, `ubus_call iwinfo`, `logread`)
+until 4.3 and 4.4 give them dedicated tools.
+
 - **Ships.** MCP prompts for the common jobs: `router-health`, `who-is-online`, `secure-my-router`, `wifi-doctor`
   and `upgrade-plan`. Each is a short recipe that names the tools to call. They cost nothing until used.
 - **Precedent.** Other servers' users ask for "example prompts as a resource" and for prompting guidance.
