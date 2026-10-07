@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 -- Easy to adopt
+
+Install from a release, set a client up with one command, a smaller and portable tool catalogue, and
+no credentials in the conversation. Nothing here adds a way to change the router.
 
 Changed
 - **Tool titles and hints (ROADMAP 3.4).**
@@ -97,6 +100,37 @@ Changed
     `status --json` carries `shell_equivalent` (additive; empty grants omit it). That also
     covers a policy file written by hand, which the `allow` gate never sees.
   - Existing grants are not changed or revoked.
+
+Fixed
+- **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each
+  `openwrt-mcp stdio` process stayed alive until its client's next request, blocked reading
+  stdin. It now exits as soon as the daemon closes the socket, with "daemon closed the
+  connection" on stderr.
+
+Added
+- **`openwrt-mcp prune [--older-than <duration>]`** deletes expired grants, writes one
+  `prune` line to the audit log when it removes any, and refuses a negative age (that would
+  reach live grants). Comments, the server section and other blocks are kept byte for byte.
+- **Release workflow (ROADMAP 3.1).**
+  - A pushed `vX.Y.Z` tag builds all ten router architectures. Each archive holds the binary
+    and the `files/` payload.
+  - The workflow writes `SHA256SUMS`, attests the build (`gh attestation verify`), and
+    publishes a GitHub Release with the CHANGELOG section as notes.
+  - It refuses a tag that disagrees with `main.go`.
+  - CI now also cross-builds `mips64` and `mips64le`, which `install.sh` already supported.
+- **Install without Go (ROADMAP 3.1).**
+  - `install-router.sh` runs on the router and is published with every release. It downloads
+    the archive for the router's architecture, checks it against `SHA256SUMS`, refuses on a
+    mismatch, checks the overlay has room, then installs.
+  - `install.sh` now hands its own payload to the same script, so there is one install
+    procedure.
+  - `install.sh install --release [vX.Y.Z]` has the router fetch a release instead of
+    building one. It is also the fallback when no Go toolchain is found.
+  - `install-router_test.sh` exercises the download and verification against a local mirror
+    in CI. It covers: latest, a pinned version, a malformed version, a missing architecture,
+    a missing `SHA256SUMS`, and an archive swapped for another architecture.
+  - CI checks that `install.sh`, `install-router.sh` and the release workflow list the same
+    architectures.
 - **`openwrt-mcp connect` and `connect doctor` (ROADMAP 3.2).** They run on the operator's PC.
   - `connect --client claude-code|claude-desktop|codex|cursor|gemini|vscode --host <router>`:
     - makes an ed25519 key with the PC's `ssh-keygen` if there is none (never overwrites);
@@ -159,37 +193,6 @@ Changed
     outbound connection; the tools that make the router reach out are the ones annotated
     `openWorldHint`), the binary sizes per architecture, and how it differs from the other OpenWrt
     MCP servers, from their READMEs.
-
-Fixed
-- **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each
-  `openwrt-mcp stdio` process stayed alive until its client's next request, blocked reading
-  stdin. It now exits as soon as the daemon closes the socket, with "daemon closed the
-  connection" on stderr.
-
-Added
-- **`openwrt-mcp prune [--older-than <duration>]`** deletes expired grants, writes one
-  `prune` line to the audit log when it removes any, and refuses a negative age (that would
-  reach live grants). Comments, the server section and other blocks are kept byte for byte.
-- **Release workflow (ROADMAP 3.1).**
-  - A pushed `vX.Y.Z` tag builds all ten router architectures. Each archive holds the binary
-    and the `files/` payload.
-  - The workflow writes `SHA256SUMS`, attests the build (`gh attestation verify`), and
-    publishes a GitHub Release with the CHANGELOG section as notes.
-  - It refuses a tag that disagrees with `main.go`.
-  - CI now also cross-builds `mips64` and `mips64le`, which `install.sh` already supported.
-- **Install without Go (ROADMAP 3.1).**
-  - `install-router.sh` runs on the router and is published with every release. It downloads
-    the archive for the router's architecture, checks it against `SHA256SUMS`, refuses on a
-    mismatch, checks the overlay has room, then installs.
-  - `install.sh` now hands its own payload to the same script, so there is one install
-    procedure.
-  - `install.sh install --release [vX.Y.Z]` has the router fetch a release instead of
-    building one. It is also the fallback when no Go toolchain is found.
-  - `install-router_test.sh` exercises the download and verification against a local mirror
-    in CI. It covers: latest, a pinned version, a malformed version, a missing architecture,
-    a missing `SHA256SUMS`, and an archive swapped for another architecture.
-  - CI checks that `install.sh`, `install-router.sh` and the release workflow list the same
-    architectures.
 
 ## 1.2.0 -- Reliable changes
 
