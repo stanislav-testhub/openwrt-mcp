@@ -253,6 +253,10 @@ also fixes the catalog-level defects a measurement of `tools/list` found. **It a
 
 ### 3.3 Schema portability
 
+**Status: done on `main`, not yet released.** Refinement of the lint: a free-form map
+(`ubus_call.args`, `uci_apply.expected_revisions`) is allowed because it states `additionalProperties`;
+what fails is a bare `{"type":"object"}`. A call that sends `null` for an optional slice is still accepted.
+
 - **Problem.** Five optional slice fields are emitted as `"type": ["null", "array"]`: `uci_apply.changes`, its
   `values`, `uci_apply.probe`, `pkg_change.packages` and `exec.argv`. Type arrays, `$ref`, `$dynamicRef` and
   untyped properties break some model and client schema paths. Other servers' trackers show 400s from Gemini, a
@@ -278,6 +282,12 @@ also fixes the catalog-level defects a measurement of `tools/list` found. **It a
   table.
 
 ### 3.5 Description budget
+
+**Status: done on `main`, not yet released.** The ceiling is 22,100 bytes, not 18 KB: the
+figure was set at 21.1 KB, before 3.4's titles and hints and the SDK's explicit `false` hints
+added about 2 KB that no description edit removes. The test also pins prose (11,500 bytes) and
+each tool (1.5 KB, `uci_apply` 4 KB). Tool-selection evidence (`tests/mcp_eval`) is a private
+run, not part of this repository.
 
 - **Problem.** Measured on 1.2.0: `tools/list` is 23 tools and 21.1 KB, about 6k tokens. `uci_apply` alone is
   4.6 KB, 22% of it.

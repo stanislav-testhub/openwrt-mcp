@@ -26,7 +26,9 @@ cross-compiles every supported architecture.
   (`annRead`, `annIdem`, `annDest`, `annDestIdem` or `annWrite`), a title in `toolTitles`
   (and an entry in `openWorldTools` if it can reach past the router), a place in the
   `@readonly` or `@operator` preset (or a reason it is in neither), a row in the README tool
-  table and tests against `fakeRouter`.
+  table and tests against `fakeRouter`. Keep its description to what a model needs to call it
+  (the refusal already prints the scope to grant), and stay inside the budget that
+  `TestCatalogueStaysWithinBudget` pins; raising it needs a reason in the commit.
 - **Changes that write configuration** go through the snapshot / arm / confirm path in
   `rollback.go`, never a bare `uci commit`.
 - **Fixtures must not contain real data.** Use `192.168.1.x`, `10.x`, `aa:bb:cc:...` MACs,

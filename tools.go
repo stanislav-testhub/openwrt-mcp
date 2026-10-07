@@ -274,7 +274,9 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 	a := *ann // the presets are shared; the title and openWorldHint belong to this tool
 	a.Title = toolTitles[name]
 	a.OpenWorldHint = ptr(openWorldTools[name])
-	mcp.AddTool(srv, &mcp.Tool{Name: name, Title: a.Title, Description: desc, Annotations: &a},
+	schema := inputSchema[In]()
+	srv.AddReceivingMiddleware(omitNulls(name, schema))
+	mcp.AddTool(srv, &mcp.Tool{Name: name, Title: a.Title, Description: desc, Annotations: &a, InputSchema: schema},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 			started := time.Now()
 			scopes := scopeOf(in)

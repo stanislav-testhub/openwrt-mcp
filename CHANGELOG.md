@@ -33,6 +33,33 @@ Changed
     ours (`server.go`), not the SDK's, and its test passes unchanged.
   - The per-frame cap on inbound messages is 16 MiB by default; requests are a few hundred
     bytes, so it never applies.
+- **Portable input schemas (ROADMAP 3.3).**
+  - Five optional or nested slices were advertised as `"type": ["null","array"]`:
+    `uci_apply.changes`, its `values`, `uci_apply.probe`, `pkg_change.packages` and `exec.argv`.
+    They are now a plain `"type": "array"`. Type arrays break Gemini's OpenAPI subset and
+    older VS Code.
+  - A call that sends `null` for one of them (OpenAI-style clients do, for "not set") is still
+    accepted and treated as omitted. Members the schema declares are dropped when null before
+    validation; free-form objects such as `ubus_call.args` keep their nulls.
+  - `TestToolSchemasArePortable` fails on a type array, `$ref`/`$defs`/`$dynamicRef`, a
+    top-level `anyOf`/`oneOf`/`allOf`, a bare `{"type":"object"}`, or a server plus tool name
+    over 60 characters. `ubus_call.args` and `uci_apply.expected_revisions` are free-form maps
+    on purpose and pass because they state `additionalProperties`.
+- **Smaller tool descriptions (ROADMAP 3.5).**
+  - `tools/list` went from 23,731 to 21,982 bytes (23 tools). The text for operators is gone
+    from the descriptions: the "Policy scope: ..." sentences, `exec`'s warning about broad
+    grants, and the `uci_apply` paragraphs that repeated its own parameter descriptions
+    (ops, `probe`, `restore`, `expected_revisions`). A refusal already prints the exact
+    scope to grant, and the README *Tools* table lists the scope syntax.
+  - `uci_get` no longer says its output "includes secrets such as Wi-Fi keys": they are masked
+    by default, so the sentence told a model the wrong thing.
+  - `TestCatalogueStaysWithinBudget` fails above 22,100 bytes in total, above 11,500 bytes of
+    descriptions, or above 1.5 KB for one tool (4 KB for `uci_apply`).
+  - The limit is not the 18 KB ROADMAP 3.5 first named. That figure was set before 3.4's
+    titles and hints and the SDK's explicit `false` hints, which together add about 2 KB that
+    no description edit can remove; reaching it would have cut about 38% of all prose.
+  - `TestDocsOnlyNameToolsThatExist` fails when a description, the server instructions or the
+    README name a tool-like identifier that is not a tool.
 
 Fixed
 - **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each

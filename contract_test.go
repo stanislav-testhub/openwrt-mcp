@@ -131,6 +131,141 @@ func TestToolListFollowsMCPConventions(t *testing.T) {
 	}
 }
 
+// Schema portability (ROADMAP 3.3). Other servers' trackers show where schema paths break:
+// type arrays ("type": ["null","array"]) fail Gemini's OpenAPI subset and older VS Code,
+// $ref/$defs/$dynamicRef fail several clients, a bare {"type":"object"} draws OpenAI's
+// "missing properties", and Cursor caps server name + tool name at 60 characters. The literals
+// here come from those reports, not from what our schemas happen to emit today.
+func TestToolSchemasArePortable(t *testing.T) {
+	cs := connectClient(t, testServer(t, ""), "c")
+	refs := []string{"$ref", "$defs", "$dynamicRef", "$dynamicAnchor", "definitions"}
+	for _, tl := range listedTools(t, cs) {
+		if n := len("openwrt") + len(tl.Name); n > 60 {
+			t.Errorf("%s: server name + tool name is %d characters, Cursor's limit is 60", tl.Name, n)
+		}
+		b, _ := json.Marshal(tl.InputSchema)
+		var root map[string]any
+		if err := json.Unmarshal(b, &root); err != nil {
+			t.Fatalf("%s: schema is not JSON: %v", tl.Name, err)
+		}
+		for _, k := range []string{"anyOf", "oneOf", "allOf"} {
+			if _, ok := root[k]; ok {
+				t.Errorf("%s: top-level %s in the input schema", tl.Name, k)
+			}
+		}
+		var visit func(path string, s map[string]any)
+		visit = func(path string, s map[string]any) {
+			for _, k := range refs {
+				if _, ok := s[k]; ok {
+					t.Errorf("%s: %s uses %s", tl.Name, path, k)
+				}
+			}
+			ty, isString := s["type"].(string)
+			if !isString {
+				t.Errorf("%s: %s must have one string type, has %v", tl.Name, path, s["type"])
+			}
+			if ty == "object" {
+				_, fixed := s["properties"]
+				_, free := s["additionalProperties"]
+				if !fixed && !free {
+					t.Errorf("%s: %s is a bare object (neither properties nor additionalProperties)", tl.Name, path)
+				}
+			}
+			props, _ := s["properties"].(map[string]any)
+			for name, v := range props {
+				if p, ok := v.(map[string]any); ok {
+					visit(path+"."+name, p)
+				}
+			}
+			if items, ok := s["items"].(map[string]any); ok {
+				visit(path+"[]", items)
+			}
+			if ap, ok := s["additionalProperties"].(map[string]any); ok {
+				visit(path+"{}", ap)
+			}
+		}
+		visit("$", root)
+	}
+}
+
+// Catalogue budget (ROADMAP 3.5). Every client pays for tools/list on every conversation, and
+// small local models choose worse as it grows, so growth has to be a decision. The numbers are
+// what the catalogue measured when 3.5 landed (21,982 bytes, 23 tools), not a target
+// picked in advance: ROADMAP 3.5 first said 18 KB, set before titles and hints (3.4) and
+// the SDK's explicit false hints added about 2 KB that no description edit can remove. Raising
+// a limit needs a reason in the commit; so does a new tool.
+const (
+	catalogueBudgetBytes = 22100 // all tools, marshalled as tools/list sends them
+	catalogueProseBudget = 11500 // descriptions plus input-property descriptions only
+	toolBudgetBytes      = 1500  // any one tool, except the one below
+	uciApplyBudgetBytes  = 4000  // the one tool with a nested, optioned request
+)
+
+func TestCatalogueStaysWithinBudget(t *testing.T) {
+	cs := connectClient(t, testServer(t, ""), "c")
+	total, prose := 0, 0
+	for _, tl := range listedTools(t, cs) {
+		b, _ := json.Marshal(tl)
+		total += len(b)
+		limit := toolBudgetBytes
+		if tl.Name == "uci_apply" {
+			limit = uciApplyBudgetBytes
+		}
+		if len(b) > limit {
+			t.Errorf("%s is %d bytes in tools/list, over its %d", tl.Name, len(b), limit)
+		}
+		prose += len(tl.Description)
+		sb, _ := json.Marshal(tl.InputSchema)
+		var schema map[string]any
+		_ = json.Unmarshal(sb, &schema)
+		walkSchema(schema, tl.Name, func(_ string, p map[string]any) {
+			d, _ := p["description"].(string)
+			prose += len(d)
+		})
+	}
+	t.Logf("tools/list is %d bytes, prose %d bytes", total, prose)
+	if total > catalogueBudgetBytes {
+		t.Errorf("tools/list is %d bytes, over %d", total, catalogueBudgetBytes)
+	}
+	if prose > catalogueProseBudget {
+		t.Errorf("descriptions total %d bytes, over %d", prose, catalogueProseBudget)
+	}
+}
+
+// A description that names a tool which does not exist teaches a wrong call (Firecrawl's
+// ghost tools). Names that look like tools but are something else (UCI options of this
+// server's own config) are listed with what they are.
+func TestDocsOnlyNameToolsThatExist(t *testing.T) {
+	looksLikeATool := regexp.MustCompile(`\b(?:uci|pkg|wg|mfa|net|service|system|ubus|firewall|network)_[a-z][a-z_]*\b`)
+	notTools := map[string]string{
+		"mfa_window": "option of config server", "mfa_tools": "option of config server",
+		"mfa_max_failures": "option of config server", "mfa_lockout": "option of config server",
+		"wg_new": "README shorthand for wg_new_client / wg_remove_client",
+	}
+	check := func(where, text string) {
+		for _, m := range looksLikeATool.FindAllString(text, -1) {
+			if !validTool(m) && notTools[m] == "" {
+				t.Errorf("%s names %q, which is not a tool", where, m)
+			}
+		}
+	}
+	cs := connectClient(t, testServer(t, ""), "c")
+	for _, tl := range listedTools(t, cs) {
+		check(tl.Name+" description", tl.Description)
+		sb, _ := json.Marshal(tl.InputSchema)
+		var schema map[string]any
+		_ = json.Unmarshal(sb, &schema)
+		walkSchema(schema, tl.Name, func(path string, p map[string]any) {
+			d, _ := p["description"].(string)
+			check(path, d)
+		})
+	}
+	check("server instructions", serverInstructions)
+	if b, err := os.ReadFile("README.md"); err == nil {
+		check("README.md", string(b))
+	}
+}
+
 // walkSchema visits every named property, descending into array item schemas.
 func walkSchema(s map[string]any, path string, visit func(path string, prop map[string]any)) {
 	props, _ := s["properties"].(map[string]any)
