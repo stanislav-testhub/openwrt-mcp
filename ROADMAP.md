@@ -205,12 +205,14 @@ Today the first install needs a Go toolchain on the operator's machine and a han
 Across popular MCP servers, the most common class of issue is "it does not connect". This milestone fixes both. It
 also fixes the catalog-level defects a measurement of `tools/list` found. **It adds no new write path.**
 
+**Status: shipped in 1.3.0** (see `CHANGELOG.md`). Open: 3.11 (measured token cost) and publishing to the registry (3.10).
+
 ### 3.1 Prebuilt, signed releases
 
-**Status: done on `main`, not yet released.** The release workflow is built, and so are the router-side
+**Status: shipped in 1.3.0.** The release workflow is built, and so are the router-side
 `install-router.sh` and `install.sh install --release`. The release also carries `windows_*` and `darwin_*`
 archives for `connect`. The README now states the binary sizes and the privacy line; the resident memory is measured
-on the router before 1.3.0. The workflow has not run yet: it is rehearsed on the `v1.2.0` tag first.
+on the router. The workflow ran on `v1.2.0` first, then on `v1.3.0`; each release has 16 assets.
 
 - **Problem.** There are no GitHub Releases. `install.sh` cross-compiles locally, so an operator without Go stops
   here. The server runs as root, so binaries must be verifiable: supply-chain attacks on MCP servers (typosquatted
@@ -230,7 +232,7 @@ on the router before 1.3.0. The workflow has not run yet: it is rehearsed on the
 
 ### 3.2 `connect` and `doctor`
 
-**Status: done on `main`, not yet released.** `connect doctor` and `connect --write` (Cursor, to a
+**Status: shipped in 1.3.0.** `connect doctor` and `connect --write` (Cursor, to a
 JSON file) were run from a Windows PC against the real router; the clients' own `mcp add` commands
 and macOS were not. Claude Code and Codex are configured through their own `mcp add`
 command, which is sturdier than editing their files; the others get a merged JSON entry. A
@@ -262,7 +264,7 @@ command, which is sturdier than editing their files; the others get a merged JSO
 
 ### 3.3 Schema portability
 
-**Status: done on `main`, not yet released.** Refinement of the lint: a free-form map
+**Status: shipped in 1.3.0.** Refinement of the lint: a free-form map
 (`ubus_call.args`, `uci_apply.expected_revisions`) is allowed because it states `additionalProperties`;
 what fails is a bare `{"type":"object"}`. A call that sends `null` for an optional slice is still accepted.
 
@@ -282,7 +284,7 @@ what fails is a bare `{"type":"object"}`. A call that sends `null` for an option
 
 ### 3.4 Accurate annotations
 
-**Status: done on `main`, not yet released** (`TestToolTitlesAndHints` pins the table).
+**Status: shipped in 1.3.0** (`TestToolTitlesAndHints` pins the table).
 
 - **Problem.** No tool has a `title`, and `openWorldHint` is unset everywhere. The spec default is `true`, so every
   tool claims to reach the open world. Clients use these hints to decide what to auto-approve.
@@ -292,7 +294,7 @@ what fails is a bare `{"type":"object"}`. A call that sends `null` for an option
 
 ### 3.5 Description budget
 
-**Status: done on `main`, not yet released.** The ceiling is 22,100 bytes, not 18 KB: the
+**Status: shipped in 1.3.0.** The ceiling is 22,100 bytes, not 18 KB: the
 figure was set at 21.1 KB, before 3.4's titles and hints and the SDK's explicit `false` hints
 added about 2 KB that no description edit removes. The test also pins prose (11,500 bytes) and
 each tool (1.5 KB, `uci_apply` 4 KB). Tool-selection evidence (`tests/mcp_eval`) is a private
@@ -315,10 +317,10 @@ run, not part of this repository.
 
 ### 3.6 Credentials stay off the transcript
 
-**Status: done on `main`, not yet released**, except the TOTP code, which waits for 6.1. The
+**Status: shipped in 1.3.0**, except the TOTP code, which waits for 6.1. The
 config file lives in a `0700` directory beside the daemon socket (`/var/run/openwrt-mcp/wg`),
-not in `/tmp`, which any local user can write into. Not yet run on hardware: the archive mode
-that `sysupgrade -b` leaves when it writes into a file that already exists.
+not in `/tmp`, which any local user can write into. The archive mode that `sysupgrade -b` leaves
+when it writes into a file that already exists was run on hardware (README *Verified*).
 
 - **Problem.** Two outputs put credentials into the model's context, and from there into the provider's logs:
   - `wg_new_client` returns the private key, the preshared key and a half-block QR code. The QR is about 2-3k
@@ -341,7 +343,7 @@ that `sysupgrade -b` leaves when it writes into a file that already exists.
 
 ### 3.7 Shell-equivalent `exec` grants
 
-**Status: done on `main`, not yet released.** The table also has the BusyBox wrappers of the
+**Status: shipped in 1.3.0.** The table also has the BusyBox wrappers of the
 same class (`timeout nohup setsid chroot su watch time start-stop-daemon taskset ionice chrt`),
 `bash`, `dash` and `dbclient`, and a `ubus_call` grant that can reach `file.exec` counts. Grants
 that write files (`wget`, `cp`, `dd`) are a different route to the same risk and are not covered.
@@ -365,7 +367,7 @@ that write files (`wget`, `cp`, `dd`) are a different route to the same risk and
 
 ### 3.8 Prompts
 
-**Status: done on `main`, not yet released.** The recipes name only tools that exist today. The
+**Status: shipped in 1.3.0.** The recipes name only tools that exist today. The
 security and Wi-Fi ones are made of reads (`uci_get`, `firewall_show`, `ubus_call iwinfo`, `logread`)
 until 4.3 and 4.4 give them dedicated tools.
 
@@ -375,7 +377,7 @@ until 4.3 and 4.4 give them dedicated tools.
 
 ### 3.9 Sanitised diagnostic bundle
 
-**Status: done on `main`, not yet released.** Run on the router and read for anything it should have
+**Status: shipped in 1.3.0.** Run on the router and read for anything it should have
 hidden: the client address and nothing else private appeared; the factory host name `OpenWrt` is left
 unmasked on purpose.
 
@@ -385,7 +387,7 @@ unmasked on purpose.
 
 ### 3.10 Registry entry and SDK update
 
-**Status: done on `main`**, except publishing (`mcp-publisher login github`, then `publish`), which is
+**Status: shipped in 1.3.0**, except publishing (`mcp-publisher login github`, then `publish`), which is
 interactive and the operator's. go-sdk is 1.8.0; it still negotiates `2026-07-28` at most. `server.json`
 carries the repository and no `packages` or `remotes`: the registry's package types (npm, PyPI, NuGet,
 OCI, Cargo, MCPB) describe things you install on the machine running the client, and this server is

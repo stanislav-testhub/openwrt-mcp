@@ -453,8 +453,8 @@ a probe failure left to the rollback timer instead of `uci_rollback`, and histor
 sysupgrade. For 1.3.0 also: the `wg_new_client` hand-over and `wg-show` (the test router's `wg0` was
 not up, and starting it was not part of the check), `connect --write` against a real Claude Code,
 Codex, Claude Desktop, Gemini or VS Code (only the file merge and the command line are tested),
-anything on macOS, and the release workflow and the installer's download path (a release has to
-exist first). The file modes of the WireGuard hand-over are asserted on Linux in CI. Reports from
+anything on macOS, and the installer's download path on a router (the release workflow has run and
+published 1.2.0 and 1.3.0, but `install-router.sh` has not been run against them). The file modes of the WireGuard hand-over are asserted on Linux in CI. Reports from
 other boards are welcome.
 
 ---

@@ -40,7 +40,7 @@ Please describe what you tested on real hardware (board, OpenWrt release) in the
 
 ## Releasing (maintainers)
 
-1. Set `version` in `main.go` to `X.Y.Z`.
+1. Set `version` in `main.go` and in `server.json` to `X.Y.Z` (a test checks that they match).
 2. Rename `## Unreleased` in `CHANGELOG.md` to `## X.Y.Z -- <name>`.
 3. Commit, tag `vX.Y.Z` and push the tag.
 
