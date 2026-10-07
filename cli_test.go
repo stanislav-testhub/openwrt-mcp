@@ -270,6 +270,85 @@ func TestCLIStdioRefusesWhenTheBridgeIsSwitchedOff(t *testing.T) {
 	c.fails("stdio bridge is disabled", "stdio", "--client", "claude-code")
 }
 
+// ROADMAP 3.7. A grant of exec on a program that runs other programs is a root shell that does
+// not look like one, so `allow` refuses it unless the operator says so, and the listings mark
+// it afterwards.
+func TestCLIAllowRefusesAShellEquivalentExecGrantUntilTheOperatorSaysSo(t *testing.T) {
+	c := newCLI(t)
+	for _, tc := range [][]string{
+		{"allow", "c", "exec", "sh", "1h"},
+		{"allow", "c", "exec", "/usr/bin/../bin/sh", "1h"},
+		{"allow", "c", "exec", "ping /bin/*", "1h"},
+		{"allow", "c", "exec", "*", "1h"},
+		{"allow", "c", "exec,logread", "find", "1h"},
+		{"allow", "c", "ubus_call", "file.exec", "1h"},
+		{"allow", "c", "ubus_call", "file.*", "1h"},
+	} {
+		c.fails("--shell-equivalent", tc...)
+	}
+	if b, err := os.ReadFile(c.config); err == nil && strings.TrimSpace(string(b)) != "" {
+		t.Errorf("refused grants still wrote to the policy file:\n%s", b)
+	}
+
+	// Ordinary programs and ordinary scopes are not slowed down.
+	c.ok("allow", "c", "exec", "ping", "1h")
+	c.ok("allow", "c", "ubus_call", "network.interface.*", "1h")
+	out, errs, code := c.run("allow", "c", "net_diag", "sh", "1h") // a scope word on a tool that cannot run it
+	if code != 0 || strings.Contains(errs, "warning") {
+		t.Errorf("net_diag on a scope named sh: exit %d, stderr %q, stdout %q", code, errs, out)
+	}
+
+	// With the flag, anywhere on the line, the grant is made and a warning says what it is.
+	for _, args := range [][]string{
+		{"allow", "d", "exec", "sh", "1h", "--shell-equivalent"},
+		{"allow", "--shell-equivalent", "e", "exec", "awk", "1h"},
+	} {
+		_, errs, code := c.run(args...)
+		if code != 0 || !strings.Contains(errs, "warning") || !strings.Contains(errs, "root shell") {
+			t.Errorf("%v: exit %d, stderr %q", args, code, errs)
+		}
+	}
+
+	pol := c.ok("policies")
+	if strings.Count(pol, "shell-equivalent:") != 2 {
+		t.Errorf("policies should mark the two shell-equivalent grants and no other:\n%s", pol)
+	}
+	if !strings.Contains(pol, "shell-equivalent: sh (a root shell)") {
+		t.Errorf("policies does not name the program:\n%s", pol)
+	}
+	var st struct {
+		Policies []struct {
+			Client          string   `json:"client"`
+			ShellEquivalent []string `json:"shell_equivalent"`
+		} `json:"policies"`
+	}
+	if err := json.Unmarshal([]byte(c.ok("status", "--json", "--audit", "0")), &st); err != nil {
+		t.Fatal(err)
+	}
+	marked := map[string][]string{}
+	for _, p := range st.Policies {
+		marked[p.Client] = append(marked[p.Client], p.ShellEquivalent...)
+	}
+	if strings.Join(marked["d"], ",") != "sh" || strings.Join(marked["e"], ",") != "awk" || len(marked["c"]) != 0 {
+		t.Errorf("status --json shell_equivalent by client: %v", marked)
+	}
+	if text := c.ok("status"); strings.Count(text, "shell-equivalent:") != 2 {
+		t.Errorf("status text should mark the two grants:\n%s", text)
+	}
+}
+
+// A hand-edited policy file bypasses the gate; the marker is what still shows it.
+func TestShellEquivalentMarkerCoversAHandWrittenPolicy(t *testing.T) {
+	c := newCLI(t)
+	body := c.header() + grantBlock("hand", "exec", "/bin/*", "")
+	if err := os.WriteFile(c.config, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if pol := c.ok("policies"); !strings.Contains(pol, "shell-equivalent:") {
+		t.Errorf("a hand-written exec grant on /bin/* is not marked:\n%s", pol)
+	}
+}
+
 // wg-show is the operator's half of the key hand-over (ROADMAP 3.6): it runs on the router
 // as its own process, finds the config beside the socket in the config file, prints it, and
 // removes it.

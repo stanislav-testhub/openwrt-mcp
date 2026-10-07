@@ -332,6 +332,11 @@ that `sysupgrade -b` leaves when it writes into a file that already exists.
 
 ### 3.7 Shell-equivalent `exec` grants
 
+**Status: done on `main`, not yet released.** The table also has the BusyBox wrappers of the
+same class (`timeout nohup setsid chroot su watch time start-stop-daemon taskset ionice chrt`),
+`bash`, `dash` and `dbclient`, and a `ubus_call` grant that can reach `file.exec` counts. Grants
+that write files (`wget`, `cp`, `dd`) are a different route to the same risk and are not covered.
+
 - **Problem.** The `exec` scope is the literal `argv[0]`. A grant for any of these commands is a root shell, but
   doesn't look like one:
   - shells and wrappers: `sh`, `ash`, `busybox`, `env`, `nice`, `flock`;

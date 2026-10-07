@@ -61,6 +61,9 @@ type policyReport struct {
 	Expires   string   `json:"expires,omitempty"`
 	Expired   bool     `json:"expired"`
 	Enabled   bool     `json:"enabled"`
+
+	// ShellEquivalent names what the grant lets the client run that is as good as a root shell.
+	ShellEquivalent []string `json:"shell_equivalent,omitempty"`
 }
 
 type auditRow struct {
@@ -95,7 +98,7 @@ func runStatus(configPath, statePath string, auditLines int, asJSON, all bool) e
 	for _, p := range cfg.Policies {
 		pr := policyReport{
 			Client: p.Client, Tools: p.Tools, Scopes: p.Scopes,
-			MaxPerMin: p.MaxPerMin, Enabled: p.Enabled,
+			MaxPerMin: p.MaxPerMin, Enabled: p.Enabled, ShellEquivalent: p.shellEquivalent(),
 		}
 		if !p.Expires.IsZero() {
 			pr.Expires = p.Expires.Format(time.RFC3339)
@@ -241,6 +244,9 @@ func writeStatusText(w io.Writer, r statusReport, all bool) error {
 		}
 		fmt.Fprintf(w, "  %s: %s on %s, %d/min, expires %s\n",
 			p.Client, strings.Join(p.Tools, ","), strings.Join(p.Scopes, " "), p.MaxPerMin, exp)
+		if len(p.ShellEquivalent) > 0 {
+			fmt.Fprintf(w, "    shell-equivalent: %s (a root shell)\n", describeShellEquivalent(p.ShellEquivalent))
+		}
 	}
 	if hidden > 0 {
 		fmt.Fprintf(w, "  %d expired grant(s) not shown: `openwrt-mcp status --all` lists them, `openwrt-mcp prune` deletes them\n", hidden)

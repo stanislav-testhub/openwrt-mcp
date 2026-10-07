@@ -69,7 +69,7 @@ Nothing in the code is specific to that board.
 | `wg_remove_client` | `wireguard.<iface>.<name>` | By name, key or section; refuses a peer connected in the last 3 minutes unless forced. |
 | `ubus_list` | *(ungated)* | Discovery: every object, method and argument signature. |
 | `ubus_call` | `<object>.<method>` | Anything else on the bus. Replies over 8 KB have long arrays pruned. |
-| `exec` | `argv[0]` | One program, no shell. A broad grant is a root shell. |
+| `exec` | `argv[0]` | One program, no shell. A grant for `sh`, `find`, `awk`, `env`, `ssh` and the like is a root shell: `allow` refuses it without `--shell-equivalent`. |
 | `mfa_unlock` | *(ungated)* | Opens the TOTP window for MFA-gated tools. |
 
 ---
@@ -191,6 +191,15 @@ secret options (Wi-Fi keys, WireGuard keys, passwords, tokens) come back as `<re
 *Safety model*. `exec` is not masked.
 
 A refusal names the uncovered scope and prints the exact `allow` line that would cover it.
+
+An `exec` scope is `argv[0]` taken literally, so a grant for `find` or `awk` looks harmless and
+is a root shell: both run other programs, and so do the shells, `env`, `nice`, `flock`,
+`timeout`, `xargs`, `tar`, `ssh`, `lua`, `ucode`, `apk` and `opkg`. `allow` refuses such a grant
+until you add `--shell-equivalent`, judging by base name so `/usr/bin/../bin/sh` and `/bin/*`
+count too; a `ubus_call` grant that can reach `file.exec` is treated the same way.
+`openwrt-mcp policies` and `status` mark these grants, which also covers a policy written by
+hand. The list is a floor, not a promise: a grant that writes files (`wget`, `cp`, `dd`) or
+starts an interpreter that is not on it can still be abused.
 
 ### Second factor
 

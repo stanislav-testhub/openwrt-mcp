@@ -82,6 +82,21 @@ Changed
     regular files; the result says how many went.
   - `mfa_unlock` is unchanged: the operator still types the code into the chat. Moving it to
     elicitation is ROADMAP 6.1.
+- **Shell-equivalent `exec` grants need a flag (ROADMAP 3.7).**
+  - `openwrt-mcp allow <client> exec <programs> <duration>` now refuses a grant that lets the
+    client run a program that runs other programs, and says so. Add `--shell-equivalent` to
+    grant it anyway; the grant is made and a warning is printed.
+  - The list: `sh ash bash dash busybox env nice flock timeout nohup setsid chroot su watch time
+    start-stop-daemon taskset ionice chrt find awk sed xargs tar ssh dbclient lua ucode apk
+    opkg ubus`. The roadmap named the first dozen; the rest are BusyBox wrappers and shells of
+    the same class. A test pins the list, so adding a name is a recorded decision.
+  - Names are judged by base name, so `sh`, `/bin/sh` and `/usr/bin/../bin/sh` are the same
+    grant, and by glob: `*`, `s*`, `?sh` and `/bin/*` can reach a listed program and count.
+  - A `ubus_call` grant that can reach `file.exec` (`file.*`, `*`, ...) counts too.
+  - `policies` prints `shell-equivalent: ...` under such a grant, `status` marks it, and
+    `status --json` carries `shell_equivalent` (additive; empty grants omit it). That also
+    covers a policy file written by hand, which the `allow` gate never sees.
+  - Existing grants are not changed or revoked.
 
 Fixed
 - **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each

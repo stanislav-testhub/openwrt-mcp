@@ -59,6 +59,11 @@ Limits you must accept:
 
 - **`exec` is a root shell by design,** and so is `ubus_call` on a broad object. Grant them for a
   working session, not for good. `@operator` includes writes to `dropbear`, `rpcd` and `uhttpd`.
+  An `exec` grant for `sh`, `find`, `awk`, `env`, `ssh`, `apk` or any other program that runs
+  programs is the same shell under a harmless name, so `allow` refuses it without
+  `--shell-equivalent`, judging by base name and by glob, and `policies` and `status` mark such
+  grants. The list is a floor: a grant that writes files, or starts an interpreter not on it, is
+  not caught.
 - **rpcd ACLs are not relied on.** They do not bind a root process on the local ubus socket.
 - **The policy is advisory if the agent can also run `ssh root@router`.** Deny that in the client,
   or keep the root key out of its reach.

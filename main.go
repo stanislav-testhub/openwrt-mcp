@@ -113,6 +113,8 @@ func main() {
 		}
 
 	case "allow":
+		var shellOK bool
+		args, shellOK = takeFlag(args, "--shell-equivalent")
 		if len(args) == 4 && strings.HasPrefix(args[2], "@") {
 			blocks, err := expandPreset(args[2])
 			must(err)
@@ -127,7 +129,7 @@ func main() {
 			break
 		}
 		if len(args) != 5 {
-			die("usage: openwrt-mcp allow <client> <tool[,tool...]> <scope-glob[ scope-glob...]> <duration|never>\n" +
+			die("usage: openwrt-mcp allow <client> <tool[,tool...]> <scope-glob[ scope-glob...]> <duration|never> [--shell-equivalent]\n" +
 				"       openwrt-mcp allow <client> @readonly|@operator <duration|never>\n" +
 				"  e.g. openwrt-mcp allow claude-code uci_apply 'dhcp.* wireless.*.disabled' 30d")
 		}
@@ -138,6 +140,14 @@ func main() {
 			} else if t != "" {
 				tools = append(tools, t)
 			}
+		}
+		if hit := shellEquivalentNames(tools, strings.Fields(args[3])); len(hit) > 0 {
+			msg := fmt.Sprintf("this grant lets %s run %s, and each of those can run any other program: it is a root shell whatever the other scopes say",
+				args[1], describeShellEquivalent(hit))
+			if !shellOK {
+				die("refusing: %s\n  add --shell-equivalent if that is what you mean", msg)
+			}
+			fmt.Fprintf(os.Stderr, "warning: %s\n", msg)
 		}
 		replaced := replaceExpired(*configPath, args[1], tools, strings.Fields(args[3]))
 		must(appendPolicy(*configPath, args[1], args[2], args[3], args[4]))
@@ -189,6 +199,9 @@ func main() {
 			}
 			fmt.Printf("%s%s\n  tools:  %s\n  scopes: %s\n  rate:   %d/min\n  expires:%s\n",
 				p.Client, state, strings.Join(p.Tools, ", "), strings.Join(p.Scopes, " "), p.MaxPerMin, exp)
+			if hit := p.shellEquivalent(); len(hit) > 0 {
+				fmt.Printf("  shell-equivalent: %s (a root shell)\n", describeShellEquivalent(hit))
+			}
 		}
 
 	case "mfa":
@@ -375,7 +388,7 @@ func usage() {
   pair     <client>                           mint a bearer token for the HTTP transport, printed once
   unpair   <client>                           revoke every token for a client
   clients                                     list paired (HTTP) clients
-  allow    <client> <tools> <scopes> <dur>    grant a standing policy
+  allow    <client> <tools> <scopes> <dur>    grant a standing policy (a shell-like exec needs --shell-equivalent)
   allow    <client> @readonly|@operator <dur> grant a preset
   revoke   <client>                           remove every policy for a client (config: %s)
   policies                                    show current grants
