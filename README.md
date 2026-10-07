@@ -18,8 +18,8 @@ Secret values are masked in tool output by default, and a new WireGuard key neve
 conversation unless you ask for it.
 
 **Footprint.** One static binary with no dependencies: 9.1 to 11.3 MB for the router architectures
-(9.6 MB on arm64, about 3.7 MB compressed in the release archive), and 23 tools in about 22 KB of tool
-descriptions. Every release file is checksummed and carries a build attestation.
+(9.6 MB on arm64, about 3.7 MB compressed in the release archive), about 10 MB resident on a
+GL-MT6000 right after start, and 23 tools in about 22 KB of tool descriptions. Every release file is checksummed and carries a build attestation.
 
 > **Based on [GlassOnTin/openwrt-mcp](https://github.com/GlassOnTin/openwrt-mcp)** by Ian
 > Williams, which targets GL.iNet firmware 4.x (OpenWrt 21.02, `opkg`). This is a port to
@@ -423,7 +423,17 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   of its own; an apply with a failing probe reports `PROBE FAILED` with the rollback still armed,
   and `uci_rollback` restores the file byte-identical. `service_control restart` of a daemon
   reports "Settled after" its state.
-- **Session cleanup (unreleased), on the same board:** after a daemon restart the stdio bridge
+- **Adoption and credentials (1.3.0), on the same board:** the build was installed with
+  `install.sh` and `openwrt-mcp version` reported 1.3.0. `connect doctor` from the Windows PC,
+  with its real OpenSSH, passed all seven steps and listed 23 tools; with a key the router does
+  not know it stopped at *key accepted*, and with a closed port at *ssh reachable*, each with its
+  fix. `connect --write` for Cursor made the key with the PC's own `ssh-keygen`, merged the entry
+  into a JSON file, and a second run reported the entry unchanged. `diag` printed the version,
+  board, policy shape and audit lines with the SSH client's address as `ip-1` and no audit
+  arguments; `--detail` added the masked summaries. `sysupgrade backup` created the archive
+  `-rw-------` (4.3 MB, so `sysupgrade -b` keeps the mode of a file that already exists), and the
+  second backup removed the first. The daemon held about 10 MB resident right after the restart.
+- **Session cleanup (1.3.0), on the same board:** after a daemon restart the stdio bridge
   started on the new build exited at once, and the client's next call opened a fresh session
   without an error; bridges still running the previous build stayed until their client's next
   request. `status` folded 45 expired grants into one line; `prune` removed them, wrote one
@@ -440,7 +450,12 @@ the LuCI page rendering, the web-root guard on a real `/www` path or symlink, a 
 recovery path is the same one the `SIGKILL` test exercises), and keep.d across a real sysupgrade. For
 1.2.0 also: a management-path change applied *with* probes (only its refusal without one was run),
 a probe failure left to the rollback timer instead of `uci_rollback`, and history across a
-sysupgrade. Reports from other boards are welcome.
+sysupgrade. For 1.3.0 also: the `wg_new_client` hand-over and `wg-show` (the test router's `wg0` was
+not up, and starting it was not part of the check), `connect --write` against a real Claude Code,
+Codex, Claude Desktop, Gemini or VS Code (only the file merge and the command line are tested),
+anything on macOS, and the release workflow and the installer's download path (a release has to
+exist first). The file modes of the WireGuard hand-over are asserted on Linux in CI. Reports from
+other boards are welcome.
 
 ---
 

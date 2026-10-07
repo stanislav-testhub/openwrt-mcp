@@ -135,6 +135,23 @@ func TestClientNamesAreHiddenUnlessTheyNameAProgram(t *testing.T) {
 	}
 }
 
+// The factory host name is not private, and masking it would garble the release string.
+func TestTheDefaultHostNameIsNotMasked(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	f.on("uci -q show system", "system.@system[0].hostname='OpenWrt'\n")
+	for _, c := range []string{"dhcp", "wireless", "network"} {
+		f.on("uci -q show "+c, "")
+	}
+	names := harvestNames(t.Context())
+	if len(names) != 0 {
+		t.Fatalf("harvested %v from a router with the default host name", names)
+	}
+	if got := newMasker(names).Mask("OpenWrt 25.12.5 r33051"); got != "OpenWrt 25.12.5 r33051" {
+		t.Errorf("the release string became %q", got)
+	}
+}
+
 func TestHarvestNamesReadsOnlyTheOptionsThatIdentifyANetwork(t *testing.T) {
 	root := withFixtureRoot(t)
 	f := newFakeRouter(t)

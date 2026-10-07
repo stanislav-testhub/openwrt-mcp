@@ -178,7 +178,7 @@ Added
     `network` and the lease file; only those options are kept, so keys in the same output are read
     and dropped. The same value always gets the same placeholder.
   - Client names stay only if they name a program (`claude-code`, `cursor`, ...); any other
-    becomes `client-N`.
+    becomes `client-N`. The factory host name `OpenWrt` is not a name worth hiding and is left alone.
   - Audit arguments are never printed. The scope, summary and error of an entry appear only with
     `--detail`, masked like everything else.
   - The test generates addresses and names in the contexts a log has them in and fails if any

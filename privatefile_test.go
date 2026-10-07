@@ -3,8 +3,26 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
+
+// assertMode checks the permission bits the file system really reports. Windows reports its own,
+// so this runs on Linux only: in CI, and wherever the suite is run on a Linux box.
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		return
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Errorf("%s: %v", path, err)
+		return
+	}
+	if got := fi.Mode().Perm(); got != want {
+		t.Errorf("%s has mode %o, want %o", path, got, want)
+	}
+}
 
 type openCall struct {
 	name string
@@ -52,6 +70,7 @@ func TestWritePrivateCreatesOwnerOnlyAndNeverReplaces(t *testing.T) {
 	if b, _ := os.ReadFile(p); string(b) != "secret" {
 		t.Errorf("content %q", b)
 	}
+	assertMode(t, p, 0o600)
 
 	if err := writePrivate(p, []byte("other")); err == nil {
 		t.Error("an existing file was overwritten")
@@ -84,6 +103,7 @@ func TestPrivateDirRefusesAFileAndASymlink(t *testing.T) {
 	if err := privateDir(filepath.Join(dir, "a", "b")); err != nil {
 		t.Fatalf("a new nested directory: %v", err)
 	}
+	assertMode(t, filepath.Join(dir, "a", "b"), 0o700)
 	file := filepath.Join(dir, "f")
 	if err := os.WriteFile(file, nil, 0o600); err != nil {
 		t.Fatal(err)

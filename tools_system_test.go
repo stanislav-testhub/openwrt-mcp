@@ -596,6 +596,8 @@ func TestSysupgradeBackupIsPrivateAndTheOlderOnesGo(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(written))); err != nil {
 		t.Errorf("the new archive %s is gone: %v", written, err)
 	}
+	// What the file system really says, not what was asked for (the fake wrote it 0644 first).
+	assertMode(t, filepath.Join(root, filepath.FromSlash(written)), 0o600)
 }
 
 // A backup that fails or comes back empty must not leave an archive, and must not cost the

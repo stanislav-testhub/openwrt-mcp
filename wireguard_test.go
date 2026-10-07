@@ -365,6 +365,8 @@ func TestNewClientKeepsThePrivateKeyOutOfTheResultByDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("no config file left for the operator: %v", err)
 	}
+	assertMode(t, filepath.Join(dir, "laptop.conf"), 0o600)
+	assertMode(t, dir, 0o700)
 	for _, want := range []string{"PrivateKey = CLIENTPRIV=", "Address = 10.20.30.2/32", "PublicKey = SERVERPUB="} {
 		if !strings.Contains(string(b), want) {
 			t.Errorf("the file lacks %q:\n%s", want, b)

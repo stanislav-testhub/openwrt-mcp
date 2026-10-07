@@ -145,7 +145,7 @@ var reUCIValue = regexp.MustCompile(`^([A-Za-z0-9_@\[\].-]+)\.([A-Za-z0-9_]+)='(
 func harvestNames(ctx context.Context) map[string]string {
 	names := map[string]string{}
 	add := func(v, kind string) {
-		if v = strings.TrimSpace(v); v != "" && v != "*" && names[v] == "" {
+		if v = strings.TrimSpace(v); v != "" && v != "*" && !defaultName(v) && names[v] == "" {
 			names[v] = kind
 		}
 	}
@@ -176,6 +176,12 @@ func harvestNames(ctx context.Context) map[string]string {
 		}
 	}
 	return names
+}
+
+// defaultName is a name every router of this firmware has, which hides nothing and would turn
+// "OpenWrt 25.12.5" into "host-1 25.12.5" in the bundle.
+func defaultName(v string) bool {
+	return strings.EqualFold(v, "openwrt") || strings.EqualFold(v, "lede")
 }
 
 // runDiag writes the bundle for the daemon whose config is at configPath.

@@ -230,8 +230,9 @@ on the router before 1.3.0. The workflow has not run yet: it is rehearsed on the
 
 ### 3.2 `connect` and `doctor`
 
-**Status: done on `main`, not yet released.** Not yet run against a real router from a PC: that is
-a hardware check before 1.3.0. Claude Code and Codex are configured through their own `mcp add`
+**Status: done on `main`, not yet released.** `connect doctor` and `connect --write` (Cursor, to a
+JSON file) were run from a Windows PC against the real router; the clients' own `mcp add` commands
+and macOS were not. Claude Code and Codex are configured through their own `mcp add`
 command, which is sturdier than editing their files; the others get a merged JSON entry. A
 `Windows hygiene` test set (UTF-8 without BOM, no CRLF, paths with spaces, `%APPDATA%`) is part of
 `connect_test.go` and `clientcfg_test.go`; WSL is detected and warned about, not tested.
@@ -374,8 +375,9 @@ until 4.3 and 4.4 give them dedicated tools.
 
 ### 3.9 Sanitised diagnostic bundle
 
-**Status: done on `main`, not yet released.** Not yet read by eye on the hardware: the check before
-1.3.0 is to run it on the router and look for anything it should have hidden.
+**Status: done on `main`, not yet released.** Run on the router and read for anything it should have
+hidden: the client address and nothing else private appeared; the factory host name `OpenWrt` is left
+unmasked on purpose.
 
 - **Ships.** `openwrt-mcp diag` prints the version, the board, the policy shape and the last N audit entries, with
   IPs, MACs, SSIDs and host names masked. The output is ready to paste into a GitHub issue.
