@@ -1,12 +1,25 @@
 # openwrt-mcp -- an MCP server for OpenWrt 25.12+
 
 [![CI](https://github.com/stanislav-testhub/openwrt-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/stanislav-testhub/openwrt-mcp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/stanislav-testhub/openwrt-mcp)](https://github.com/stanislav-testhub/openwrt-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![OpenWrt 25.12+](https://img.shields.io/badge/OpenWrt-25.12%2B-00B5E2)
 
 An [MCP](https://modelcontextprotocol.io) server that runs **on** an OpenWrt router, so
 Claude Code (or any MCP client) can inspect and change it -- behind deny-by-default policies,
 an audit log, and an automatic rollback for configuration changes.
+
+**Local and private.** The server makes no outbound connections of its own and sends no
+telemetry; it listens on loopback and on a root-only socket, and talks to your client over an
+SSH session you set up. The tools that can make the router itself reach out (`net_diag`,
+`pkg_query` with `refresh`, `pkg_change`, `sysupgrade check`, the `uci_apply` probes, `ubus_call`,
+`exec`) say so in their MCP annotations (`openWorldHint`), and each needs a grant from you.
+Secret values are masked in tool output by default, and a new WireGuard key never enters the
+conversation unless you ask for it.
+
+**Footprint.** One static binary with no dependencies: 9.1 to 11.3 MB for the router architectures
+(9.6 MB on arm64, about 3.7 MB compressed in the release archive), and 23 tools in about 22 KB of tool
+descriptions. Every release file is checksummed and carries a build attestation.
 
 > **Based on [GlassOnTin/openwrt-mcp](https://github.com/GlassOnTin/openwrt-mcp)** by Ian
 > Williams, which targets GL.iNet firmware 4.x (OpenWrt 21.02, `opkg`). This is a port to
@@ -18,12 +31,33 @@ an audit log, and an automatic rollback for configuration changes.
 - **Router:** stock OpenWrt **25.12.0 or newer** (the `apk` releases). Nothing to install on the
   router beforehand. 24.10 and older (`opkg`, 21.02-era tooling) are not supported -- use
   upstream for GL.iNet 4.x firmware.
-- **Workstation:** Go 1.26+, `ssh`, `tar` (Linux, macOS, or Git Bash on Windows).
-- **Any CPU OpenWrt and Go share:** `install.sh` reads the router's `DISTRIB_ARCH` and
-  cross-compiles a static binary (arm64, armv5/v7, mips/mipsle softfloat, mips64, x86, riscv64).
+- **Your PC:** OpenSSH (Windows 10 and later, macOS and Linux have it). Installing from a release
+  needs nothing else. Building from source needs Go 1.26+, `ssh` and `tar` (Linux, macOS, or Git
+  Bash on Windows).
+- **Any CPU OpenWrt and Go share:** the release has a binary for each (arm64, armv5/v7,
+  mips/mipsle softfloat, mips64/mips64le, x86, x86-64, riscv64); `install.sh` reads the router's
+  `DISTRIB_ARCH` and picks it, or cross-compiles when you build from source.
 
 Tested on a GL.iNet GL-MT6000 (mediatek/filogic, `aarch64_cortex-a53`) with OpenWrt 25.12.5.
 Nothing in the code is specific to that board.
+
+---
+
+## How it differs from other OpenWrt MCP servers
+
+From each project's own README on 2026-10-07; "not stated" means the README does not say. Corrections
+are welcome.
+
+| | this project | [openwrt_ssh_mcp](https://github.com/jsebgiraldo/openwrt_ssh_mcp) | [paulomac1000/openwrt-mcp](https://github.com/paulomac1000/openwrt-mcp) | [openwrt-luci-mcp](https://github.com/JeffersonYoung/openwrt-luci-mcp) |
+|---|---|---|---|---|
+| Runs on | the router | a PC, in Docker | a PC, in Docker or Python | a PC, in Node.js |
+| Reaches the router by | SSH to a key-bound forced command, or loopback HTTP | SSH | SSH | LuCI's HTTP `/ubus` |
+| Changes configuration | yes, through one tool that checks first and arms a rollback | yes, including packages and a firmware flash | read-only unless `ENABLE_WRITE_OPERATIONS=1` | no |
+| Automatic rollback of a bad change | yes, and it survives a reboot | not stated | not stated | not applicable |
+| Access control and audit | per-client grants with scopes, expiry and a rate limit, audit log, optional TOTP | command whitelist, audit log | audit log | secrets hidden, no audit log |
+| Package manager | `apk` (OpenWrt 25.12+) | `opkg` | `opkg` | lists installed and available |
+| Flashing firmware | never | yes | not stated | no |
+| Needs on the router | the binary | SSH | SSH | `uhttpd-mod-ubus`, `rpcd` |
 
 ---
 

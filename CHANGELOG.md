@@ -150,6 +150,15 @@ Changed
   - The test generates addresses and names in the contexts a log has them in and fails if any
     survives; a whole-command test builds a router with private names in its UCI, policy and audit
     log and checks the default and `--detail` output for leaks.
+- **Registry entry and README (ROADMAP 3.10, 3.1).**
+  - `server.json` for the official MCP Registry, name `io.github.stanislav-testhub/openwrt-mcp`.
+    It names the repository and no package: the registry's package types are for software you
+    install where the client runs. A test checks the name, the 100-character description limit and
+    that its version equals the binary's. Publishing is left to the operator.
+  - The README states what the server does with the network (nothing of its own: no telemetry, no
+    outbound connection; the tools that make the router reach out are the ones annotated
+    `openWorldHint`), the binary sizes per architecture, and how it differs from the other OpenWrt
+    MCP servers, from their READMEs.
 
 Fixed
 - **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each

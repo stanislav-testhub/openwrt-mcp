@@ -208,7 +208,9 @@ also fixes the catalog-level defects a measurement of `tools/list` found. **It a
 ### 3.1 Prebuilt, signed releases
 
 **Status: done on `main`, not yet released.** The release workflow is built, and so are the router-side
-`install-router.sh` and `install.sh install --release`. Still open: the README footprint figures.
+`install-router.sh` and `install.sh install --release`. The release also carries `windows_*` and `darwin_*`
+archives for `connect`. The README now states the binary sizes and the privacy line; the resident memory is measured
+on the router before 1.3.0. The workflow has not run yet: it is rehearsed on the `v1.2.0` tag first.
 
 - **Problem.** There are no GitHub Releases. `install.sh` cross-compiles locally, so an operator without Go stops
   here. The server runs as root, so binaries must be verifiable: supply-chain attacks on MCP servers (typosquatted
@@ -380,6 +382,13 @@ until 4.3 and 4.4 give them dedicated tools.
 - **Precedent.** ha-mcp's built-in issue-report tool, and unifi-mcp's sanitised support bundles.
 
 ### 3.10 Registry entry and SDK update
+
+**Status: done on `main`**, except publishing (`mcp-publisher login github`, then `publish`), which is
+interactive and the operator's. go-sdk is 1.8.0; it still negotiates `2026-07-28` at most. `server.json`
+carries the repository and no `packages` or `remotes`: the registry's package types (npm, PyPI, NuGet,
+OCI, Cargo, MCPB) describe things you install on the machine running the client, and this server is
+installed on a router. `TestServerJSONMatchesTheRegistrySchemaAndTheRelease` keeps its name, version
+and description limits in step with the code, so a release bumps both together.
 
 - **Ships.**
   - A `server.json` for the official MCP Registry.
