@@ -26,7 +26,7 @@ func TestStatePathLayoutIsPinned(t *testing.T) {
 	cfg := &Config{AuditPath: "/a/audit.jsonl", Socket: "/run/x/mcp.sock"}
 	got := statePaths("/var/lib/x", cfg)
 	want := []string{
-		"/a/audit.jsonl", "/a/audit.jsonl.1", "/run/x/mcp.sock",
+		"/a/audit.jsonl", "/a/audit.jsonl.1", "/run/x/mcp.sock", "/run/x/wg",
 		"/var/lib/x/history", "/var/lib/x/mfa", "/var/lib/x/mfa.new", "/var/lib/x/pending.json",
 		"/var/lib/x/rollback", "/var/lib/x/tokens", "/var/lib/x/tokens.tmp",
 	}

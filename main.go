@@ -259,6 +259,27 @@ func main() {
 		must(fs.Parse(args[1:]))
 		must(runStatus(*configPath, *statePath, *lines, *asJSON, *all))
 
+	case "wg-show":
+		// Hands a client config left by wg_new_client to the operator's terminal, so the private
+		// key never has to pass through a model's context. Flags may come after the name.
+		keep, name := false, ""
+		for _, a := range args[1:] {
+			switch {
+			case a == "--keep" || a == "-keep":
+				keep = true
+			case name == "" && !strings.HasPrefix(a, "-"):
+				name = a
+			default:
+				die("usage: openwrt-mcp wg-show <client name> [--keep]")
+			}
+		}
+		if name == "" {
+			die("usage: openwrt-mcp wg-show <client name> [--keep]")
+		}
+		cfg, err := LoadConfig(*configPath)
+		must(err)
+		must(runWGShow(os.Stdout, cfg, name, keep))
+
 	case "version":
 		fmt.Printf("openwrt-mcp %s\n", version)
 
@@ -361,6 +382,7 @@ func usage() {
   prune    [--older-than <dur>]               delete expired grants (audited)
   status   [--json] [--audit N] [--all]        daemon state, pairings, grants, recent audit
   mfa      enrol <client> [device] | status   optional TOTP second factor for gated tools
+  wg-show  <client name> [--keep]             print a WireGuard client config left by wg_new_client, then delete it
   version
 
 Connect an MCP client either way:

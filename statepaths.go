@@ -27,6 +27,18 @@ func tokensTmpPath(tokens string) string   { return tokens + ".tmp" }
 func mfaTmpPath(mfa string) string         { return mfa + ".new" }
 func auditRotatedPath(audit string) string { return audit + ".1" }
 
+// wgClientDir holds the client configs wg_new_client writes for the operator to collect. It sits
+// beside the socket, in RAM and root-only, because the files carry a private key that the router
+// itself never keeps: a reboot must take them away. It is not a path under the state directory
+// on purpose (that is flash).
+func wgClientDir(cfg *Config) string {
+	sock := defaultSocket
+	if cfg != nil && cfg.Socket != "" {
+		sock = cfg.Socket
+	}
+	return path.Join(path.Dir(sock), "wg")
+}
+
 // statePaths lists every file or directory the daemon creates, writes or listens on. The
 // rollback and history directories stand for everything beneath them. A disabled socket is not a path.
 func statePaths(state string, cfg *Config) []string {
@@ -34,7 +46,7 @@ func statePaths(state string, cfg *Config) []string {
 	out := []string{
 		tokens, tokensTmpPath(tokens),
 		mfa, mfaTmpPath(mfa),
-		pendingPath(state), rollbackDir(state), historyDir(state),
+		pendingPath(state), rollbackDir(state), historyDir(state), wgClientDir(cfg),
 	}
 	if cfg != nil {
 		if cfg.AuditPath != "" {

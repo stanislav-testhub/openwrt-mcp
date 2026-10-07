@@ -169,8 +169,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		})
 
 	addTool(s, srv, client, "sysupgrade",
-		"Firmware helpers that never flash: list (files a sysupgrade keeps), test (validate an image already in "+
-			"/tmp), check (owut: is a newer release available), backup (config archive in /tmp).",
+		"Firmware helpers that never flash. `action` says which: list, test, check or backup.",
 		annWrite, sysupgradeScope, sysupgradeTool)
 
 	// ---- wireguard
@@ -181,9 +180,10 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		annRead, noScope[wgListIn], wgListClients)
 
 	addTool(s, srv, client, "wg_new_client",
-		"Issue a WireGuard client: keypair, next free tunnel address, peer saved in /etc/config/network and "+
-			"hot-added without restarting the interface. Returns the client config and a QR code. The output "+
-			"contains a NEW PRIVATE KEY: show it to the operator, never store it. One config per device.",
+		"Issue a WireGuard client: keypair, next free tunnel address, peer saved and hot-added without an "+
+			"interface restart. The private key and config go to a root-only file for the operator "+
+			"(`openwrt-mcp wg-show <name>` on the router prints them with a QR code); reveal=true returns them "+
+			"here instead. One config per device.",
 		annDest, wgNewScope,
 		func(ctx context.Context, in wgNewClientIn) (string, string, error) {
 			return s.wgNewClient(ctx, client, in)

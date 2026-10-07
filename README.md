@@ -63,9 +63,9 @@ Nothing in the code is specific to that board.
 | `pkg_change` | `<action>.<pkg>` / `upgrade` | apk add/del/upgrade; **simulates unless `commit=true`**; reports new `.apk-new` files. |
 | `pkg_config_diff` | tool | Every `.apk-new` as a diff against the live file -- for `/etc/config/*` by setting (`uci show`), so quoting/indentation noise disappears. |
 | `pkg_config_resolve` | live path | keep_current (drop the new default) or use_new (install it; rollback-armed for UCI configs). |
-| `sysupgrade` | `<action>` | list (preserved files), test (validate an image in /tmp), check (`owut`), backup. **Never flashes.** |
+| `sysupgrade` | `<action>` | list (preserved files), test (validate an image in /tmp), check (`owut`), backup (mode 0600; the previous archive this tool made is removed). **Never flashes.** |
 | `wg_list_clients` | tool | Peers with handshake age, endpoint, traffic, config/kernel mismatch, duplicate names. |
-| `wg_new_client` | `wireguard.<iface>` | Keypair, next free address, peer saved and hot-added, config + QR. |
+| `wg_new_client` | `wireguard.<iface>` | Keypair, next free address, peer saved and hot-added. The private key and config go to a root-only file; you collect them with `openwrt-mcp wg-show <name>` (config and QR in your own terminal). `reveal=true` returns them in the result instead. |
 | `wg_remove_client` | `wireguard.<iface>.<name>` | By name, key or section; refuses a peer connected in the last 3 minutes unless forced. |
 | `ubus_list` | *(ungated)* | Discovery: every object, method and argument signature. |
 | `ubus_call` | `<object>.<method>` | Anything else on the bus. Replies over 8 KB have long arrays pruned. |
@@ -253,9 +253,15 @@ holds a client's token can keep that client locked out for up to an hour.
 - **Lifelines.** `service_control` will not stop or disable dropbear, network, rpcd or
   openwrt-mcp. `sysupgrade` has no flash action -- validate an image with `test`, flash by hand.
   `wg_remove_client` will not drop a tunnel that handshook in the last 3 minutes unless forced.
-- **Credentials.** `wg_new_client` output contains a new private key; the audit log records
-  arguments and a summary, never tool output, and redacts secret-looking fields. The server
-  private key is read from `wg show dump` and discarded.
+- **Credentials stay out of the conversation.** `wg_new_client` writes the new client's config
+  (private key included) to a root-only file in RAM, beside the socket, and returns the public
+  key and the command to run. `openwrt-mcp wg-show <name>` on the router prints the config and
+  a QR code in your terminal and deletes the file; an uncollected file goes after 24 hours or at
+  the next reboot. Only `reveal=true` puts the key in the result, and so in the model's context
+  and the provider's logs. A `sysupgrade` backup is created 0600 before anything is written to it
+  and only the newest one is kept. The audit log records arguments and a summary, never tool
+  output, and redacts secret-looking fields. The server private key is read from `wg show dump`
+  and discarded.
 - **Secrets are masked in tool output.** `uci_get`, `uci_apply` (diff and errors), `pkg_config_diff`,
   `pkg_config_resolve`, `uci_confirm`, `uci_rollback`, `system_status` and `ubus_call` keep the shape
   of a line and replace the value of a secret option (`key`, `key1`..`key4`, `psk`, `password`,

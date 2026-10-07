@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -111,7 +114,7 @@ func TestNewClientAllocatesConfiguresAndHotAdds(t *testing.T) {
 	f.on("wg set wg0", "")
 
 	s := testServer(t, "")
-	out, summary, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop"})
+	out, summary, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop", Reveal: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,11 +273,11 @@ func TestWgNewClientThroughTheWrapperIsUntouched(t *testing.T) {
 	// secret name, is exactly what the masker looks for, so only a real exemption leaves it alone.
 	const name = "lab.x.psk=hunter2"
 	s := testServer(t, grantAll())
-	direct, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: name})
+	direct, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: name, Reveal: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wrapped, isErr := callText(t, connectClient(t, s, "c"), "wg_new_client", map[string]any{"name": name})
+	wrapped, isErr := callText(t, connectClient(t, s, "c"), "wg_new_client", map[string]any{"name": name, "reveal": true})
 	if isErr {
 		t.Fatalf("the tool failed through the wrapper:\n%s", wrapped)
 	}
@@ -301,5 +304,232 @@ func TestWgNewClientThroughTheWrapperIsUntouched(t *testing.T) {
 	}
 	if strings.Contains(wrapped, "untrusted text") {
 		t.Error("wg_new_client output carries an untrusted-text marker")
+	}
+}
+
+// ---------------------------------------------------------------- the private key stays off the transcript
+//
+// ROADMAP 3.6. By default wg_new_client leaves the client's config in a root-only file and tells
+// the operator how to collect it; the key reaches the model only on request. Expected values here
+// are the spec's, not read back from the code.
+
+// wgNewFake is wgFake plus everything wg_new_client runs, in a fixture root so the config file
+// lands in a temp dir. The returned directory is where the daemon leaves client configs: beside
+// the default socket, in RAM.
+func wgNewFake(t *testing.T) (*Server, *fakeRouter, string) {
+	t.Helper()
+	root := withFixtureRoot(t)
+	f := wgFake(t, 0)
+	f.on("uci -q show ddns", "ddns.myddns_ipv4=service\nddns.myddns_ipv4.enabled='0'\nddns.myddns_ipv4.lookup_host='yourhost.example.com'\n")
+	f.on("ubus call network.interface dump", `{"interface":[{"interface":"WAN","up":true,"metric":1,
+		"ipv4-address":[{"address":"100.72.1.2","mask":15}],
+		"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
+	f.on("wg genkey", "CLIENTPRIV=\n")
+	f.on("wg pubkey", "CLIENTPUB=\n")
+	f.on("uci add network wireguard_wg0", "cfg1496fc\n")
+	f.on("uci set", "")
+	f.on("uci add_list", "")
+	f.on("uci commit network", "")
+	f.on("wg set wg0", "")
+	return testServer(t, ""), f, filepath.Join(root, "var", "run", "openwrt-mcp", "wg")
+}
+
+func TestNewClientKeepsThePrivateKeyOutOfTheResultByDefault(t *testing.T) {
+	s, _, dir := wgNewFake(t)
+	opens, _ := recordOpens(t)
+	out, summary, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop", PresharedKey: false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"CLIENTPRIV", "PrivateKey", "PresharedKey"} {
+		if strings.Contains(out, secret) || strings.Contains(summary, secret) {
+			t.Errorf("%q reached the result:\n%s", secret, out)
+		}
+	}
+	if strings.ContainsAny(out, "█▀▄") {
+		t.Errorf("a QR code reached the result:\n%s", out)
+	}
+	for _, want := range []string{
+		"Public key: CLIENTPUB=",
+		"/var/run/openwrt-mcp/wg/laptop.conf", // where it is, in RAM
+		"openwrt-mcp wg-show 'laptop'",        // what the operator runs
+		"Created client \"laptop\"",
+		"10.20.30.2/32",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("result lacks %q:\n%s", want, out)
+		}
+	}
+
+	b, err := os.ReadFile(filepath.Join(dir, "laptop.conf"))
+	if err != nil {
+		t.Fatalf("no config file left for the operator: %v", err)
+	}
+	for _, want := range []string{"PrivateKey = CLIENTPRIV=", "Address = 10.20.30.2/32", "PublicKey = SERVERPUB="} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("the file lacks %q:\n%s", want, b)
+		}
+	}
+	// Owner read/write only, and never over an existing file.
+	var made *openCall
+	for i := range *opens {
+		if strings.HasSuffix(filepath.ToSlash((*opens)[i].name), "wg/laptop.conf") {
+			made = &(*opens)[i]
+		}
+	}
+	if made == nil || made.perm != 0o600 || made.flag&os.O_EXCL == 0 {
+		t.Errorf("config file created as %+v, want mode 600 with O_EXCL", made)
+	}
+}
+
+func TestNewClientRevealReturnsTheKeyAndLeavesNoFile(t *testing.T) {
+	s, _, dir := wgNewFake(t)
+	out, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop", Reveal: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "PrivateKey = CLIENTPRIV=") {
+		t.Errorf("reveal=true did not return the key:\n%s", out)
+	}
+	if ents, _ := os.ReadDir(dir); len(ents) != 0 {
+		t.Errorf("reveal=true left %d file(s) behind", len(ents))
+	}
+}
+
+// A peer whose key cannot be handed over is worse than no peer, and a failed commit must not
+// leave a key lying in RAM.
+func TestNewClientLeavesNeitherPeerNorFileWhenItCannotHandTheKeyOver(t *testing.T) {
+	t.Run("a config for this name is already waiting", func(t *testing.T) {
+		s, f, dir := wgNewFake(t)
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		waiting := filepath.Join(dir, "laptop.conf")
+		if err := os.WriteFile(waiting, []byte("an older key"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		_, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop"})
+		if err == nil || !strings.Contains(err.Error(), "wg-show") {
+			t.Fatalf("overwrote or ignored a waiting config: %v", err)
+		}
+		if b, _ := os.ReadFile(waiting); string(b) != "an older key" {
+			t.Errorf("the waiting config became %q", b)
+		}
+		if f.ran("uci add network") || f.ran("uci commit network") {
+			t.Errorf("a peer was created although its key could not be handed over:\n%s", f.allCalls())
+		}
+	})
+	t.Run("the commit fails", func(t *testing.T) {
+		s, f, dir := wgNewFake(t)
+		f.fail("uci commit network", "read-only file system")
+		if _, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop"}); err == nil {
+			t.Fatal("a failed commit was reported as success")
+		}
+		if ents, _ := os.ReadDir(dir); len(ents) != 0 {
+			t.Errorf("a key was left in %s after a failed commit", dir)
+		}
+	})
+}
+
+func TestNewClientConfigFileNameStaysInsideItsDirectory(t *testing.T) {
+	for _, tc := range []struct{ name, wantFile string }{
+		{"laptop", "laptop.conf"},
+		{"../../etc/passwd", "etcpasswd.conf"},
+		{"a/b\\c", "abc.conf"},
+		{"my phone", "myphone.conf"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s, _, dir := wgNewFake(t)
+			if _, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: tc.name}); err != nil {
+				t.Fatal(err)
+			}
+			ents, _ := os.ReadDir(dir)
+			if len(ents) != 1 || ents[0].Name() != tc.wantFile {
+				t.Errorf("files in %s: %v, want just %s", dir, ents, tc.wantFile)
+			}
+		})
+	}
+
+	// A name with no letters or digits still gets its own file, and a different one for a different name.
+	files := map[string]string{}
+	for _, name := range []string{"ноутбук", "телефон"} {
+		s, _, dir := wgNewFake(t)
+		if _, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: name}); err != nil {
+			t.Fatal(err)
+		}
+		ents, _ := os.ReadDir(dir)
+		if len(ents) != 1 || !strings.HasPrefix(ents[0].Name(), "client-") {
+			t.Fatalf("%q: files %v, want one client-<hash>.conf", name, ents)
+		}
+		files[name] = ents[0].Name()
+	}
+	if files["ноутбук"] == files["телефон"] {
+		t.Errorf("two different names share the file %s", files["ноутбук"])
+	}
+}
+
+func TestWGShowPrintsTheConfigAndQRThenDeletesIt(t *testing.T) {
+	s, _, dir := wgNewFake(t)
+	if _, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop"}); err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := runWGShow(&buf, s.cfg(), "laptop", true); err != nil { // --keep
+		t.Fatal(err)
+	}
+	out := buf.String()
+	blocks := 0
+	for _, line := range strings.Split(out, "\n") {
+		if strings.ContainsAny(line, "█▀▄") {
+			blocks++
+		}
+	}
+	if !strings.Contains(out, "PrivateKey = CLIENTPRIV=") || blocks < 10 {
+		t.Errorf("wg-show did not print the config and a QR (%d QR lines):\n%s", blocks, out)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "laptop.conf")); err != nil {
+		t.Errorf("--keep removed the file: %v", err)
+	}
+
+	buf.Reset()
+	if err := runWGShow(&buf, s.cfg(), "laptop", false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "laptop.conf")); err == nil {
+		t.Error("the config is still on the router after wg-show")
+	}
+	err := runWGShow(&buf, s.cfg(), "laptop", false)
+	if err == nil || !strings.Contains(err.Error(), "no pending config") {
+		t.Errorf("a second wg-show: %v", err)
+	}
+}
+
+func TestStaleClientConfigsAreSweptAndNothingElse(t *testing.T) {
+	root := withFixtureRoot(t)
+	dir := "/var/run/openwrt-mcp/wg"
+	onDisk := filepath.Join(root, "var", "run", "openwrt-mcp", "wg")
+	if err := os.MkdirAll(onDisk, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-25 * time.Hour)
+	for name, mtime := range map[string]time.Time{
+		"stale.conf": old, "fresh.conf": time.Now().Add(-23 * time.Hour), "stale.txt": old,
+	} {
+		p := filepath.Join(onDisk, name)
+		if err := os.WriteFile(p, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+	}
+	sweepWGConfigs(dir, 24*time.Hour)
+	var left []string
+	ents, _ := os.ReadDir(onDisk)
+	for _, e := range ents {
+		left = append(left, e.Name())
+	}
+	if strings.Join(left, ",") != "fresh.conf,stale.txt" {
+		t.Errorf("left %v, want only the fresh .conf and the non-.conf file", left)
 	}
 }

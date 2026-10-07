@@ -306,6 +306,11 @@ run, not part of this repository.
 
 ### 3.6 Credentials stay off the transcript
 
+**Status: done on `main`, not yet released**, except the TOTP code, which waits for 6.1. The
+config file lives in a `0700` directory beside the daemon socket (`/var/run/openwrt-mcp/wg`),
+not in `/tmp`, which any local user can write into. Not yet run on hardware: the archive mode
+that `sysupgrade -b` leaves when it writes into a file that already exists.
+
 - **Problem.** Two outputs put credentials into the model's context, and from there into the provider's logs:
   - `wg_new_client` returns the private key, the preshared key and a half-block QR code. The QR is about 2-3k
     tokens of block glyphs per call and often renders badly.

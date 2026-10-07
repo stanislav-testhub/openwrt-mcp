@@ -66,6 +66,8 @@ var goldenCalls = []struct {
 	{"wg_list_clients", map[string]any{"iface": "wg0"}},
 	{"wg_new_client", map[string]any{"name": "phone", "iface": "wg0", "endpoint": "vpn.example.com:51820",
 		"dns": "192.0.2.1", "allowed_ips": "0.0.0.0/0"}},
+	{"wg_new_client", map[string]any{"name": "tablet", "iface": "wg0", "endpoint": "vpn.example.com:51820",
+		"reveal": true}},
 	{"wg_remove_client", map[string]any{"iface": "wg0", "name": "phone"}},
 	{"mfa_unlock", map[string]any{"code": "123456"}},
 }
@@ -197,9 +199,13 @@ func TestToolSchemasArePortable(t *testing.T) {
 const (
 	catalogueBudgetBytes = 22100 // all tools, marshalled as tools/list sends them
 	catalogueProseBudget = 11500 // descriptions plus input-property descriptions only
-	toolBudgetBytes      = 1500  // any one tool, except the one below
-	uciApplyBudgetBytes  = 4000  // the one tool with a nested, optioned request
+	toolBudgetBytes      = 1500  // any one tool, except those below
 )
+
+// toolBudgets are the tools allowed more than toolBudgetBytes, each for a reason: uci_apply
+// carries a nested request with its own options; wg_new_client has nine parameters, one of
+// which (reveal) keeps a private key out of the conversation by default.
+var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700}
 
 func TestCatalogueStaysWithinBudget(t *testing.T) {
 	cs := connectClient(t, testServer(t, ""), "c")
@@ -208,8 +214,8 @@ func TestCatalogueStaysWithinBudget(t *testing.T) {
 		b, _ := json.Marshal(tl)
 		total += len(b)
 		limit := toolBudgetBytes
-		if tl.Name == "uci_apply" {
-			limit = uciApplyBudgetBytes
+		if l, ok := toolBudgets[tl.Name]; ok {
+			limit = l
 		}
 		if len(b) > limit {
 			t.Errorf("%s is %d bytes in tools/list, over its %d", tl.Name, len(b), limit)

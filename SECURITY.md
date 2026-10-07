@@ -86,8 +86,14 @@ Everything a tool returns goes through one path: sanitise, mask, bound, label.
   keep their shape. The audit log and the masker share one rule. `redact_extra` adds names.
 - **Not masked, on purpose:** `exec` (a root shell can read any file anyway), `logread`,
   `firewall_show` and the diagnostics, which carry no configuration values or are free text;
-  and `wg_new_client`, whose job is to hand the operator the new client's private key. Treat that
-  output as a credential: show it to the operator and do not store it.
+  and `wg_new_client` with `reveal=true`, whose job is then to hand the operator the new client's
+  private key. Treat that output as a credential: show it to the operator and do not store it. By
+  default the key is not in the result at all: the config goes to a `0600` file in a `0700`
+  directory in RAM beside the socket, created with `O_EXCL`, and the operator collects it with
+  `openwrt-mcp wg-show`, which deletes it. An uncollected file is swept after 24 hours and lost
+  at reboot. A `sysupgrade` backup is created `0600` before it is written, and the tool keeps
+  only the newest archive it made. A model that is told to run `wg_new_client` therefore never
+  sees the key unless it also sets `reveal`, and a policy cannot yet tell the two apart.
 - **Known gaps in masking:** a masked diff hides *what* changed in a secret; matching by substring
   also hides options such as `wpa_psk_file`; a secret in free text (a log line, a `description`)
   is not recognised. `option redact_output '0'` turns masking off; it is audited as a system

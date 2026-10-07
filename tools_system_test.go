@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -474,6 +475,7 @@ func TestSysupgradeCheckNeedsOwut(t *testing.T) {
 
 func TestSysupgradeBackupNamesAFileUnderTmpAndReportsItsDigest(t *testing.T) {
 	root := withFixtureRoot(t)
+	mustMkdir(t, filepath.Join(root, "tmp"))
 	name := regexp.MustCompile(`^/tmp/backup-[A-Za-z0-9_-]+-\d{8}-\d{6}\.tar\.gz$`)
 
 	for _, c := range []struct{ host, wantPrefix string }{
@@ -504,11 +506,14 @@ func TestSysupgradeBackupNamesAFileUnderTmpAndReportsItsDigest(t *testing.T) {
 		if !strings.Contains(out, "secrets") || !strings.Contains(summary, written) {
 			t.Errorf("no warning about the archive holding secrets, or summary: %q / %q", out, summary)
 		}
+		// Names carry the second, and an archive is never replaced: start the next case clean.
+		os.Remove(filepath.Join(root, filepath.FromSlash(written)))
 	}
 }
 
 func TestSysupgradeBackupFailsLoudly(t *testing.T) {
-	withFixtureRoot(t)
+	root := withFixtureRoot(t)
+	mustMkdir(t, filepath.Join(root, "tmp"))
 	f := newFakeRouter(t)
 	f.on("uci -q get system.@system[0].hostname", "r")
 	f.fail("sysupgrade -k -b", "no space left")
@@ -518,6 +523,109 @@ func TestSysupgradeBackupFailsLoudly(t *testing.T) {
 	f.on("sysupgrade -k -b", "") // claims success but wrote nothing
 	if _, _, err := sysupgradeTool(context.Background(), sysupgradeIn{Action: "backup"}); err == nil {
 		t.Error("a backup that left no file was reported as written")
+	}
+}
+
+func mustMkdir(t *testing.T, p string) {
+	t.Helper()
+	if err := os.MkdirAll(p, 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// ROADMAP 3.6. The archive holds every secret on the router: it is created owner-only before
+// sysupgrade writes into it, only one such archive is kept, and nothing else in /tmp is touched.
+func TestSysupgradeBackupIsPrivateAndTheOlderOnesGo(t *testing.T) {
+	root := withFixtureRoot(t)
+	tmp := filepath.Join(root, "tmp")
+	mustMkdir(t, tmp)
+	mustMkdir(t, filepath.Join(tmp, "backup-dir-20200101-000000.tar.gz")) // looks like one, is not a file
+	files := map[string]bool{                                             // name -> must still exist afterwards
+		"backup-OpenWrt-20200101-000000.tar.gz":   false, // an earlier archive of this tool
+		"backup-other-20200102-000000.tar.gz":     false, // another host name, same tool
+		"backup-notes.txt":                        true,  // the operator's own
+		"backup-OpenWrt-2020.tar.gz":              true,  // not the tool's naming
+		"firmware.bin":                            true,
+		"mybackup-OpenWrt-20200101-000000.tar.gz": true, // wrong prefix
+	}
+	for name := range files {
+		if err := os.WriteFile(filepath.Join(tmp, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	f := newFakeRouter(t)
+	f.on("uci -q get system.@system[0].hostname", "OpenWrt\n")
+	var written string
+	f.onFn("sysupgrade -k -b", func(argv []string, _ string) (string, error) {
+		written = argv[3]
+		// tar writes into the file the tool already created: it must exist, and be empty.
+		if b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(written))); err != nil || len(b) != 0 {
+			t.Errorf("the archive was not created empty before sysupgrade ran: %q, %v", b, err)
+		}
+		writeFixture(t, root, strings.TrimPrefix(written, "/"), "hello")
+		return "", nil
+	})
+	opens, chmods := recordOpens(t)
+
+	out, _, err := sysupgradeTool(context.Background(), sysupgradeIn{Action: "backup"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(*opens) != 1 || (*opens)[0].perm != 0o600 || (*opens)[0].flag&os.O_EXCL == 0 {
+		t.Errorf("archive created as %+v, want one open with mode 600 and O_EXCL", *opens)
+	}
+	if len(*chmods) != 1 || (*chmods)[0] != 0o600 {
+		t.Errorf("chmod after sysupgrade: %o, want one call with 600", *chmods)
+	}
+	if !strings.Contains(out, "mode 0600") || !strings.Contains(out, "Removed 2 older") {
+		t.Errorf("result does not say the archive is private or that two were removed:\n%s", out)
+	}
+	for name, mustStay := range files {
+		_, err := os.Stat(filepath.Join(tmp, name))
+		if mustStay && err != nil {
+			t.Errorf("%s was removed: it is not one of the tool's archives", name)
+		}
+		if !mustStay && err == nil {
+			t.Errorf("%s is still there: an older archive must go", name)
+		}
+	}
+	if fi, err := os.Stat(filepath.Join(tmp, "backup-dir-20200101-000000.tar.gz")); err != nil || !fi.IsDir() {
+		t.Error("a directory named like an archive was removed")
+	}
+	if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(written))); err != nil {
+		t.Errorf("the new archive %s is gone: %v", written, err)
+	}
+}
+
+// A backup that fails or comes back empty must not leave an archive, and must not cost the
+// operator the previous one.
+func TestSysupgradeBackupFailureRemovesItsFileAndKeepsTheOldArchive(t *testing.T) {
+	root := withFixtureRoot(t)
+	tmp := filepath.Join(root, "tmp")
+	mustMkdir(t, tmp)
+	prev := filepath.Join(tmp, "backup-r-20200101-000000.tar.gz")
+	if err := os.WriteFile(prev, []byte("previous"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := newFakeRouter(t)
+	f.on("uci -q get system.@system[0].hostname", "r")
+
+	for name, run := range map[string]func(){
+		"sysupgrade fails": func() { f.fail("sysupgrade -k -b", "no space left") },
+		"empty archive":    func() { f.on("sysupgrade -k -b", "") },
+	} {
+		run()
+		if _, _, err := sysupgradeTool(context.Background(), sysupgradeIn{Action: "backup"}); err == nil {
+			t.Errorf("%s: reported success", name)
+		}
+		ents, _ := os.ReadDir(tmp)
+		if len(ents) != 1 || ents[0].Name() != filepath.Base(prev) {
+			t.Errorf("%s: /tmp holds %v, want only the previous archive", name, ents)
+		}
+		if b, _ := os.ReadFile(prev); string(b) != "previous" {
+			t.Errorf("%s: the previous archive changed to %q", name, b)
+		}
 	}
 }
 

@@ -2,8 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"net/netip"
+	"os"
+	"path"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -246,6 +254,66 @@ type wgNewClientIn struct {
 	MTU          int    `json:"mtu,omitempty" jsonschema:"client MTU; defaults to the interface's MTU, else 1420"`
 	Keepalive    int    `json:"persistent_keepalive,omitempty" jsonschema:"seconds; defaults to 25, which keeps NAT bindings alive"`
 	PresharedKey bool   `json:"preshared_key,omitempty" jsonschema:"also generate a preshared key (extra symmetric layer)"`
+	Reveal       bool   `json:"reveal,omitempty" jsonschema:"return the private key and config here, putting the key in this conversation. Default: a root-only file for the operator"`
+}
+
+// wgClientFileMaxAge is how long a config stays on the router when nobody collects it. The
+// directory is RAM, so a reboot also clears it.
+const wgClientFileMaxAge = 24 * time.Hour
+
+// wgFileBase names a client's config file after the client: the name is free text, so only
+// letters, digits, '_' and '-' are kept, or a short hash of it when none are.
+func wgFileBase(name string) string {
+	if b := sanitize(name); b != "" {
+		return b
+	}
+	sum := sha256.Sum256([]byte(name))
+	return "client-" + hex.EncodeToString(sum[:4])
+}
+
+// wgClientFile is where wg_new_client leaves the config for a client and `wg-show` reads it.
+func wgClientFile(cfg *Config, name string) string {
+	return path.Join(wgClientDir(cfg), wgFileBase(name)+".conf")
+}
+
+// runWGShow prints the config wg_new_client left for name, with its QR code, then deletes the
+// file unless keep is set. It is the operator's half of the hand-over: run on the router, over
+// the operator's own SSH session.
+func runWGShow(w io.Writer, cfg *Config, name string, keep bool) error {
+	file := sysPath(wgClientFile(cfg, name))
+	b, err := os.ReadFile(file)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("no pending config for %q: files are removed after %d hours and at every reboot, "+
+			"and wg_new_client with reveal=true returns the config directly", name, int(wgClientFileMaxAge/time.Hour))
+	}
+	if err != nil {
+		return err
+	}
+	text := string(b)
+	fmt.Fprintf(w, "%s\n%s\n", text, qrOrNote(text))
+	if keep {
+		fmt.Fprintf(w, "(kept: %s)\n", wgClientFile(cfg, name))
+		return nil
+	}
+	return os.Remove(file)
+}
+
+// sweepWGConfigs removes client configs nobody collected within maxAge.
+func sweepWGConfigs(dir string, maxAge time.Duration) {
+	onDisk := sysPath(dir)
+	ents, err := os.ReadDir(onDisk)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		fi, err := e.Info()
+		if err != nil || !fi.Mode().IsRegular() || !strings.HasSuffix(e.Name(), ".conf") {
+			continue
+		}
+		if time.Since(fi.ModTime()) > maxAge {
+			os.Remove(filepath.Join(onDisk, e.Name()))
+		}
+	}
 }
 
 func wgNewScope(in wgNewClientIn) []string {
@@ -452,6 +520,27 @@ func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientI
 		Keepalive:    orDefaultInt(in.Keepalive, 25),
 	}
 
+	// The config goes to a file before anything is committed: a peer whose key could not be
+	// handed over is worse than no peer. Any failure from here on removes the file again.
+	confPath, keepConf := "", false
+	if !in.Reveal {
+		dir := wgClientDir(s.cfg())
+		sweepWGConfigs(dir, wgClientFileMaxAge)
+		if err := privateDir(sysPath(dir)); err != nil {
+			return "", "", fmt.Errorf("preparing %s for the client config: %w", dir, err)
+		}
+		confPath = wgClientFile(s.cfg(), name)
+		if err := writePrivate(sysPath(confPath), []byte(cfg.String())); err != nil {
+			return "", "", fmt.Errorf("writing the client config to %s: %w (a config for a client with this "+
+				"name may be waiting: collect it with `openwrt-mcp wg-show`, or pick another name)", confPath, err)
+		}
+		defer func() {
+			if !keepConf {
+				os.Remove(sysPath(confPath))
+			}
+		}()
+	}
+
 	sec, err := run(ctx, defaultCmdTimeout, "uci", "add", "network", "wireguard_"+srv.Iface)
 	if err != nil {
 		return sec, "", fmt.Errorf("adding peer section: %w", err)
@@ -497,11 +586,22 @@ func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientI
 			"); it will work after `ifup " + srv.Iface + "`."
 	}
 
-	body := fmt.Sprintf("Created client %q (section %s) at %s on %s.\n\n%s\n%s\n"+
-		"This output contains the client's PRIVATE KEY: show it to the operator, do not store it.%s",
-		name, sec, cfg.Address, srv.Iface, cfg.String(), qrOrNote(cfg.String()), warn)
 	// Summary is audited; the config and key are not. Keep both out of it.
-	return body, fmt.Sprintf("created wireguard client %q (%s) at %s", name, sec, cfg.Address), nil
+	summary := fmt.Sprintf("created wireguard client %q (%s) at %s", name, sec, cfg.Address)
+	if in.Reveal {
+		body := fmt.Sprintf("Created client %q (section %s) at %s on %s.\n\n%s\n%s\n"+
+			"This output contains the client's PRIVATE KEY: show it to the operator, do not store it.%s",
+			name, sec, cfg.Address, srv.Iface, cfg.String(), qrOrNote(cfg.String()), warn)
+		return body, summary, nil
+	}
+	keepConf = true
+	body := fmt.Sprintf("Created client %q (section %s) at %s on %s.\n\nPublic key: %s\n"+
+		"The client's private key and config are NOT in this result. They are in %s (root-only, RAM, "+
+		"removed at the next reboot or after %d hours).\n"+
+		"Give them to the operator on their own terminal: run `openwrt-mcp wg-show '%s'` on the router. "+
+		"It prints the config and a QR code, then deletes the file (--keep leaves it).%s",
+		name, sec, cfg.Address, srv.Iface, pub, confPath, int(wgClientFileMaxAge/time.Hour), name, warn)
+	return body, summary, nil
 }
 
 // wgEndpoint picks the address clients should dial: an enabled DDNS name if there is one,

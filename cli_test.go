@@ -270,6 +270,41 @@ func TestCLIStdioRefusesWhenTheBridgeIsSwitchedOff(t *testing.T) {
 	c.fails("stdio bridge is disabled", "stdio", "--client", "claude-code")
 }
 
+// wg-show is the operator's half of the key hand-over (ROADMAP 3.6): it runs on the router
+// as its own process, finds the config beside the socket in the config file, prints it, and
+// removes it.
+func TestCLIWgShowPrintsTheWaitingConfigThenRemovesIt(t *testing.T) {
+	c := newCLI(t)
+	run := filepath.Join(filepath.Dir(c.config), "run")
+	if err := os.WriteFile(c.config, []byte("config server\n\toption socket '"+filepath.ToSlash(run)+"/mcp.sock'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(run, "wg")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(dir, "phone.conf")
+	if err := os.WriteFile(conf, []byte("[Interface]\nPrivateKey = CLIENTPRIV=\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	out := c.ok("wg-show", "phone", "--keep") // the flag may follow the name
+	if !strings.Contains(out, "PrivateKey = CLIENTPRIV=") || !strings.ContainsAny(out, "█▀▄") {
+		t.Errorf("wg-show did not print the config and a QR:\n%s", out)
+	}
+	if _, err := os.Stat(conf); err != nil {
+		t.Errorf("--keep removed the file: %v", err)
+	}
+	c.ok("wg-show", "phone")
+	if _, err := os.Stat(conf); err == nil {
+		t.Error("the private key is still on the router after wg-show")
+	}
+	c.fails("no pending config", "wg-show", "phone")
+	c.fails("usage: openwrt-mcp wg-show", "wg-show")
+	c.fails("usage: openwrt-mcp wg-show", "wg-show", "a", "b")
+	c.fails("usage: openwrt-mcp wg-show", "wg-show", "--nonsense", "phone")
+}
+
 // ---------------------------------------------------------------- expired grants
 
 // grantBlock is one policy block as `allow` writes it; expires "" means never.

@@ -604,20 +604,67 @@ func sysupgradeTool(ctx context.Context, in sysupgradeIn) (string, string, error
 		host, _ := run(ctx, defaultCmdTimeout, "uci", "-q", "get", "system.@system[0].hostname")
 		name := fmt.Sprintf("/tmp/backup-%s-%s.tar.gz", orDefault(sanitize(strings.TrimSpace(host)), "openwrt"),
 			time.Now().UTC().Format("20060102-150405"))
+		file := sysPath(name)
+		// The archive holds every secret on the router. Create it 0600 first, so no secret is ever
+		// written into a file other users can read, whatever the umask or sysupgrade's own tar does.
+		if err := writePrivate(file, nil); err != nil {
+			return "", "", fmt.Errorf("creating %s: %w", name, err)
+		}
 		out, err := run(ctx, 2*time.Minute, "sysupgrade", "-k", "-b", name)
 		if err != nil {
+			os.Remove(file)
 			return out, "", fmt.Errorf("backup failed: %w", err)
 		}
-		b, err := os.ReadFile(sysPath(name))
+		if err := chmodFile(file, privateMode); err != nil { // in case tar replaced the file
+			os.Remove(file)
+			return "", "", fmt.Errorf("securing %s: %w", name, err)
+		}
+		b, err := os.ReadFile(file)
 		if err != nil {
 			return "", "", err
 		}
+		if len(b) == 0 {
+			os.Remove(file)
+			return "", "", fmt.Errorf("backup failed: sysupgrade wrote an empty archive")
+		}
+		old := removeOldBackups(filepath.Dir(file), filepath.Base(file))
 		sum := sha256.Sum256(b)
-		return fmt.Sprintf("Backup written: %s (%d bytes, sha256 %s).\nIt holds secrets (wifi keys, "+
+		msg := fmt.Sprintf("Backup written: %s (%d bytes, mode 0600, sha256 %s).\nIt holds secrets (wifi keys, "+
 			"WireGuard private keys) and lives in RAM: copy it off the router, then delete it.",
-			name, len(b), hex.EncodeToString(sum[:])), "backup " + name, nil
+			name, len(b), hex.EncodeToString(sum[:]))
+		if old > 0 {
+			msg += fmt.Sprintf("\nRemoved %d older archive(s) this tool made in /tmp.", old)
+		}
+		return msg, "backup " + name, nil
 	}
 	return "", "", fmt.Errorf("unknown action %q: use list, test, check or backup", in.Action)
+}
+
+// reBackupName is exactly what the backup action names its archives. Only files with such a
+// name are ever removed, so nothing an operator put in /tmp is touched.
+var reBackupName = regexp.MustCompile(`^backup-[A-Za-z0-9_-]+-\d{8}-\d{6}\.tar\.gz$`)
+
+// removeOldBackups deletes the archives the backup action made earlier, except keep, and
+// returns how many it removed. Each one holds every secret on the router, so one at a time is
+// enough, and a pile of them in RAM is how a copy gets forgotten.
+func removeOldBackups(dir, keep string) int {
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return 0
+	}
+	n := 0
+	for _, e := range ents {
+		if e.Name() == keep || !reBackupName.MatchString(e.Name()) {
+			continue
+		}
+		if fi, err := e.Info(); err != nil || !fi.Mode().IsRegular() {
+			continue
+		}
+		if os.Remove(filepath.Join(dir, e.Name())) == nil {
+			n++
+		}
+	}
+	return n
 }
 
 func sanitize(s string) string {

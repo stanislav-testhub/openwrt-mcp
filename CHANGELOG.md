@@ -46,7 +46,8 @@ Changed
     over 60 characters. `ubus_call.args` and `uci_apply.expected_revisions` are free-form maps
     on purpose and pass because they state `additionalProperties`.
 - **Smaller tool descriptions (ROADMAP 3.5).**
-  - `tools/list` went from 23,731 to 21,982 bytes (23 tools). The text for operators is gone
+  - `tools/list` went from 23,731 to 21,982 bytes (23 tools; 22,086 once `wg_new_client`
+    gained `reveal` below). The text for operators is gone
     from the descriptions: the "Policy scope: ..." sentences, `exec`'s warning about broad
     grants, and the `uci_apply` paragraphs that repeated its own parameter descriptions
     (ops, `probe`, `restore`, `expected_revisions`). A refusal already prints the exact
@@ -60,6 +61,27 @@ Changed
     no description edit can remove; reaching it would have cut about 38% of all prose.
   - `TestDocsOnlyNameToolsThatExist` fails when a description, the server instructions or the
     README name a tool-like identifier that is not a tool.
+- **Credentials stay off the transcript (ROADMAP 3.6). Behaviour change.**
+  - `wg_new_client` no longer returns the client's private key, preshared key or QR code. It
+    writes the config to a file the owner alone can read, in RAM beside the daemon socket
+    (`/var/run/openwrt-mcp/wg/<name>.conf`), and returns the public key and the command
+    `openwrt-mcp wg-show '<name>'`. The roadmap named `/tmp`, which any local user can write
+    into; the runtime directory is `0700`, and the file is created with `O_EXCL`, so it never
+    replaces a file or follows a planted symlink.
+  - `reveal=true` restores the old result, key and QR included, and writes no file. Use it
+    only when the key may enter the conversation and the provider's logs.
+  - The file is created before the peer is committed, and removed again if anything after
+    that fails; a name that already has a waiting file is refused. Files nobody collected are
+    swept after 24 hours (at the next `wg_new_client`) and vanish at reboot.
+  - `openwrt-mcp wg-show <name> [--keep]`, run on the router, prints the config and the QR
+    code in the operator's own terminal and deletes the file.
+  - `sysupgrade action=backup` creates the archive `0600` before `sysupgrade` writes into it
+    (it used to take the default umask), refuses to replace an existing file, treats an empty
+    archive as a failure, and removes the archives this tool made earlier. Only files named
+    exactly like its own (`backup-<host>-<date>-<time>.tar.gz`) are removed, and only
+    regular files; the result says how many went.
+  - `mfa_unlock` is unchanged: the operator still types the code into the chat. Moving it to
+    elicitation is ROADMAP 6.1.
 
 Fixed
 - **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each
