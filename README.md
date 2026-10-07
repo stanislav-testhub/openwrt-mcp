@@ -76,6 +76,20 @@ Nothing in the code is specific to that board.
 
 ## Install
 
+**On the router, from a release** (nothing needed beyond a default 25.12 image):
+
+```sh
+wget -O /tmp/install-router.sh https://github.com/stanislav-testhub/openwrt-mcp/releases/latest/download/install-router.sh
+sh /tmp/install-router.sh
+```
+
+It picks the archive for the router's `DISTRIB_ARCH`, checks it against the release's
+`SHA256SUMS` (refusing on a mismatch), and installs. `VERSION=v1.2.0` selects a release other
+than the latest. Each release file also carries a build attestation:
+`gh attestation verify <file> --repo stanislav-testhub/openwrt-mcp`.
+
+**From a PC, building from source** (needs Go, ssh and tar; Git Bash works on Windows):
+
 ```sh
 git clone https://github.com/stanislav-testhub/openwrt-mcp
 cd openwrt-mcp
@@ -83,13 +97,22 @@ ROUTER=root@192.168.1.1 SSH_PORT=22 SSH_KEY=~/.ssh/id_ed25519 ./install.sh insta
 ```
 
 `ROUTER`, `SSH_PORT` and `SSH_KEY` are your router's root login (defaults: `root@192.168.1.1`,
-22, your ssh defaults).
+22, your ssh defaults). `./install.sh install --release [vX.Y.Z]` skips the build and has the
+router fetch a verified release instead; that is also what happens when no Go toolchain is found.
 
-It reads the router's `DISTRIB_ARCH`, runs the tests, cross-compiles a static binary, and
-installs `/usr/bin/openwrt-mcp`, the init script, the default config (never overwriting an
-existing one), the `keep.d` entry and the LuCI page; then enables and starts the service. It
-refuses to restart the daemon while a `uci_apply` awaits confirmation (that would roll it back)
-unless `FORCE=1`. `./install.sh uninstall [--purge]` reverses it.
+Either way the same installer runs on the router.
+- It installs:
+  - `/usr/bin/openwrt-mcp`;
+  - the init script;
+  - the default config, never overwriting an existing one;
+  - the `keep.d` entry;
+  - the LuCI page.
+- It then enables and starts the service.
+- It refuses to restart the daemon while a `uci_apply` awaits confirmation, because that would roll it back,
+  unless `FORCE=1`.
+- It checks that the binary fits on the overlay first.
+
+`./install.sh uninstall [--purge]` reverses it.
 
 **Why not an `.apk`:** 25.12 packages are apk-tools v3 ADB archives. Building one needs the
 OpenWrt SDK or a host apk-tools with `mkpkg` (the router's apk has no `mkpkg`), and an

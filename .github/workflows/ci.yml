@@ -16,7 +16,22 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test -race -count=1 ./...
-      - run: sh -n install.sh && sh -n files/etc/init.d/openwrt-mcp
+      - run: sh -n install.sh && sh -n install-router.sh && sh -n files/etc/init.d/openwrt-mcp
+
+      - name: router-side installer downloads and verifies
+        run: bash install-router_test.sh
+
+      # One architecture table in three places: what install.sh builds for, what the router-side
+      # installer downloads, and what the release workflow publishes.
+      - name: architecture tables agree
+        run: |
+          set -eu
+          pats() { sed -n "/^$2()/,/^}/p" "$1" | grep -oE '^[[:space:]]+[a-z0-9_*|-]+\)' | tr -d ' \t'; }
+          [ "$(pats install.sh go_target)" = "$(pats install-router.sh arch_label)" ] ||
+            { echo "go_target (install.sh) and arch_label (install-router.sh) match different DISTRIB_ARCH patterns"; exit 1; }
+          for l in $(sed -n '/^arch_label()/,/^}/p' install-router.sh | grep -oE 'echo [a-z0-9_]+' | cut -d' ' -f2); do
+            grep -qE "^ +$l +" .github/workflows/release.yml || { echo "release.yml does not build '$l'"; exit 1; }
+          done
 
       # Every architecture install.sh can target must at least compile.
       - name: cross-build
@@ -32,7 +47,7 @@ jobs:
       - name: payload files are LF and parse
         run: |
           set -eu
-          ! grep -rlI $'\r' files install.sh
+          ! grep -rlI $'\r' files install.sh install-router.sh install-router_test.sh
           python3 -m json.tool files/usr/share/luci/menu.d/luci-app-openwrt-mcp.json >/dev/null
           python3 -m json.tool files/usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json >/dev/null
           # keep.d must name everything install.sh puts outside /etc/config.

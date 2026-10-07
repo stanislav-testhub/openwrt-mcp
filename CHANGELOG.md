@@ -26,6 +26,19 @@ Added
     publishes a GitHub Release with the CHANGELOG section as notes.
   - It refuses a tag that disagrees with `main.go`.
   - CI now also cross-builds `mips64` and `mips64le`, which `install.sh` already supported.
+- **Install without Go (ROADMAP 3.1).**
+  - `install-router.sh` runs on the router and is published with every release. It downloads
+    the archive for the router's architecture, checks it against `SHA256SUMS`, refuses on a
+    mismatch, checks the overlay has room, then installs.
+  - `install.sh` now hands its own payload to the same script, so there is one install
+    procedure.
+  - `install.sh install --release [vX.Y.Z]` has the router fetch a release instead of
+    building one. It is also the fallback when no Go toolchain is found.
+  - `install-router_test.sh` exercises the download and verification against a local mirror
+    in CI. It covers: latest, a pinned version, a malformed version, a missing architecture,
+    a missing `SHA256SUMS`, and an archive swapped for another architecture.
+  - CI checks that `install.sh`, `install-router.sh` and the release workflow list the same
+    architectures.
 
 ## 1.2.0 -- Reliable changes
 

@@ -2,6 +2,8 @@
 # Build openwrt-mcp on this machine and install it on an OpenWrt 25.12 router over SSH.
 #
 #   ROUTER=root@192.168.1.1 [SSH_PORT=22] [SSH_KEY=~/.ssh/id_ed25519] ./install.sh install
+#   ./install.sh install --release [vX.Y.Z]   no build: the router fetches a verified release
+#                                         (the default when no Go toolchain is found)
 #   ./install.sh uninstall [--purge]      stop, disable and remove (--purge: also config + state)
 #   ./install.sh build                    cross-compile only, for the router's architecture
 #   ./install.sh stage                    copy the binary to /tmp/openwrt-mcp on the router, nothing else
@@ -12,7 +14,7 @@
 # file install loses nothing: /etc/config is preserved by sysupgrade, and the shipped
 # /lib/upgrade/keep.d entry carries the rest across a firmware flash.
 #
-# Works from Linux, macOS and Git Bash on Windows (it needs go, ssh and tar on PATH). Nothing
+# Works from Linux, macOS and Git Bash on Windows (it needs ssh and tar on PATH, and go to build). Nothing
 # is needed on the router beyond what 25.12 ships.
 set -eu
 
@@ -65,40 +67,16 @@ payload() {
 
 install_remote() {
 	payload | ssh_r 'rm -rf /tmp/openwrt-mcp-inst && mkdir -p /tmp/openwrt-mcp-inst && tar -xzf - -C /tmp/openwrt-mcp-inst'
-	ssh_r "FORCE=${FORCE:-0} sh -s" <<'EOF'
-set -e
-S=/tmp/openwrt-mcp-inst
-if [ -s /etc/openwrt-mcp/pending.json ] && [ "$FORCE" != 1 ]; then
-	echo "refusing: a uci_apply awaits confirmation, and restarting the daemon would roll it back." >&2
-	echo "confirm or roll it back first, or rerun with FORCE=1." >&2
-	rm -rf "$S"; exit 1
-fi
-put() { # src dst mode -- write beside, then rename: a running binary cannot be overwritten
-	mkdir -p "$(dirname "$2")"
-	cp "$S/$1" "$2.new" && chmod "$3" "$2.new" && mv "$2.new" "$2"
+	ssh_r "FORCE=${FORCE:-0} PAYLOAD=/tmp/openwrt-mcp-inst sh -s" < "$SRC/install-router.sh"
 }
-put usr/bin/openwrt-mcp /usr/bin/openwrt-mcp 0755
-put etc/init.d/openwrt-mcp /etc/init.d/openwrt-mcp 0755
-if [ -f /etc/config/openwrt-mcp ]; then
-	cmp -s "$S/etc/config/openwrt-mcp" /etc/config/openwrt-mcp || cp "$S/etc/config/openwrt-mcp" /etc/config/openwrt-mcp.default
-else
-	put etc/config/openwrt-mcp /etc/config/openwrt-mcp 0600
-fi
-put lib/upgrade/keep.d/openwrt-mcp /lib/upgrade/keep.d/openwrt-mcp 0644
-put usr/share/luci/menu.d/luci-app-openwrt-mcp.json /usr/share/luci/menu.d/luci-app-openwrt-mcp.json 0644
-put usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json /usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json 0644
-put www/luci-static/resources/view/openwrt-mcp/status.js /www/luci-static/resources/view/openwrt-mcp/status.js 0644
-mkdir -p /etc/openwrt-mcp && chmod 0700 /etc/openwrt-mcp
-rm -rf "$S"
 
-/etc/init.d/openwrt-mcp enable
-/etc/init.d/openwrt-mcp restart
-rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null || true
-/etc/init.d/rpcd reload
-sleep 1
-openwrt-mcp version
-openwrt-mcp status --audit 0
-EOF
+# install_release [vX.Y.Z]: the router downloads and verifies a release itself.
+install_release() {
+	case "${1:-}" in
+		""|v[0-9]*.[0-9]*.[0-9]*) ;;
+		*) echo "a release is named like v1.2.3, not '$1'" >&2; exit 2 ;;
+	esac
+	ssh_r "FORCE=${FORCE:-0} VERSION=${1:-} sh -s" < "$SRC/install-router.sh"
 }
 
 case "${1:-}" in
@@ -109,8 +87,15 @@ case "${1:-}" in
 		ssh_r 'cat > /tmp/openwrt-mcp.new && chmod +x /tmp/openwrt-mcp.new && mv /tmp/openwrt-mcp.new /tmp/openwrt-mcp' < "$SRC/openwrt-mcp.bin"
 		echo "staged at $ROUTER:/tmp/openwrt-mcp (not installed, gone after reboot)" ;;
 	install)
-		build >/dev/null
-		install_remote ;;
+		if [ "${2:-}" = --release ]; then
+			install_release "${3:-}"
+		elif ! command -v "$GO" >/dev/null 2>&1; then
+			echo "no Go toolchain ('$GO'): installing the latest release instead" >&2
+			install_release ""
+		else
+			build >/dev/null
+			install_remote
+		fi ;;
 	uninstall)
 		ssh_r "PURGE=$([ "${2:-}" = --purge ] && echo 1 || echo 0) sh -s" <<'EOF'
 [ -x /etc/init.d/openwrt-mcp ] && { /etc/init.d/openwrt-mcp stop; /etc/init.d/openwrt-mcp disable; }
@@ -128,6 +113,6 @@ fi
 EOF
 		;;
 	*)
-		sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+		sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
 		exit 2 ;;
 esac

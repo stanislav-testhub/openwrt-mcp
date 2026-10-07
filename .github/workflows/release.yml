@@ -35,6 +35,15 @@ jobs:
         with:
           ref: refs/tags/${{ env.TAG }}
 
+      # install-router.sh is published as its own asset (releases/latest/download/install-router.sh).
+      # It comes from the commit this workflow runs from, so a hand-run release of an older tag
+      # still ships the current installer; the archive layout it reads has not changed.
+      - uses: actions/checkout@v7
+        with:
+          path: tooling
+          sparse-checkout: install-router.sh
+          sparse-checkout-cone-mode: false
+
       - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -75,7 +84,8 @@ jobs:
           386              386      -
           riscv64          riscv64  -
           EOF
-          (cd dist && sha256sum -- *.tar.gz > SHA256SUMS && cat SHA256SUMS)
+          cp tooling/install-router.sh dist/
+          (cd dist && sha256sum -- *.tar.gz install-router.sh > SHA256SUMS && cat SHA256SUMS)
 
       - name: release notes from CHANGELOG
         run: |
@@ -87,14 +97,20 @@ jobs:
           cat >> notes.md <<'EOF'
 
           ---
-          Install: pick the archive for your router's architecture (`install.sh` does this for you),
-          check it with `grep <archive> SHA256SUMS | sha256sum -c -` (works with BusyBox too), and
-          verify where it was built with `gh attestation verify <archive> --repo stanislav-testhub/openwrt-mcp`.
+          Install on the router (it picks the archive for the architecture and checks SHA256SUMS):
+
+              wget -O /tmp/install-router.sh https://github.com/stanislav-testhub/openwrt-mcp/releases/latest/download/install-router.sh
+              sh /tmp/install-router.sh
+
+          or from a PC with `./install.sh install --release`. Verify where a file was built with
+          `gh attestation verify <file> --repo stanislav-testhub/openwrt-mcp`.
           EOF
 
       - uses: actions/attest@v4
         with:
-          subject-path: dist/*.tar.gz
+          subject-path: |
+            dist/*.tar.gz
+            dist/install-router.sh
 
       - name: publish
         env:

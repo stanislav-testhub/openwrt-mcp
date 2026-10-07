@@ -207,8 +207,8 @@ also fixes the catalog-level defects a measurement of `tools/list` found. **It a
 
 ### 3.1 Prebuilt, signed releases
 
-**Status: release workflow done on `main`.** Still open: `install.sh` downloading a release, and the router-side
-one-liner.
+**Status: done on `main`, not yet released.** The release workflow is built, and so are the router-side
+`install-router.sh` and `install.sh install --release`. Still open: the README footprint figures.
 
 - **Problem.** There are no GitHub Releases. `install.sh` cross-compiles locally, so an operator without Go stops
   here. The server runs as root, so binaries must be verifiable: supply-chain attacks on MCP servers (typosquatted
