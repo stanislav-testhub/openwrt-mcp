@@ -105,9 +105,9 @@ Verified
   restore, a failing probe followed by `uci_rollback`, and a `service_control` restart (see the
   README *Verified* section). Not run on hardware: a management-path change applied with probes,
   a failed probe left to the rollback timer, and history across a `sysupgrade`.
-- The mutation harness has 57 rows for the new rules; all but three (the `0600`/`0700` modes of the
-  history files and the restored file's mode, which need Linux to observe) are killed, and those
-  modes were confirmed on the router. `-race` and the description eval were not run locally.
+- The mutation harness has 57 rows for the new rules; all but two (the `0600`/`0700` modes of the
+  history files and directory, which need Linux to observe) are killed, and those modes were
+  confirmed on the router. `-race` and the description eval were not run locally.
 
 Not done
 - Out of scope: the `wg_*` tools still commit with no snapshot or rollback. History in RAM for
