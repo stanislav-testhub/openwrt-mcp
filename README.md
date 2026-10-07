@@ -330,6 +330,11 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   of its own; an apply with a failing probe reports `PROBE FAILED` with the rollback still armed,
   and `uci_rollback` restores the file byte-identical. `service_control restart` of a daemon
   reports "Settled after" its state.
+- **Session cleanup (unreleased), on the same board:** after a daemon restart the stdio bridge
+  started on the new build exited at once, and the client's next call opened a fresh session
+  without an error; bridges still running the previous build stayed until their client's next
+  request. `status` folded 45 expired grants into one line; `prune` removed them, wrote one
+  `prune` audit entry, and the daemon reloaded with the live grants only.
 
 Unit and end-to-end tests (real MCP client over in-memory transport and over the bridge
 handshake) run on any OS against a fake router: apply/confirm/rollback/timeout, **restart
