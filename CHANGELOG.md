@@ -24,6 +24,15 @@ Changed
   - `status` folds expired grants into one count line; `status --all` lists them. `--json` is
     unchanged and still carries every grant with its `expired` flag.
   - Expired grants were already ignored when authorising, so this is cleanup, not security.
+- **MCP Go SDK 1.6.1 to 1.8.0 (ROADMAP 3.10).**
+  - It still negotiates `2026-07-28` at most; nothing here narrows the protocol versions.
+  - `tools/list` differs from 1.6.1 only in annotations: `readOnlyHint` and `idempotentHint` are
+    now sent when `false` instead of being left out. Their meaning is unchanged, because
+    `false` is the spec default. Input schemas and descriptions are byte for byte the same.
+  - We set none of the `MCPGODEBUG` flags the SDK removed in 1.8.0. The HTTP Origin check is
+    ours (`server.go`), not the SDK's, and its test passes unchanged.
+  - The per-frame cap on inbound messages is 16 MiB by default; requests are a few hundred
+    bytes, so it never applies.
 
 Fixed
 - **The stdio bridge outlived the daemon (ROADMAP 5.6).** After a daemon restart, each
