@@ -415,6 +415,28 @@ baseline must not be the maintainer's own router; an x86-64 rootfs imported into
 
 Read-only value: the questions operators actually ask, answered in few tokens.
 
+**Status: shipped in 1.4.0** (see `CHANGELOG.md`). Where the build differs from the text below:
+
+- 4.1: `logread mode=summary` and `baseline=save` / `baseline=<token>`. A baseline is a set of
+  fingerprints in the daemon's memory, at most 8, dropped by a restart; it is not stored on disk.
+- 4.2, 4.3: `system_status mode=doctor` and `mode=audit`, each a scope of its own (a `*` grant
+  covers both). Advisory lists, every finding with a next call and a verified wiki link.
+- 4.4: the passive half only. `net_diag wifi_survey` reports the channel a radio is on, and
+  `network_clients` has an `AIR` column. The active neighbour scan, and with it a channel
+  recommendation, waits: it moves the radio off its channel, so it is not read-only.
+- 4.5: `net_diag traffic` and `usage`; `usage` needs nlbwmon.
+- 4.6: Wake-on-LAN is not in 1.4. It sends a packet, and as a `net_diag` action it would reach
+  every stored `net_diag '*'` grant.
+- 4.7: one `[truncated: ...; how to get the rest]` line, and `offset` on `logread`,
+  `network_clients` and `pkg_query`. `fields`, `detail` and `max_lines` are not shipped.
+- 4.8: every error ends with `[code: X]`. The `suggestions` list and the rewriting of the SDK's
+  own schema errors are not shipped. 1.4 adds `NOT_APPLIED` for 4.9.
+- 4.9: `uci_apply`, `wg_new_client`, `wg_remove_client`, `service_control` and `pkg_change` read
+  back what they wrote. `pkg_config_resolve`, `uci_confirm`, `uci_rollback`, `sysupgrade`, `exec`,
+  `ubus_call` and `mfa_unlock` are exempt, each with its reason in
+  `TestEveryWritePathVerifiesAfterWrite`.
+- 4.10: not started.
+
 ### 4.1 Log summary and baseline diff
 
 - **Problem.** After a restart-triggering change, the useful question is "what is new in the log", not "show me

@@ -39,6 +39,10 @@ func TestNormaliseReplacesWhatVaries(t *testing.T) {
 		{"route 2001:db8::1 via 192.0.2.1/24", "route <ip> via <ip>/<n>"},
 		{"[ 5123.000001] ieee80211 phy0: failed to assign queue 42", "ieee80211 phy0: failed to assign queue <n>"},
 		{"fault at 0x7f3a2c10 in module", "fault at <hex> in module"},
+		// An uptime or a lease time differs on every line; without a placeholder each occurrence of a
+		// periodic message would be a new one in a baseline diff.
+		{"SYS: CPU:3|LOAD:0.4|UPTIME:8d7h34m", "SYS: CPU:<n>|LOAD:<n>.<n>|UPTIME:<dur>"},
+		{"lease time 12h, renew in 90s", "lease time <dur>, renew in <dur>"},
 		{"  several   spaces\there ", "several spaces here"},
 		{"Interface 'wan' is now up", "Interface 'wan' is now up"},
 		{"", ""},
@@ -46,6 +50,16 @@ func TestNormaliseReplacesWhatVaries(t *testing.T) {
 	for _, c := range cases {
 		if got := normaliseLogMessage(c.in); got != c.want {
 			t.Errorf("normalise(%q)\n got  %q\n want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// A duration is digits and a unit letter that stand alone. Numbers inside a word, or followed by
+// more letters, only look like one.
+func TestNormaliseLeavesAlmostDurationsAlone(t *testing.T) {
+	for _, s := range []string{"wlan1m up", "waited 5min", "kept 3days", "IEEE 802.11n", "UA-65D3C54 joined", "5GHz radio", "aid 6 mb1808s"} {
+		if got := normaliseLogMessage(s); strings.Contains(got, "<dur>") {
+			t.Errorf("normalise(%q) = %q, which treats a number in a word as a duration", s, got)
 		}
 	}
 }

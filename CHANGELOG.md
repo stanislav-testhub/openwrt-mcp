@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 1.4.0 -- Diagnose
+
+Answer "is it healthy, is it exposed, what is going on" in a few calls, and check that a change landed.
+Nothing here adds a way to change the router: the new modes are read-only, and the existing write tools
+now read back what they wrote.
 
 Added
 - **Verify after write (ROADMAP 4.9).** A write the router accepts and then does not keep is
@@ -109,8 +113,11 @@ Added
   "what is new in the log", not "show me 500 lines".
   - `mode=summary` collapses the filtered log to its distinct messages, grouped by process
     (worst severity first, then busiest). Each row has the severity, a count, the first and last
-    time and the message with MACs, IPv4/IPv6 addresses, clock times, hex ids and numbers
-    replaced by `<mac>`, `<ip>`, `<time>`, `<hex>` and `<n>`. A number that is part of a name
+    time and the message with MACs, IPv4/IPv6 addresses, clock times, hex ids, durations and
+    numbers replaced by `<mac>`, `<ip>`, `<time>`, `<hex>`, `<dur>` and `<n>`. A duration is
+    digits and a unit that stand alone (`90s`, `12h`, `8d7h34m`): an uptime in a periodic message
+    would otherwise make every occurrence a new message in a baseline diff, which the first
+    check on a router showed. A number that is part of a name
     (`phy0-ap1`, `eth1`) is kept, so two radios are never merged. `lines` limits the messages
     and `offset` pages through them.
   - `baseline=save` returns an 8-hex-digit token for the messages in the log now.
@@ -126,6 +133,11 @@ Added
   - Tool catalogue: 22,707 bytes; the budget moves to 22,750 and the prose budget to 11,850.
 
 Changed
+- **Three prompts use the new modes (ROADMAP 3.8 follow-up).** `router-health` starts from
+  `system_status mode=doctor` and `logread mode=summary`; `secure-my-router` from
+  `system_status mode=audit` and confirms each lead with the call it names; `wifi-doctor` from
+  `net_diag wifi_survey` and the `AIR` column. A new test checks that every `tool with mode=x` or
+  `action=x` in a recipe is a value that tool's schema documents. All of it stays inside `@readonly`.
 - **`service_control` fails when the final state contradicts the action.** It was a trailing
   `Note:` on a success; it is now `NOT_APPLIED` for `stop` that leaves the service running and
   for `enable` or `disable` that leave the flag unchanged. For `start`, `restart` and `reload`

@@ -311,6 +311,12 @@ holds a client's token can keep that client locked out for up to an hour.
   A real apply refuses them unless `force=true`; a config that was already broken can still be
   fixed. dnsmasq, dropbear and the rest have no checker that sees staged changes: they are
   reported "not checked", not "passed".
+- **Read back after it writes.** `uci_apply` re-reads each config after the commit and before any
+  reload; `wg_new_client`, `wg_remove_client` and `pkg_change` look at the peer table, the
+  config and `/etc/apk/world` afterwards; `service_control` compares the final state with the
+  action. A write the router accepted and did not keep is `NOT_APPLIED`, with the rollback still
+  armed for `uci_apply`. A read-back that cannot run says "Not verified". Positional sections
+  (`@rule[3]`) cannot be compared and are counted.
 - **No silent overwrite.** `uci_get` ends with the config's revision. Pass it back as
   `expected_revisions` and the apply is refused with `CONFLICT` if the config changed meanwhile
   (LuCI, another client).
@@ -438,6 +444,19 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   without an error; bridges still running the previous build stayed until their client's next
   request. `status` folded 45 expired grants into one line; `prune` removed them, wrote one
   `prune` audit entry, and the daemon reloaded with the live grants only.
+- **Diagnose (1.4.0), on the same board, with a `@readonly` client:** `system_status mode=doctor`
+  listed one low finding, three `.apk-new` files waiting for a merge, which was true, and nothing
+  that was not. `mode=audit` listed the firewall rule that lets the WireGuard port in from the
+  WAN (true, and intended) and `uhttpd` listening on every address (true), with the wiki link
+  and the next call for each. `logread mode=summary` folded a little over a thousand lines into
+  about fifty distinct messages. A baseline saved, then compared after the periodic jobs had run,
+  counted a monitoring line as new each time, because its uptime field changed; that is why
+  durations became `<dur>`, and after the fix the same round trip reported nothing new.
+  `net_diag wifi_survey` gave the busy, rx, tx and noise figures for the channel each radio was
+  on, within a point of the raw `iwinfo survey` read earlier the same day; `traffic` sampled the
+  interfaces for three seconds and ranked the conntrack sources by bytes; `usage` listed the
+  devices from nlbwmon for the current monthly period; `network_clients` showed an `AIR` column
+  whose shares added up to about 100% on each radio.
 
 Unit and end-to-end tests (real MCP client over in-memory transport and over the bridge
 handshake) run on any OS against a fake router: apply/confirm/rollback/timeout, **restart
@@ -454,7 +473,9 @@ sysupgrade. For 1.3.0 also: the `wg_new_client` hand-over and `wg-show` (the tes
 not up, and starting it was not part of the check), `connect --write` against a real Claude Code,
 Codex, Claude Desktop, Gemini or VS Code (only the file merge and the command line are tested),
 anything on macOS, and the installer's download path on a router (the release workflow has run and
-published 1.2.0 and 1.3.0, but `install-router.sh` has not been run against them). The file modes of the WireGuard hand-over are asserted on Linux in CI. Reports from
+published 1.2.0 and 1.3.0, but `install-router.sh` has not been run against them). For 1.4.0 also: the read-back after a write (`uci_apply`, `wg_new_client`, `wg_remove_client`,
+`service_control`, `pkg_change`) ran only against the fake router, because the checks above used a
+read-only client, and the log summary has only seen the log of one router. The file modes of the WireGuard hand-over are asserted on Linux in CI. Reports from
 other boards are welcome.
 
 ---

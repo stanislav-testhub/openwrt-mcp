@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"regexp"
 	"sort"
 	"strings"
@@ -55,6 +56,47 @@ func TestPromptsAreListedAndReturnOneUserMessage(t *testing.T) {
 	// Fetching one runs nothing on the router and leaves nothing in the audit log.
 	if _, err := cs.GetPrompt(context.Background(), &mcp.GetPromptParams{Name: "no-such-prompt"}); err == nil {
 		t.Error("an unknown prompt was returned")
+	}
+}
+
+// A recipe says "tool with mode=x" or "tool with action=x": the value must be one the tool's own
+// schema documents, or the recipe sends the model to a mode that does not exist.
+func TestPromptsNameModesAndActionsTheToolsDocument(t *testing.T) {
+	cs := connectClient(t, testServer(t, ""), "c")
+	schema := map[string]string{}
+	for _, tl := range listedTools(t, cs) {
+		b, err := json.Marshal(tl.InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		schema[tl.Name] = string(b)
+	}
+	call := regexp.MustCompile(`\b([a-z]+(?:_[a-z]+)*) with (mode|action)=([a-z_]+)`)
+	n := 0
+	for _, r := range recipes {
+		for _, m := range call.FindAllStringSubmatch(r.body, -1) {
+			s, ok := schema[m[1]]
+			if !ok {
+				continue // not a tool: "pattern=error", say
+			}
+			n++
+			if !strings.Contains(s, m[3]) {
+				t.Errorf("%s says %s with %s=%s, which the tool's schema does not mention", r.name, m[1], m[2], m[3])
+			}
+		}
+	}
+	// The three diagnostic recipes lean on the new modes; fewer matches means the pattern broke.
+	for _, want := range []string{"system_status with mode=doctor", "system_status with mode=audit", "logread with mode=summary", "net_diag with action=wifi_survey"} {
+		found := false
+		for _, r := range recipes {
+			found = found || strings.Contains(r.body, want)
+		}
+		if !found {
+			t.Errorf("no recipe says %q", want)
+		}
+	}
+	if n < 6 {
+		t.Errorf("only %d mode or action references were checked", n)
 	}
 }
 

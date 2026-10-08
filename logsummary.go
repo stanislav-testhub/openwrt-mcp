@@ -79,6 +79,7 @@ var (
 	reLogIPv6     = regexp.MustCompile(`(?i)(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,6})?`)
 	reLogHex0x    = regexp.MustCompile(`\b0[xX][0-9a-fA-F]+\b`)
 	reLogLongHex  = regexp.MustCompile(`\b[0-9a-fA-F]{8,}\b`)
+	reLogDuration = regexp.MustCompile(`\b\d+[dhms](?:\d+[dhms])*\b`) // 90s, 12h, 8d7h34m
 	reLogSpace    = regexp.MustCompile(`\s+`)
 )
 
@@ -103,6 +104,7 @@ func normaliseLogMessage(s string) string {
 		}
 		return m
 	})
+	s = reLogDuration.ReplaceAllString(s, "<dur>")
 	s = replaceStandaloneNumbers(s)
 	return strings.TrimSpace(reLogSpace.ReplaceAllString(s, " "))
 }
