@@ -46,7 +46,7 @@ func TestPruneUbusJSONShortensBulkyClientLists(t *testing.T) {
 	}
 
 	// The whole point of pruning the decoded tree instead of truncating the string.
-	body := out[:strings.LastIndex(out, "\n\n[pruned:")]
+	body := out[:strings.LastIndex(out, "\n\n[truncated:")]
 	var v map[string]any
 	if err := json.Unmarshal([]byte(body), &v); err != nil {
 		t.Fatalf("pruned output is not valid JSON: %v", err)
@@ -73,7 +73,7 @@ func TestPruneUbusJSONShortensBulkyClientLists(t *testing.T) {
 			t.Errorf("%s ip mangled by pruning", mac)
 		}
 	}
-	if !strings.Contains(out, "[pruned:") {
+	if !strings.Contains(out, "[truncated:") {
 		t.Error("pruned output does not say it was pruned")
 	}
 }
@@ -208,7 +208,7 @@ func TestUbusCallPrunesItsReply(t *testing.T) {
 	if summary != "luci-rpc.getHostHints" {
 		t.Errorf("summary = %q, want luci-rpc.getHostHints", summary)
 	}
-	if !strings.Contains(out, "[pruned:") {
+	if !strings.Contains(out, "[truncated:") {
 		t.Fatal("ubus_call returned an unpruned reply -- the pruner is not wired into the tool")
 	}
 	if len(out) >= len(bulkyClientsReply(49)) {
@@ -228,7 +228,7 @@ func TestTextResultTruncatesOversizedOutput(t *testing.T) {
 	if len(got) <= maxResultBytes {
 		t.Fatalf("truncated body is %d bytes, expected the cap plus a notice", len(got))
 	}
-	if !strings.Contains(got, "TRUNCATED") {
+	if !strings.Contains(got, "truncated:") {
 		t.Error("oversized output was cut without saying so")
 	}
 	if strings.Count(got, "x") != maxResultBytes {

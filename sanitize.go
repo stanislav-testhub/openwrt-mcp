@@ -150,11 +150,17 @@ var uncappedTools = map[string]string{
 // capLines cuts every line longer than max bytes on a character boundary and says how much was
 // cut. A line that is only a little too long is cut too: the bound is the point.
 func capLines(s string, max int) string {
+	out, _ := capLinesN(s, max)
+	return out
+}
+
+// capLinesN is capLines that also reports how many lines it cut, for the notice.
+func capLinesN(s string, max int) (string, int) {
 	if len(s) <= max {
-		return s
+		return s, 0
 	}
 	lines := strings.Split(s, "\n")
-	changed := false
+	n := 0
 	for i, l := range lines {
 		if len(l) <= max {
 			continue
@@ -164,12 +170,12 @@ func capLines(s string, max int) string {
 			cut--
 		}
 		lines[i] = l[:cut] + fmt.Sprintf("…[+%d bytes]", len(l)-cut)
-		changed = true
+		n++
 	}
-	if !changed {
-		return s
+	if n == 0 {
+		return s, 0
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(lines, "\n"), n
 }
 
 // untrustedLabels are the tools whose results carry text chosen by third parties, and what
@@ -202,8 +208,6 @@ func capBytes(s string, max int) string {
 	for cut > 0 && !utf8.RuneStart(s[cut]) {
 		cut--
 	}
-	return s[:cut] + fmt.Sprintf(
-		"\n\n[TRUNCATED: %d bytes total, %d shown. Output is cut mid-stream and may not parse. "+
-			"Narrow the request -- a more specific ubus method, a logread pattern, or a filter.]",
-		len(s), cut)
+	return s[:cut] + "\n\n" + truncNotice(fmt.Sprintf("%d bytes total, %d shown", len(s), cut),
+		"the cut is mid-stream and may not parse; narrow the request (a more specific ubus method, a logread pattern or a filter)")
 }

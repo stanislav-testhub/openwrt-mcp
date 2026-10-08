@@ -401,8 +401,8 @@ func TestMaskJSON(t *testing.T) {
 		t.Errorf("untouched reply was rewritten:\n got  %q\n want %q", got, same)
 	}
 	// The pruning notice that follows a JSON reply, and ubus error text, survive.
-	withNotice := `{"key":"k"}` + "\n\n[pruned: 3 array element(s) dropped]"
-	if got := maskJSON(withNotice, nil); !strings.HasSuffix(got, "[pruned: 3 array element(s) dropped]") || strings.Contains(got, `"k"`) {
+	withNotice := `{"key":"k"}` + "\n\n[truncated: 3 array element(s) dropped]"
+	if got := maskJSON(withNotice, nil); !strings.HasSuffix(got, "[truncated: 3 array element(s) dropped]") || strings.Contains(got, `"k"`) {
 		t.Errorf("trailing notice mishandled: %q", got)
 	}
 	// A secret in the text after the JSON value is masked too, and the JSON is left alone.

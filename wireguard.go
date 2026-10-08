@@ -416,13 +416,13 @@ func qrOrNote(conf string) string {
 // silently delete the peer from config while the kernel keeps it).
 func (s *Server) guardNetworkCommit(ctx context.Context) error {
 	if out, err := uncommitted(ctx, "network"); err == nil && out != "" {
-		return fmt.Errorf("refusing: /etc/config/network has uncommitted changes (someone else's edit):\n%s", out)
+		return conflict("refusing: /etc/config/network has uncommitted changes (someone else's edit):\n%s", out)
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	for _, p := range s.pending {
 		if contains(p.Configs, "network") {
-			return fmt.Errorf("refusing: a uci_apply on network (%s) awaits confirmation; confirm or roll it back first", p.Token)
+			return pending("refusing: a uci_apply on network (%s) awaits confirmation; confirm or roll it back first", p.Token)
 		}
 	}
 	return nil
@@ -431,7 +431,7 @@ func (s *Server) guardNetworkCommit(ctx context.Context) error {
 func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientIn) (string, string, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" || strings.ContainsAny(name, "\x00\n\r'") {
-		return "", "", fmt.Errorf("a plain name is required")
+		return "", "", invalid("a plain name is required")
 	}
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
@@ -646,7 +646,7 @@ func wgEndpoint(ctx context.Context) (string, string, error) {
 
 func validEndpoint(s string) error {
 	if strings.TrimSpace(s) == "" || strings.ContainsAny(s, " \t\n\r'\"") {
-		return fmt.Errorf("bad endpoint %q", s)
+		return invalid("bad endpoint %q", s)
 	}
 	return nil
 }

@@ -85,15 +85,15 @@ are welcome.
 | Tool | Scope | |
 |---|---|---|
 | `system_status` | tool | Model, release, uptime, load, memory, storage, temperatures, conntrack, every interface (state, addresses, default route, errors), radios/SSIDs, and what is outstanding. Call first. |
-| `logread` | tool | Whole log buffer filtered (substring, RE2, last N minutes) *before* the line limit. |
-| `network_clients` | tool | DHCP leases + static hosts + neighbour table + every AP's association list, joined by MAC: name, IP, SSID, signal, rates, connected time, lease. |
+| `logread` | tool | Whole log buffer filtered (substring, RE2, last N minutes) *before* the line limit; `offset` pages back from the newest line. |
+| `network_clients` | tool | DHCP leases + static hosts + neighbour table + every AP's association list, joined by MAC: name, IP, SSID, signal, rates, connected time, lease; 100 rows a page, `offset` for the next. |
 | `firewall_show` | tool | `nft list ruleset`, `fw4 print`, `fw4 check`, one table or chain. |
 | `net_diag` | `<action>[.<target>]` | ping / traceroute / nslookup (optionally from a given interface), routes, policy rules, neighbours. |
 | `uci_get` | `<config>[.<section>[.<option>]]` | `uci show`, optionally with stable `cfgXXXXXX` ids. Ends with the config's **revision**. `history=list` / `diff:<id>` shows the kept versions from before each confirmed change. |
 | `uci_apply` | `<config>.<section>[.<option>]` per change; `<config>` for `restore`; `probe.<kind>.<target>` per probe | Stage, check, commit, reload, **rollback armed**. `dry_run` shows exactly what would change and what the service's own checker says. `expected_revisions` refuses if a config moved meanwhile, `probe` checks the router afterwards, `restore=<id>` puts a past version back. |
 | `uci_confirm` / `uci_rollback` | tool | Make a pending change permanent / undo it now. |
 | `service_list` / `service_control` | tool / `<service>.<action>` | procd services; stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. `service_control` waits for the state to settle (`wait`) and says if it did not. |
-| `pkg_query` | tool | installed, upgradable, search, info, files, owner, policy, `apk audit`, world. |
+| `pkg_query` | tool | installed, upgradable, search, info, files, owner, policy, `apk audit`, world; 200 lines a page, `offset` for the next. |
 | `pkg_change` | `<action>.<pkg>` / `upgrade` | apk add/del/upgrade; **simulates unless `commit=true`**; reports new `.apk-new` files. |
 | `pkg_config_diff` | tool | Every `.apk-new` as a diff against the live file -- for `/etc/config/*` by setting (`uci show`), so quoting/indentation noise disappears. |
 | `pkg_config_resolve` | live path | keep_current (drop the new default) or use_new (install it; rollback-armed for UCI configs). |

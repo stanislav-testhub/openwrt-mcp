@@ -159,7 +159,7 @@ func FuzzPruneNeverGrowsAndStaysParseable(f *testing.F) {
 			t.Fatalf("grew %d -> %d", len(in), len(out))
 		}
 		if out != in {
-			body, _, ok := strings.Cut(out, "\n\n[pruned:")
+			body, _, ok := strings.Cut(out, "\n\n[truncated:")
 			var v any
 			if !ok || json.Unmarshal([]byte(body), &v) != nil {
 				t.Fatalf("pruned output is not JSON followed by a notice:\n%.200s", out)

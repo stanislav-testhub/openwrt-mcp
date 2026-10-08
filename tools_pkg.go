@@ -31,6 +31,7 @@ type pkgQueryIn struct {
 	Package string `json:"package,omitempty" jsonschema:"package name (info/files/policy), search term (search), or glob (installed, e.g. 'luci-app-*')"`
 	Path    string `json:"path,omitempty" jsonschema:"for owner: absolute file path, e.g. /usr/sbin/nft"`
 	Refresh bool   `json:"refresh,omitempty" jsonschema:"run 'apk update' first so upgradable/search/policy see current repository indexes"`
+	Offset  int    `json:"offset,omitempty" jsonschema:"first line to return (200 per page); a cut result names the next offset"`
 }
 
 func pkgQuery(ctx context.Context, in pkgQueryIn) (string, string, error) {
@@ -96,7 +97,7 @@ func pkgQuery(ctx context.Context, in pkgQueryIn) (string, string, error) {
 		w, err := readSys("/etc/apk/world")
 		return pre + w, "read world", err
 	default:
-		return "", "", fmt.Errorf("unknown action %q", in.Action)
+		return "", "", invalid("unknown action %q", in.Action)
 	}
 	out, err := run(ctx, time.Minute, argv...)
 	if compact {
@@ -105,7 +106,29 @@ func pkgQuery(ctx context.Context, in pkgQueryIn) (string, string, error) {
 	if strings.TrimSpace(out) == "" && err == nil {
 		out = "(nothing)"
 	}
-	return pre + out, strings.Join(argv, " "), err
+	return pre + pagePkgOutput(out, compact, in.Offset), strings.Join(argv, " "), err
+}
+
+// pagePkgOutput returns one page of a long result. A compacted list ends with its "(N packages)"
+// total, which is kept on every page, so the size of the whole is never hidden by the cut.
+func pagePkgOutput(out string, compact bool, offset int) string {
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	trailer := ""
+	if compact && len(lines) > 0 {
+		trailer, lines = lines[len(lines)-1], lines[:len(lines)-1]
+	}
+	page, notice := pageLines(lines, offset, pkgPageLines, "lines")
+	res := strings.Join(page, "\n")
+	for _, extra := range []string{trailer, notice} {
+		if extra == "" {
+			continue
+		}
+		if res != "" {
+			res += "\n"
+		}
+		res += extra
+	}
+	return res
 }
 
 // compactApkList trims `apk list` lines to what an agent needs -- name-version and state --
@@ -169,11 +192,11 @@ func pkgChange(ctx context.Context, in pkgChangeIn) (string, string, error) {
 		}
 	case "upgrade":
 	default:
-		return "", "", fmt.Errorf("action must be add, del or upgrade")
+		return "", "", invalid("action must be add, del or upgrade")
 	}
 	for _, p := range in.Packages {
 		if !rePkgName.MatchString(p) {
-			return "", "", fmt.Errorf("bad package name %q", p)
+			return "", "", invalid("bad package name %q", p)
 		}
 	}
 	var pre strings.Builder
@@ -365,7 +388,7 @@ func (s *Server) pkgConfigResolve(ctx context.Context, client string, in pkgConf
 		return fmt.Sprintf("Kept %s; removed %s.", live, newF), "kept " + live, nil
 	case "use_new":
 	default:
-		return "", "", fmt.Errorf("action must be keep_current or use_new")
+		return "", "", invalid("action must be keep_current or use_new")
 	}
 
 	newB, err := os.ReadFile(sysPath(newF))
@@ -387,7 +410,7 @@ func (s *Server) pkgConfigResolve(ctx context.Context, client string, in pkgConf
 		s.applyMu.Lock()
 		defer s.applyMu.Unlock()
 		if p := s.pendingSummary(); p != "" {
-			return "", "", fmt.Errorf("an apply is already pending confirmation: %s", p)
+			return "", "", pending("an apply is already pending confirmation: %s", p)
 		}
 		timeout := clampSec(in.Timeout, 90, 600)
 		p, err := s.snapshot([]string{name}, client, "replacing "+live+" with the package default", timeout)

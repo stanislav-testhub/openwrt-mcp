@@ -44,7 +44,7 @@ var reHistoryID = regexp.MustCompile(`^([A-Za-z0-9_][A-Za-z0-9_-]*):([0-9]{8}-[0
 func parseHistoryID(id string) (config, stamp string, err error) {
 	m := reHistoryID.FindStringSubmatch(id)
 	if m == nil {
-		return "", "", fmt.Errorf("bad history id %q: use one listed by uci_get history=list", id)
+		return "", "", invalid("bad history id %q: use one listed by uci_get history=list", id)
 	}
 	return m[1], m[2], nil
 }
@@ -192,12 +192,12 @@ func (s *Server) uciHistory(ctx context.Context, in uciGetIn) (string, string, e
 		}
 		cur, err := os.ReadFile(filepath.Join(uciConfDir, config))
 		if err != nil {
-			return "", "", fmt.Errorf("no such UCI config %q", config)
+			return "", "", notFound("no such UCI config %q", config)
 		}
 		return fmt.Sprintf("--- %s (before that change)  +++ current\n%s", id, settingsDiff(ctx, config, string(body), string(cur))),
 			"history diff of " + id, nil
 	}
-	return "", "", fmt.Errorf("history must be 'list' or 'diff:<id>'")
+	return "", "", invalid("history must be 'list' or 'diff:<id>'")
 }
 
 func (s *Server) historyList(config string) string {

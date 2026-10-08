@@ -54,7 +54,7 @@ func TestTextResultCutsOnACharacterBoundary(t *testing.T) {
 			if !utf8.ValidString(got) {
 				t.Errorf("unit %q shift %d: the cut split a character", unit, shift)
 			}
-			head, notice, ok := strings.Cut(got, "\n\n[TRUNCATED: ")
+			head, notice, ok := strings.Cut(got, "\n\n[truncated: ")
 			if !ok {
 				t.Fatalf("unit %q shift %d: no notice", unit, shift)
 			}
@@ -75,7 +75,7 @@ func TestTextResultBoundaryIsExactlyTheCap(t *testing.T) {
 		t.Error("an output exactly at the cap was altered")
 	}
 	over := at + "x"
-	if got := textResult(over).Content[0].(*mcp.TextContent).Text; !strings.Contains(got, "TRUNCATED") {
+	if got := textResult(over).Content[0].(*mcp.TextContent).Text; !strings.Contains(got, "truncated:") {
 		t.Error("one byte over the cap was not truncated")
 	}
 	if got := textResult("  \n\t").Content[0].(*mcp.TextContent).Text; got != "(no output)" {

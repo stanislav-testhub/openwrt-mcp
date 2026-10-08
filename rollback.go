@@ -85,7 +85,7 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 		return s.uciRestore(ctx, client, in)
 	}
 	if len(in.Changes) == 0 {
-		return "", "", fmt.Errorf("changes must not be empty")
+		return "", "", invalid("changes must not be empty")
 	}
 	configs := map[string]bool{}
 	for _, c := range in.Changes {
@@ -100,7 +100,7 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 			return "", "", errPolicyFile
 		}
 		if _, err := os.Stat(filepath.Join(uciConfDir, c)); err != nil {
-			return "", "", fmt.Errorf("no such UCI config %q", c)
+			return "", "", notFound("no such UCI config %q", c)
 		}
 		names = append(names, c)
 	}
@@ -168,7 +168,7 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 	}
 	if fresh != "" && !in.Force {
 		revertAll()
-		return "", "", fmt.Errorf("refusing to apply: validation found new problems, so the service would ignore or "+
+		return "", "", invalid("refusing to apply: validation found new problems, so the service would ignore or "+
 			"reject part of this change. Nothing was committed.\n%s\nFix the change, or pass force=true to apply it anyway", fresh)
 	}
 
@@ -220,7 +220,7 @@ func mgmtGate(reasons []string, in uciApplyIn) error {
 	if len(reasons) == 0 || len(in.Probe) > 0 || in.Force {
 		return nil
 	}
-	return fmt.Errorf("refusing to apply: this change touches the management path (%s), and a bad one would cut the "+
+	return invalid("refusing to apply: this change touches the management path (%s), and a bad one would cut the "+
 		"session that has to confirm it. Nothing was committed. Pass probe entries that prove the router is still "+
 		"reachable afterwards (for example ping its gateway and resolve a name), or force=true", strings.Join(reasons, "; "))
 }
@@ -247,13 +247,13 @@ func probeSection(ctx context.Context, in uciApplyIn, timeout time.Duration) str
 func (s *Server) preflight(ctx context.Context, names []string, in uciApplyIn) error {
 	if !in.DryRun {
 		if p := s.pendingSummary(); p != "" {
-			return fmt.Errorf("an apply is already pending confirmation: %s\n"+
+			return pending("an apply is already pending confirmation: %s\n"+
 				"call uci_confirm or uci_rollback first", p)
 		}
 	}
 	for _, c := range names {
 		if out, err := uncommitted(ctx, c); err == nil && out != "" {
-			return fmt.Errorf("refusing to apply: %s already has uncommitted changes "+
+			return conflict("refusing to apply: %s already has uncommitted changes "+
 				"(someone else's edit in progress):\n%s", c, out)
 		}
 	}
@@ -342,7 +342,7 @@ func (s *Server) uciRestore(ctx context.Context, client string, in uciApplyIn) (
 	}
 	report, fresh := validationReport(names, baseline, checkAll(ctx, names))
 	if fresh != "" && !in.Force {
-		return undo(fmt.Errorf("refusing to restore: validation found new problems, so the service would ignore or "+
+		return undo(invalid("refusing to restore: validation found new problems, so the service would ignore or "+
 			"reject part of that version. Nothing was reloaded and the current version is back.\n%s\n"+
 			"Pass force=true to restore it anyway", fresh))
 	}

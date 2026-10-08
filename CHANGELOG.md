@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+Changed
+- **Every error result ends with a code (ROADMAP 4.8).**
+  - The last line is `[code: X]`, with X one of `POLICY_DENIED`, `MFA_REQUIRED`,
+    `ROLLBACK_PENDING`, `VALIDATION`, `NOT_FOUND`, `CONFLICT`, `TIMEOUT` or `FAILED` (anything
+    else). A client can branch on it without parsing prose. `TIMEOUT` adds `next: retry once,
+    then narrow the request`.
+  - The message above it is unchanged, so the denial text still prints the exact `allow` line,
+    and `CONFLICT:` still starts its message. The audit log's outcome is unchanged.
+  - A code survives wrapping (`%w`) and `errors.Join`. A lockout after bad TOTP codes reports
+    `POLICY_DENIED`.
+  - Not covered: arguments the MCP SDK rejects before a tool runs (wrong type, missing
+    required field) come back as the SDK words them.
+- **One shape for "this result was cut" (ROADMAP 4.7).**
+  - Whenever a result is cut, its last line is `[truncated: <what>; <how to get the rest>]`
+    (for an error result, the line before `[code: X]`). It replaces three different notices:
+    the byte cap's `[TRUNCATED: ...]`, the ubus pruner's `[pruned: ...]` and `logread`'s leading
+    `[N matching lines, showing the last M]`.
+  - A line cut to 1024 bytes keeps its inline `...[+N bytes]` and now also adds
+    `[truncated: N line(s) cut at 1024 bytes; ...]` at the end.
+  - `TestNoToolCutsAResultWithoutTheNotice` runs every golden call against a backend that
+    answers with 300 KB of long lines and fails on a cut result without the notice.
+- **Paging on the three tools whose results grow.** `logread`, `network_clients` and
+  `pkg_query` take `offset`, and a cut result names the next value:
+  `[truncated: 20 older matching lines omitted; call again with offset=10]`.
+  - `logread` counts back from the newest line, so `offset` skips the newest N matching lines.
+  - `network_clients` returns 100 rows a page and `pkg_query` 200 lines. The totals
+    (`N client(s)`, `(N packages)`) stay on every page.
+  - Tool catalogue: 22,444 bytes (was 22,086); the budget moves to 22,500 and the prose budget
+    to 11,700 for the three `offset` fields. No tool was added.
+
 ## 1.3.0 -- Easy to adopt
 
 Install from a release, set a client up with one command, a smaller and portable tool catalogue, and

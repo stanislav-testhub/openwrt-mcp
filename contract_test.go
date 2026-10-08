@@ -197,8 +197,8 @@ func TestToolSchemasArePortable(t *testing.T) {
 // the SDK's explicit false hints added about 2 KB that no description edit can remove. Raising
 // a limit needs a reason in the commit; so does a new tool.
 const (
-	catalogueBudgetBytes = 22100 // all tools, marshalled as tools/list sends them
-	catalogueProseBudget = 11500 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 22500 // all tools, marshalled as tools/list sends them (1.4: +offset on three tools)
+	catalogueProseBudget = 11700 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
@@ -754,8 +754,8 @@ func TestOversizedOutputIsBoundedAllTheWayToTheClientAndTheAuditLog(t *testing.T
 	if isErr {
 		t.Fatal(out[:100])
 	}
-	if len(out) > maxResultBytes+500 || !strings.Contains(out, "TRUNCATED") {
-		t.Errorf("a 1 MB result reached the model: %d bytes, truncation notice=%v", len(out), strings.Contains(out, "TRUNCATED"))
+	if len(out) > maxResultBytes+500 || !strings.Contains(out, "truncated:") {
+		t.Errorf("a 1 MB result reached the model: %d bytes, truncation notice=%v", len(out), strings.Contains(out, "truncated:"))
 	}
 	b, _ := os.ReadFile(s.cfg().AuditPath)
 	if len(b) > 2000 {

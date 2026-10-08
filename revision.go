@@ -18,7 +18,7 @@ var reRevision = regexp.MustCompile(`^[0-9a-f]{12}$`)
 func configRevision(name string) (string, error) {
 	b, err := os.ReadFile(filepath.Join(uciConfDir, name))
 	if err != nil {
-		return "", fmt.Errorf("no such UCI config %q", name)
+		return "", notFound("no such UCI config %q", name)
 	}
 	return fmt.Sprintf("%x", sha256.Sum256(b))[:12], nil
 }
@@ -47,7 +47,7 @@ func checkRevisions(exp map[string]string) error {
 			return err
 		}
 		if cur != exp[c] {
-			return fmt.Errorf("CONFLICT: %s changed since revision %s (now %s). Re-read it with uci_get and redo the change "+
+			return conflict("CONFLICT: %s changed since revision %s (now %s). Re-read it with uci_get and redo the change "+
 				"against what is there now", c, exp[c], cur)
 		}
 	}

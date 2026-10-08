@@ -60,7 +60,7 @@ func runWith(ctx context.Context, timeout time.Duration, stdin *string, argv ...
 		out += e
 	}
 	if ctx.Err() == context.DeadlineExceeded {
-		return out, fmt.Errorf("timed out after %s", timeout)
+		return out, withCode(codeTimeout, fmt.Errorf("timed out after %s", timeout))
 	}
 	return out, err
 }
@@ -106,10 +106,12 @@ func textResult(s string) *mcp.CallToolResult {
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: capBytes(s, maxResultBytes)}}}
 }
 
-func errResult(s string) *mcp.CallToolResult {
-	// Bounded like a result: an error that carries a command's whole output can flood a
-	// context window just as well.
-	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: capBytes(s, maxResultBytes)}}}
+// errResultCoded is an error result that ends with its code line (errcode.go). Bounded like a
+// result, since an error that carries a command's whole output can flood a context window just
+// as well; the line is part of the bound, so nothing can cut it off.
+func errResultCoded(s, line string) *mcp.CallToolResult {
+	text := capBytes(s, maxResultBytes-len(line)-1) + "\n" + line
+	return &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: text}}}
 }
 
 // maxArrayElems is how many elements of a long array survive pruning.
@@ -177,9 +179,9 @@ func pruneUbusJSON(out string) string {
 	if err != nil {
 		return out
 	}
-	res := fmt.Sprintf("%s\n\n[pruned: %d array element(s) dropped, arrays capped at %d; %d -> %d bytes. "+
-		"Use a narrower ubus method if you need the full series.]",
-		b, p.dropped, maxArrayElems, len(out), len(b))
+	res := fmt.Sprintf("%s\n\n%s", b, truncNotice(fmt.Sprintf("%d array element(s) dropped", p.dropped),
+		fmt.Sprintf("arrays capped at %d, %d -> %d bytes; use a narrower ubus method for the full series",
+			maxArrayElems, len(out), len(b))))
 	// Belt and braces: re-indenting and the notice itself can outweigh what pruning saved.
 	if len(res) >= len(out) {
 		return out
@@ -216,7 +218,11 @@ func (s *Server) presentOutput(tool string, in any, text string) string {
 	text = sanitizeText(text)
 	text = s.maskOutput(tool, in, text)
 	if _, uncapped := uncappedTools[tool]; !uncapped {
-		text = capLines(text, maxLineBytes)
+		var cut int
+		if text, cut = capLinesN(text, maxLineBytes); cut > 0 {
+			text += "\n" + truncNotice(fmt.Sprintf("%d line(s) cut at %d bytes", cut, maxLineBytes),
+				"narrow the request or filter the output")
+		}
 	}
 	return labelUntrusted(tool, text)
 }
@@ -298,12 +304,12 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				now := time.Now()
 				p, reason := s.cfg().AuthorisePolicy(client, name, scopes, now)
 				if p == nil {
-					return finish(errResult(reason), OutcomeDenied, "", reason)
+					return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
 				}
 				// Second factor, checked after authorisation so an unauthorised caller
 				// learns nothing about which tools are MFA-gated.
 				if r := s.mfaGate(p, client, name, now); r != "" {
-					return finish(errResult(r), OutcomeDenied, "", r)
+					return finish(errResultCoded(r, codeLine(codeMFARequired)), OutcomeDenied, "", r)
 				}
 			}
 
@@ -322,7 +328,7 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				if errors.As(err, &lock) {
 					outcome = OutcomeDenied // "we said no", not "it broke"
 				}
-				return finish(errResult(msg), outcome, summary, errMsg)
+				return finish(errResultCoded(msg, codeLine(errCode(err))), outcome, summary, errMsg)
 			}
 			return finish(textResult(s.presentOutput(name, in, out)), OutcomeOK, summary, "")
 		})

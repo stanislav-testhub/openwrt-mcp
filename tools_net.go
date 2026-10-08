@@ -17,6 +17,7 @@ import (
 type networkClientsIn struct {
 	Filter       string `json:"filter,omitempty" jsonschema:"only rows containing this text (host name, IP, MAC, SSID; case-insensitive)"`
 	WirelessOnly bool   `json:"wireless_only,omitempty" jsonschema:"only clients associated to a Wi-Fi interface right now"`
+	Offset       int    `json:"offset,omitempty" jsonschema:"first row to return (100 per page); a cut result names the next offset"`
 }
 
 type netClient struct {
@@ -190,7 +191,7 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 	fmt.Fprintf(&b, "%-22s %-16s %-17s %-28s %-7s %-9s %-11s %s\n",
 		"HOST", "IP", "MAC", "VIA", "SIGNAL", "CONNECTED", "RATE rx/tx", "LEASE")
 	filter := strings.ToLower(in.Filter)
-	shown := 0
+	var matched []string
 	for _, c := range rows {
 		ip := "-"
 		sort.Slice(c.IPs, func(i, j int) bool { return len(c.IPs[i]) < len(c.IPs[j]) }) // v4 first
@@ -231,14 +232,20 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 		if filter != "" && !strings.Contains(strings.ToLower(line), filter) {
 			continue
 		}
-		b.WriteString(line + "\n")
-		shown++
+		matched = append(matched, line)
 	}
-	fmt.Fprintf(&b, "\n%d client(s)", shown)
+	page, notice := pageLines(matched, in.Offset, clientPageRows, "rows")
+	for _, line := range page {
+		b.WriteString(line + "\n")
+	}
+	fmt.Fprintf(&b, "\n%d client(s)", len(matched))
 	if len(notes) > 0 {
 		b.WriteString("\nnotes: " + strings.Join(notes, "; "))
 	}
-	return b.String(), fmt.Sprintf("%d clients", shown), nil
+	if notice != "" {
+		b.WriteString("\n" + notice)
+	}
+	return b.String(), fmt.Sprintf("%d clients", len(matched)), nil
 }
 
 var reMAC = regexp.MustCompile(`^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`)
@@ -292,7 +299,7 @@ func firewallShow(ctx context.Context, in firewallShowIn) (string, string, error
 		argv = []string{"fw4", "check"}
 	case "table":
 		if !reNftName.MatchString(fam) || !reNftName.MatchString(table) {
-			return "", "", fmt.Errorf("bad family/table")
+			return "", "", invalid("bad family/table")
 		}
 		argv = []string{"nft", "list", "table", fam, table}
 	case "chain":
@@ -301,7 +308,7 @@ func firewallShow(ctx context.Context, in firewallShowIn) (string, string, error
 		}
 		argv = []string{"nft", "list", "chain", fam, table, in.Chain}
 	default:
-		return "", "", fmt.Errorf("unknown view %q", in.View)
+		return "", "", invalid("unknown view %q", in.View)
 	}
 	out, err := run(ctx, defaultCmdTimeout, argv...)
 	if in.View == "check" && err == nil && strings.TrimSpace(out) == "" {

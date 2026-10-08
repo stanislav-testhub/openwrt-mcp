@@ -82,7 +82,7 @@ func validValue(v string) error {
 // add_list, del_list and set_list all refuse it (set may still write an empty scalar).
 func validListElement(v string) error {
 	if v == "" {
-		return fmt.Errorf("a list element must not be empty")
+		return invalid("a list element must not be empty")
 	}
 	return validValue(v)
 }
@@ -92,13 +92,13 @@ func validateChange(c UCIChange) error {
 		return fmt.Errorf("each change needs at least a config and a section")
 	}
 	if !reUCIConfig.MatchString(c.Config) {
-		return fmt.Errorf("bad config name %q", c.Config)
+		return invalid("bad config name %q", c.Config)
 	}
 	if !reUCISection.MatchString(c.Section) {
-		return fmt.Errorf("bad section name %q: use a name like 'lan' or an index like '@rule[2]'", c.Section)
+		return invalid("bad section name %q: use a name like 'lan' or an index like '@rule[2]'", c.Section)
 	}
 	if c.Option != "" && !reUCIOption.MatchString(c.Option) {
-		return fmt.Errorf("bad option name %q", c.Option)
+		return invalid("bad option name %q", c.Option)
 	}
 	key := c.Config + "." + c.Section
 	switch c.op() {
@@ -110,7 +110,7 @@ func validateChange(c UCIChange) error {
 			return fmt.Errorf("%s: type creates a section, so it cannot be combined with delete", key)
 		}
 		if !reUCIType.MatchString(c.Type) {
-			return fmt.Errorf("bad section type %q", c.Type)
+			return invalid("bad section type %q", c.Type)
 		}
 		if strings.HasPrefix(c.Section, "@") {
 			return fmt.Errorf("%s: a created section needs a real name, not an index", key)
@@ -138,7 +138,7 @@ func validateChange(c UCIChange) error {
 			}
 		}
 	default:
-		return fmt.Errorf("%s: unknown op %q", key, c.Op)
+		return invalid("%s: unknown op %q", key, c.Op)
 	}
 	return nil
 }
@@ -244,7 +244,7 @@ func uciGetScope(in uciGetIn) []string {
 // changing it without being handed exec (a root shell) or a broad ubus "uci.*" grant.
 func uciGet(ctx context.Context, in uciGetIn) (string, string, error) {
 	if in.Config == "" {
-		return "", "", fmt.Errorf("config is required")
+		return "", "", invalid("config is required")
 	}
 	if in.Option != "" && in.Section == "" {
 		return "", "", fmt.Errorf("option requires a section")
@@ -252,7 +252,7 @@ func uciGet(ctx context.Context, in uciGetIn) (string, string, error) {
 	if !reUCIConfig.MatchString(in.Config) ||
 		(in.Section != "" && !reUCISection.MatchString(in.Section)) ||
 		(in.Option != "" && !reUCIOption.MatchString(in.Option)) {
-		return "", "", fmt.Errorf("bad config/section/option name")
+		return "", "", invalid("bad config/section/option name")
 	}
 	sel := strings.Join(uciGetScope(in), "")
 	argv := []string{"uci", "show", sel}

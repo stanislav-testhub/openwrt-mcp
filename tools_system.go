@@ -302,10 +302,10 @@ var reServiceName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func serviceControl(ctx context.Context, in serviceControlIn) (string, string, error) {
 	if !reServiceName.MatchString(in.Name) || !serviceActions[in.Action] {
-		return "", "", fmt.Errorf("need a service name and one of start|stop|restart|reload|enable|disable")
+		return "", "", invalid("need a service name and one of start|stop|restart|reload|enable|disable")
 	}
 	if lifelineServices[in.Name] && (in.Action == "stop" || in.Action == "disable") {
-		return "", "", fmt.Errorf("refusing to %s %s: it carries the connection this tool is reached "+
+		return "", "", invalid("refusing to %s %s: it carries the connection this tool is reached "+
 			"through, and nothing could undo it remotely. Do it from a console if you really mean it", in.Action, in.Name)
 	}
 	before, err := rcList(ctx)
@@ -385,6 +385,7 @@ type logreadIn struct {
 	Pattern string `json:"pattern,omitempty" jsonschema:"only lines containing this substring (case-insensitive)"`
 	Regex   string `json:"regex,omitempty" jsonschema:"only lines matching this RE2 regular expression"`
 	Since   int    `json:"since_minutes,omitempty" jsonschema:"only lines from the last N minutes"`
+	Offset  int    `json:"offset,omitempty" jsonschema:"skip the newest N matching lines, to page back; a cut result names the next offset"`
 }
 
 // logread filters the whole ring buffer first and limits afterwards, so a rare message is
@@ -395,7 +396,7 @@ func logread(ctx context.Context, in logreadIn) (string, string, error) {
 	if in.Regex != "" {
 		var err error
 		if re, err = regexp.Compile(in.Regex); err != nil {
-			return "", "", fmt.Errorf("bad regex: %w", err)
+			return "", "", invalid("bad regex: %w", err)
 		}
 	}
 	out, err := run(ctx, defaultCmdTimeout, "logread")
@@ -433,12 +434,21 @@ func logread(ctx context.Context, in logreadIn) (string, string, error) {
 		keep = append(keep, line)
 	}
 	total := len(keep)
+	// Pages count back from the newest line, so offset skips the newest ones.
+	skip := clampInt(in.Offset, 0, 0, total)
+	if total > 0 && in.Offset >= total {
+		return fmt.Sprintf("(no matching log lines at offset %d; %d match in total)", in.Offset, total), "no lines at offset", nil
+	}
+	keep = keep[:total-skip]
+	older := 0
 	if len(keep) > n {
+		older = len(keep) - n
 		keep = keep[len(keep)-n:]
 	}
 	res := strings.Join(keep, "\n")
-	if total > n {
-		res = fmt.Sprintf("[%d matching lines, showing the last %d]\n%s", total, n, res)
+	if older > 0 {
+		res += "\n" + truncNotice(fmt.Sprintf("%d older matching lines omitted", older),
+			fmt.Sprintf("call again with offset=%d", skip+n))
 	}
 	if total == 0 {
 		res = "(no matching log lines)"
@@ -462,7 +472,7 @@ func execScope(in execIn) []string {
 
 func execTool(ctx context.Context, in execIn) (string, string, error) {
 	if len(in.Argv) == 0 {
-		return "", "", fmt.Errorf("argv must not be empty")
+		return "", "", invalid("argv must not be empty")
 	}
 	out, err := run(ctx, clampSec(in.Timeout, 30, 300), in.Argv...)
 	return out, strings.Join(in.Argv, " "), err
@@ -499,10 +509,10 @@ func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 	}
 	needTarget := func() error {
 		if !reNetTarget.MatchString(in.Target) {
-			return fmt.Errorf("%s needs a valid target host or IP", in.Action)
+			return invalid("%s needs a valid target host or IP", in.Action)
 		}
 		if in.Iface != "" && !reNetName.MatchString(in.Iface) {
-			return fmt.Errorf("bad iface %q", in.Iface)
+			return invalid("bad iface %q", in.Iface)
 		}
 		return nil
 	}
@@ -541,14 +551,14 @@ func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 		argv = []string{"nslookup", in.Target}
 		if in.Server != "" {
 			if !reNetTarget.MatchString(in.Server) {
-				return "", "", fmt.Errorf("bad server %q", in.Server)
+				return "", "", invalid("bad server %q", in.Server)
 			}
 			argv = append(argv, in.Server)
 		}
 	case "route":
 		table := orDefault(in.Table, "main")
 		if !reNetName.MatchString(table) {
-			return "", "", fmt.Errorf("bad table %q", table)
+			return "", "", invalid("bad table %q", table)
 		}
 		argv = []string{"ip", fam, "route", "show", "table", table}
 	case "rule":
@@ -556,7 +566,7 @@ func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 	case "neigh":
 		argv = []string{"ip", fam, "neigh", "show"}
 	default:
-		return "", "", fmt.Errorf("unknown action %q: use ping, traceroute, nslookup, route, rule or neigh", in.Action)
+		return "", "", invalid("unknown action %q: use ping, traceroute, nslookup, route, rule or neigh", in.Action)
 	}
 	out, err := run(ctx, timeout, argv...)
 	// ping exits non-zero on packet loss; the output is the answer, not an error.
@@ -586,7 +596,7 @@ func sysupgradeTool(ctx context.Context, in sysupgradeIn) (string, string, error
 	case "test":
 		clean := filepath.ToSlash(filepath.Clean(in.Image))
 		if !strings.HasPrefix(clean, "/tmp/") || strings.Contains(clean, "..") {
-			return "", "", fmt.Errorf("image must be a file under /tmp")
+			return "", "", invalid("image must be a file under /tmp")
 		}
 		out, err := run(ctx, 2*time.Minute, "sysupgrade", "-T", clean)
 		if err != nil {
@@ -637,7 +647,7 @@ func sysupgradeTool(ctx context.Context, in sysupgradeIn) (string, string, error
 		}
 		return msg, "backup " + name, nil
 	}
-	return "", "", fmt.Errorf("unknown action %q: use list, test, check or backup", in.Action)
+	return "", "", invalid("unknown action %q: use list, test, check or backup", in.Action)
 }
 
 // reBackupName is exactly what the backup action names its archives. Only files with such a

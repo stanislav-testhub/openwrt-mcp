@@ -42,14 +42,14 @@ func validateProbes(ps []probeSpec) error {
 	}
 	for _, p := range ps {
 		if p.Kind != "ping" && p.Kind != "resolve" {
-			return fmt.Errorf("probe kind must be ping or resolve, not %q", p.Kind)
+			return invalid("probe kind must be ping or resolve, not %q", p.Kind)
 		}
 		// A target is an argv element, never a shell word, but it must not read as an option.
 		if !reNetTarget.MatchString(p.Target) {
-			return fmt.Errorf("bad probe target %q", p.Target)
+			return invalid("bad probe target %q", p.Target)
 		}
 		if p.Server != "" && (p.Kind != "resolve" || !reNetTarget.MatchString(p.Server)) {
-			return fmt.Errorf("bad probe server %q: only a resolve probe takes one, a host or IP", p.Server)
+			return invalid("bad probe server %q: only a resolve probe takes one, a host or IP", p.Server)
 		}
 	}
 	return nil

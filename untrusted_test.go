@@ -131,7 +131,7 @@ func TestTruncKeepsWholeCharacters(t *testing.T) {
 
 func TestResultsAreBoundedOnBothBranches(t *testing.T) {
 	huge := strings.Repeat("é", 200_000)
-	for name, res := range map[string]*mcp.CallToolResult{"result": textResult(huge), "error": errResult(huge)} {
+	for name, res := range map[string]*mcp.CallToolResult{"result": textResult(huge), "error": errResultCoded(huge, "[code: FAILED]")} {
 		text := res.Content[0].(*mcp.TextContent).Text
 		if len(text) > maxResultBytes+400 {
 			t.Errorf("%s: %d bytes returned for a %d byte message", name, len(text), len(huge))
@@ -139,7 +139,7 @@ func TestResultsAreBoundedOnBothBranches(t *testing.T) {
 		if !utf8.ValidString(text) {
 			t.Errorf("%s: the cut split a character", name)
 		}
-		if !strings.Contains(text, "[TRUNCATED") {
+		if !strings.Contains(text, "[truncated") {
 			t.Errorf("%s: a cut result does not say so", name)
 		}
 		if res.IsError != (name == "error") {

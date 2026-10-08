@@ -80,7 +80,7 @@ func TestLogreadFiltersBeforeLimiting(t *testing.T) {
 		t.Fatalf("a rare line was lost behind noise: %v\n%s", err, out)
 	}
 	out, _, _ = logread(context.Background(), logreadIn{Lines: 5, Regex: `dnsmasq\[\d\]`})
-	if !strings.Contains(out, "[1000 matching lines, showing the last 5]") {
+	if finalNotice(out) != "[truncated: 995 older matching lines omitted; call again with offset=5]" {
 		t.Errorf("limit not reported: %.200s", out)
 	}
 	if _, _, err := logread(context.Background(), logreadIn{Regex: "("}); err == nil {
