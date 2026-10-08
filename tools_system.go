@@ -17,7 +17,18 @@ import (
 
 // ---------------------------------------------------------------- system_status
 
-type systemStatusIn struct{}
+type systemStatusIn struct {
+	Mode string `json:"mode,omitempty" jsonschema:"status (default) | doctor: ranked health findings | audit: ranked security findings"`
+}
+
+// systemStatusScope makes doctor and audit separately grantable: a grant for '*' (both presets) covers
+// them, a grant for system_status alone does not teach a client the router's security posture.
+func systemStatusScope(in systemStatusIn) []string {
+	if in.Mode == "doctor" || in.Mode == "audit" {
+		return []string{in.Mode}
+	}
+	return nil
+}
 
 type ubusBoard struct {
 	Hostname  string `json:"hostname"`
@@ -32,9 +43,10 @@ type ubusBoard struct {
 }
 
 type ubusSysInfo struct {
-	Uptime int64   `json:"uptime"`
-	Load   []int64 `json:"load"`
-	Memory struct {
+	LocalTime int64   `json:"localtime"`
+	Uptime    int64   `json:"uptime"`
+	Load      []int64 `json:"load"`
+	Memory    struct {
 		Total, Free, Available, Cached, Buffered int64
 	} `json:"memory"`
 	Root struct{ Total, Used, Avail int64 } `json:"root"`
@@ -78,7 +90,16 @@ func interfaceDump(ctx context.Context) ([]ubusIface, error) {
 // which interfaces and radios are up, and what is outstanding (uncommitted uci edits, a
 // pending rollback, package configs waiting for review). Each section degrades to a note
 // rather than failing the whole call.
-func (s *Server) systemStatus(ctx context.Context, _ systemStatusIn) (string, string, error) {
+func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, string, error) {
+	switch in.Mode {
+	case "", "status":
+	case "doctor":
+		return healthFindings(ctx).render(), "doctor", nil
+	case "audit":
+		return auditFindings(ctx).render(), "audit", nil
+	default:
+		return "", "", invalid("mode must be status, doctor or audit, not %q", in.Mode)
+	}
 	var b strings.Builder
 	var board ubusBoard
 	if err := runJSON(ctx, &board, "ubus", "call", "system", "board"); err == nil {

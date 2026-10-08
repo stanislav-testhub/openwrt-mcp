@@ -182,6 +182,7 @@ func capLinesN(s string, max int) (string, int) {
 // kind of text it is. The marker is a seatbelt: it lowers the odds that a model obeys a host
 // name that says "ignore previous instructions", it does not remove them.
 var untrustedLabels = map[string]string{
+	"system_status":   "SSIDs, interface names",
 	"network_clients": "host names, SSIDs",
 	"logread":         "log lines",
 	"net_diag":        "DNS names, banners",

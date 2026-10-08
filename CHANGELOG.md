@@ -3,6 +3,51 @@
 ## Unreleased
 
 Added
+- **`system_status mode=doctor` and `mode=audit` (ROADMAP 4.2, 4.3).** Two ranked lists of
+  findings, severity first (`high`, `medium`, `low`, `info`), advisory only: nothing is changed.
+  Each finding has a stable id, a message, the evidence, a next read-only call and an OpenWrt
+  wiki link (every link was opened and read for content before it went in; the wiki answers 200
+  for pages that do not exist). Each list ends with what was checked, what could not be
+  (`not checked: radios (ubus ...)`), and where a check sees only part of the picture.
+  - **Doctor:** `radio-down`, `iface-no-address`, `iface-error`, `service-crashed`,
+    `conntrack-high` (80%, high at 95%), `overlay-full` and `tmp-full` (10% free, high at 5%),
+    `apk-new-pending`, `ntp-unsynced`, `clock-unset`, `reboot-needed`.
+    - A service counts as crashed only when procd has it with instances, none running and a
+      non-zero exit code. `rc list` alone cannot tell a stopped daemon from a one-shot init
+      script that ran and exited. On the router this was developed against, `rc list` shows 24
+      of 45 enabled scripts as stopped: mostly one-shots, and one (AdGuard Home) that procd
+      shows running. A daemon that is enabled but was never started has no procd instance and
+      is not reported; the result says so on its `limits:` line.
+    - NTP is asked of chrony (`chronyc -c tracking`) when it is installed. Otherwise only
+      "was the clock ever set" is checked, and the limits line says so.
+  - **Audit:** `wan-zone-input-accept`, `wan-zone-forward-accept`, `wan-port-open`,
+    `wan-forward-open`, `wan-redirect`, `ssh-wan`, `luci-wan`, `ssh-password-auth`,
+    `luci-all-addresses`, `upnp-on`, `wps-on`, `ssid-open`, `ssid-wep`, `ssid-weak-cipher`,
+    `ssid-wpa1`, `root-no-password`, `apk-audit-modified`, `wg-stale-peer`.
+    - The internet-facing zones are the ones named `wan*` and the ones holding an interface
+      with a default route. The stock DHCP, ICMP and IGMP rules are not reported. An
+      explicit SSH or web-interface port is reported as `ssh-wan` or `luci-wan` only when the
+      service listens on every address.
+    - The root password is checked by reading whether its field in `/etc/shadow` is empty.
+      The hash is never stored or shown, and an error never carries file contents.
+    - `apk audit` changes under `etc/`, `tmp/`, `var/`, `overlay/`, `root/` and `mnt/` are
+      configuration, not tampering, and are ignored; a changed or removed file elsewhere is
+      reported.
+  - **Not in this release:** the upstream-DNS check (it needs an active probe, which would
+    make `system_status` leave the router) and a "reboot needed after a kmod update" beyond the
+    kernel version.
+  - **Scopes.** `doctor` and `audit` are scopes of `system_status`. A `*` grant, which is what
+    both presets give, covers them; a grant for one of them does not cover the other, and the
+    denial prints the exact `allow` line. Plain `system_status` is unchanged.
+  - **Untrusted text.** `system_status` now carries the untrusted-text label and says so in its
+    description, because audit findings quote SSIDs. They are quoted, cut to 32 bytes and kept
+    to one line.
+  - Tests: a healthy router that raises nothing, one fixture per finding that triggers it and
+    one per boundary that must not (one below, at and one above each threshold), the
+    not-checked path, ranking, a test that every next step names a real tool and every link is
+    in the verified list, the read-only command oracle over everything the two modes run, and
+    27 mutation rows.
+  - Tool catalogue: 22,967 bytes; the budget moves to 23,000 and the prose budget to 12,050.
 - **`logread mode=summary` and baselines (ROADMAP 4.1).** After a change the useful question is
   "what is new in the log", not "show me 500 lines".
   - `mode=summary` collapses the filtered log to its distinct messages, grouped by process

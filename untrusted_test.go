@@ -353,7 +353,7 @@ func TestSanitisingRunsBeforeMasking(t *testing.T) {
 func TestUntrustedToolDescriptionsSayTheTextIsUntrusted(t *testing.T) {
 	for _, tl := range listedTools(t, connectClient(t, testServer(t, ""), "c")) {
 		has := strings.Contains(strings.ToLower(tl.Description), "untrusted")
-		want := tl.Name == "network_clients" || tl.Name == "logread" || tl.Name == "net_diag"
+		want := tl.Name == "network_clients" || tl.Name == "logread" || tl.Name == "net_diag" || tl.Name == "system_status"
 		if has != want {
 			t.Errorf("%s: description mentions untrusted text = %v, want %v:\n%s", tl.Name, has, want, tl.Description)
 		}

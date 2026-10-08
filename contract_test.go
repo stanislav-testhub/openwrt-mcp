@@ -28,6 +28,8 @@ var goldenCalls = []struct {
 	{"ubus_call", map[string]any{"object": "system", "method": "board", "args": map[string]any{"k": "v"}}},
 	{"exec", map[string]any{"argv": []string{"ls", "/"}}},
 	{"system_status", map[string]any{}},
+	{"system_status", map[string]any{"mode": "doctor"}},
+	{"system_status", map[string]any{"mode": "audit"}},
 	{"logread", map[string]any{"pattern": "x", "regex": "y", "lines": 5, "since_minutes": 5}},
 	{"logread", map[string]any{"mode": "summary", "baseline": "save", "offset": 5}},
 	{"logread", map[string]any{"mode": "summary", "baseline": "0123abcd"}},
@@ -199,8 +201,8 @@ func TestToolSchemasArePortable(t *testing.T) {
 // the SDK's explicit false hints added about 2 KB that no description edit can remove. Raising
 // a limit needs a reason in the commit; so does a new tool.
 const (
-	catalogueBudgetBytes = 22750 // all tools, marshalled as tools/list sends them (1.4: offset on three tools, logread mode/baseline)
-	catalogueProseBudget = 11850 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 23000 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode)
+	catalogueProseBudget = 12050 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
@@ -562,6 +564,8 @@ func readOnlyCommand(a []string) bool {
 		return len(a) > 1 && contains([]string{"list", "search", "info", "policy", "audit"}, a[1])
 	case "wg":
 		return len(a) > 1 && a[1] == "show"
+	case "chronyc": // the doctor asks chrony whether it is synchronised
+		return len(a) == 3 && a[1] == "-c" && a[2] == "tracking"
 	case "logread", "date", "ping", "traceroute", "nslookup":
 		return true
 	}
