@@ -533,10 +533,10 @@ func execTool(ctx context.Context, in execIn) (string, string, error) {
 // ---------------------------------------------------------------- net_diag
 
 type netDiagIn struct {
-	Action string `json:"action" jsonschema:"ping | traceroute | nslookup | route | rule | neigh"`
-	Target string `json:"target,omitempty" jsonschema:"host name or IP for ping/traceroute/nslookup"`
+	Action string `json:"action" jsonschema:"ping | traceroute | nslookup | route | rule | neigh | wifi_survey | traffic | usage"`
+	Target string `json:"target,omitempty" jsonschema:"host name or IP for ping/traceroute/nslookup; radio device for wifi_survey; interface for traffic; period date for usage"`
 	Iface  string `json:"iface,omitempty" jsonschema:"source interface/device for ping/traceroute, e.g. 'br-WAN' or 'wg0' -- useful with several uplinks"`
-	Count  int    `json:"count,omitempty" jsonschema:"ping count (default 4, max 10)"`
+	Count  int    `json:"count,omitempty" jsonschema:"ping count (default 4, max 10); seconds to sample for traffic (default 3, max 10)"`
 	Server string `json:"server,omitempty" jsonschema:"DNS server to ask for nslookup (default: the router's resolver)"`
 	Table  string `json:"table,omitempty" jsonschema:"routing table for route: 'main' (default), 'all', or a number/name"`
 	IPv6   bool   `json:"ipv6,omitempty" jsonschema:"route/rule/neigh: show the IPv6 side"`
@@ -555,6 +555,14 @@ func netDiagScope(in netDiagIn) []string {
 }
 
 func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
+	switch in.Action {
+	case "wifi_survey":
+		return wifiSurvey(ctx, in.Target)
+	case "traffic":
+		return trafficDiag(ctx, in)
+	case "usage":
+		return nlbwUsage(ctx, in.Target)
+	}
 	fam := "-4"
 	if in.IPv6 {
 		fam = "-6"
@@ -618,7 +626,7 @@ func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 	case "neigh":
 		argv = []string{"ip", fam, "neigh", "show"}
 	default:
-		return "", "", invalid("unknown action %q: use ping, traceroute, nslookup, route, rule or neigh", in.Action)
+		return "", "", invalid("unknown action %q: use ping, traceroute, nslookup, route, rule, neigh, wifi_survey, traffic or usage", in.Action)
 	}
 	out, err := run(ctx, timeout, argv...)
 	// ping exits non-zero on packet loss; the output is the answer, not an error.

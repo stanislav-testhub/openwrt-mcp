@@ -35,6 +35,8 @@ type netClient struct {
 	TxRate   int
 	Wireless bool
 	Neigh    string // neighbour state
+	Air      int64  // airtime used (rx+tx) as hostapd reports it
+	AirPhy   string // the radio that airtime belongs to; empty when hostapd gave none
 }
 
 // networkClients answers "who is on my network, where, and how well connected" in one call:
@@ -162,6 +164,28 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 				c.Signal, c.Conn = a.Signal, a.Connected
 				c.RxRate, c.TxRate = a.Rx.Rate, a.Tx.Rate
 			}
+			// hostapd knows how long each station occupied the air. Absent on a driver that does
+			// not account for it; the column then shows a dash.
+			var hp struct {
+				Clients map[string]struct {
+					Airtime struct {
+						Rx int64 `json:"rx"`
+						Tx int64 `json:"tx"`
+					} `json:"airtime"`
+				} `json:"clients"`
+			}
+			if runJSON(ctx, &hp, "ubus", "call", "hostapd."+dev, "get_clients") == nil {
+				for mac, st := range hp.Clients {
+					c := get(mac)
+					c.Air, c.AirPhy = st.Airtime.Rx+st.Airtime.Tx, radioOf(dev)
+				}
+			}
+		}
+	}
+	airTotal := map[string]int64{}
+	for _, c := range clients {
+		if c.AirPhy != "" {
+			airTotal[c.AirPhy] += c.Air
 		}
 	}
 
@@ -188,8 +212,8 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 	})
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-22s %-16s %-17s %-28s %-7s %-9s %-11s %s\n",
-		"HOST", "IP", "MAC", "VIA", "SIGNAL", "CONNECTED", "RATE rx/tx", "LEASE")
+	fmt.Fprintf(&b, "%-22s %-16s %-17s %-28s %-7s %-9s %-11s %-5s %s\n",
+		"HOST", "IP", "MAC", "VIA", "SIGNAL", "CONNECTED", "RATE rx/tx", "AIR", "LEASE")
 	filter := strings.ToLower(in.Filter)
 	var matched []string
 	for _, c := range rows {
@@ -220,8 +244,16 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 		case c.LeaseEnd > 0:
 			lease = "expired"
 		}
-		line := fmt.Sprintf("%-22s %-16s %-17s %-28s %-7s %-9s %-11s %s",
-			trunc(orDefault(c.Host, "?"), 22), ip, c.MAC, trunc(via, 28), signal, conn, rate, lease)
+		air := "-"
+		if c.AirPhy != "" && airTotal[c.AirPhy] > 0 {
+			if share := c.Air * 100 / airTotal[c.AirPhy]; share == 0 && c.Air > 0 {
+				air = "<1%"
+			} else {
+				air = fmt.Sprintf("%d%%", share)
+			}
+		}
+		line := fmt.Sprintf("%-22s %-16s %-17s %-28s %-7s %-9s %-11s %-5s %s",
+			trunc(orDefault(c.Host, "?"), 22), ip, c.MAC, trunc(via, 28), signal, conn, rate, air, lease)
 		if len(c.IPs) > 1 {
 			extra := c.IPs[1:]
 			if len(extra) > maxExtraIPs {

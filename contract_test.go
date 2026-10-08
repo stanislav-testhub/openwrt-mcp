@@ -40,6 +40,9 @@ var goldenCalls = []struct {
 	{"net_diag", map[string]any{"action": "traceroute", "target": "192.0.2.1", "iface": "wg0"}},
 	{"net_diag", map[string]any{"action": "nslookup", "target": "example.com", "server": "9.9.9.9"}},
 	{"net_diag", map[string]any{"action": "route", "table": "main"}},
+	{"net_diag", map[string]any{"action": "wifi_survey", "target": "phy0-ap0"}},
+	{"net_diag", map[string]any{"action": "traffic", "target": "br-lan", "count": 2}},
+	{"net_diag", map[string]any{"action": "usage", "target": "2026-10-01"}},
 	{"uci_get", map[string]any{"config": "dhcp", "section": "lan", "option": "ipaddr"}},
 	{"uci_apply", map[string]any{"dry_run": true, "changes": []map[string]any{
 		{"config": "dhcp", "section": "pi", "type": "host"},
@@ -201,15 +204,15 @@ func TestToolSchemasArePortable(t *testing.T) {
 // the SDK's explicit false hints added about 2 KB that no description edit can remove. Raising
 // a limit needs a reason in the commit; so does a new tool.
 const (
-	catalogueBudgetBytes = 23000 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode)
-	catalogueProseBudget = 12050 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 23300 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions)
+	catalogueProseBudget = 12300 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
 // toolBudgets are the tools allowed more than toolBudgetBytes, each for a reason: uci_apply
 // carries a nested request with its own options; wg_new_client has nine parameters, one of
 // which (reveal) keeps a private key out of the conversation by default.
-var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700}
+var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700, "net_diag": 1700}
 
 func TestCatalogueStaysWithinBudget(t *testing.T) {
 	cs := connectClient(t, testServer(t, ""), "c")
@@ -564,6 +567,8 @@ func readOnlyCommand(a []string) bool {
 		return len(a) > 1 && contains([]string{"list", "search", "info", "policy", "audit"}, a[1])
 	case "wg":
 		return len(a) > 1 && a[1] == "show"
+	case "nlbw": // usage reads nlbwmon's database; -c commit and the like are not read-only
+		return len(a) >= 3 && a[1] == "-c" && (a[2] == "json" || a[2] == "list")
 	case "chronyc": // the doctor asks chrony whether it is synchronised
 		return len(a) == 3 && a[1] == "-c" && a[2] == "tracking"
 	case "logread", "date", "ping", "traceroute", "nslookup":
@@ -605,7 +610,7 @@ func TestReadOnlyToolsOnlyIssueReadOnlyCommands(t *testing.T) {
 var optionFlags = map[string]bool{
 	"-q": true, "-X": true, "-4": true, "-6": true, "-c": true, "-t": true, "-W": true, "-I": true, "-i": true,
 	"-n": true, "-w": true, "-m": true, "-a": true, "-L": true, "-l": true, "-T": true, "-k": true, "-b": true,
-	"-v": true, "-j": true, "--who-owns": true, "--upgradable": true, "--simulate": true, "--installed": true,
+	"-v": true, "-j": true, "-g": true, "--who-owns": true, "--upgradable": true, "--simulate": true, "--installed": true,
 }
 
 var hostileValues = []string{"-x", "--help", "-f", "--", "-", "-rf", "--version", "-q"}

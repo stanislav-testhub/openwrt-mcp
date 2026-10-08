@@ -185,7 +185,7 @@ var untrustedLabels = map[string]string{
 	"system_status":   "SSIDs, interface names",
 	"network_clients": "host names, SSIDs",
 	"logread":         "log lines",
-	"net_diag":        "DNS names, banners",
+	"net_diag":        "DNS names, host names, banners",
 }
 
 // labelUntrusted puts a one-line marker above the result of a tool that carries third-party

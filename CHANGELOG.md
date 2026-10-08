@@ -3,6 +3,33 @@
 ## Unreleased
 
 Added
+- **`net_diag` wifi_survey, traffic and usage; airtime in `network_clients` (ROADMAP 4.4, 4.5).**
+  All read-only, so the existing `net_diag` grants cover them without widening.
+  - **`wifi_survey[.<device>]`:** per radio, busy, rx and tx airtime and noise for the channels the
+    radio has stayed on for at least 10 s, from `iwinfo survey`. The driver only keeps real figures
+    for the channel it is on (every other channel holds the milliseconds of a boot-time scan), so
+    the result says the rest are not measured and **does not recommend a channel**: that needs an
+    active scan, which moves the radio off its channel and is not read-only. The noise byte is a
+    signed dBm value read as unsigned (170 is -86 dBm). One survey per radio, however many SSIDs
+    share it.
+  - **`traffic[.<interface>]`:** `/proc/net/dev` sampled twice (`count` seconds, default 3, max 10),
+    rates per interface (loopback and idle interfaces left out, a counter that went backwards
+    counts as no traffic), and the top five sources in the conntrack table. Sources are ranked by
+    bytes when the kernel counts them (`nf_conntrack_acct`), otherwise by connections, and it
+    says which. The source is the original direction's, so through NAT it is the LAN client.
+  - **`usage[.<YYYY-MM-DD>]`:** nlbwmon's totals per device (summed over its addresses), the 25
+    largest, with the accounting periods it has. nlbwmon keeps a period per month by default, so
+    this is "this month", not "today" or "this week". Without nlbwmon the error names the package
+    and `pkg_change` as the way to install it.
+  - **`network_clients`:** an `AIR` column, each Wi-Fi client's share of its radio's airtime
+    (receive plus transmit, from `hostapd`). A dash when hostapd does not report it. Retries are
+    not here: neither `iwinfo` nor `hostapd` exposes them.
+  - **Not in this release:** the active neighbour scan and the channel recommendation that would
+    need it, and Wake-on-LAN. Both change what the radio or the LAN does, so as `net_diag` actions
+    they would silently reach every stored `net_diag '*'` grant.
+  - `net_diag` and its untrusted-text label now also cover host names (leases).
+  - Tool catalogue: 23,254 bytes; `net_diag` may be 1,700 bytes (was 1,500); the budgets move to
+    23,300 and 12,300.
 - **`system_status mode=doctor` and `mode=audit` (ROADMAP 4.2, 4.3).** Two ranked lists of
   findings, severity first (`high`, `medium`, `low`, `info`), advisory only: nothing is changed.
   Each finding has a stable id, a message, the evidence, a next read-only call and an OpenWrt

@@ -229,9 +229,13 @@ func FuzzNoCallerValueBecomesAnOptionOrEscapesItsSlot(f *testing.F) {
 	f.Add("a b", "a;b", "$(id)", "a\nb")
 	f.Fuzz(func(t *testing.T, a, b, c, d string) {
 		f := everythingFake(t)
-		withFixtureRoot(t)
+		root := withFixtureRoot(t)
+		writeFixture(t, root, "usr/sbin/nlbw", "x")
+		f.on("nlbw", "{}")
 		ctx := context.Background()
 
+		_, _, _ = netDiag(ctx, netDiagIn{Action: "wifi_survey", Target: a})
+		_, _, _ = netDiag(ctx, netDiagIn{Action: "usage", Target: a})
 		_, _, _ = netDiag(ctx, netDiagIn{Action: "ping", Target: a, Iface: b})
 		_, _, _ = netDiag(ctx, netDiagIn{Action: "traceroute", Target: a, Iface: b})
 		_, _, _ = netDiag(ctx, netDiagIn{Action: "nslookup", Target: a, Server: b})
