@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+Added
+- **`logread mode=summary` and baselines (ROADMAP 4.1).** After a change the useful question is
+  "what is new in the log", not "show me 500 lines".
+  - `mode=summary` collapses the filtered log to its distinct messages, grouped by process
+    (worst severity first, then busiest). Each row has the severity, a count, the first and last
+    time and the message with MACs, IPv4/IPv6 addresses, clock times, hex ids and numbers
+    replaced by `<mac>`, `<ip>`, `<time>`, `<hex>` and `<n>`. A number that is part of a name
+    (`phy0-ap1`, `eth1`) is kept, so two radios are never merged. `lines` limits the messages
+    and `offset` pages through them.
+  - `baseline=save` returns an 8-hex-digit token for the messages in the log now.
+    `baseline=<token>` returns only the messages that were not there (in either mode, with the
+    same filters), headed `since baseline <token>: N of M distinct messages are new`.
+  - A baseline is a set of 64-bit fingerprints, no log text, in the daemon's memory. At most 8
+    are kept, least recently used first. A daemon restart, the Monday reboot included, drops
+    them; an unknown token is `NOT_FOUND` and says to save a new one. Nothing is written to disk.
+  - Tests: a synthetic sample log (`testdata/logread_sample.txt`, documentation addresses
+    only), a table of normaliser cases, a fuzz test (idempotent, bounded growth, valid UTF-8
+    stays valid), and the baseline rules (new-only, numbers do not make a message new, least
+    recently used eviction, no log text held).
+  - Tool catalogue: 22,707 bytes; the budget moves to 22,750 and the prose budget to 11,850.
+
 Changed
 - **Every error result ends with a code (ROADMAP 4.8).**
   - The last line is `[code: X]`, with X one of `POLICY_DENIED`, `MFA_REQUIRED`,

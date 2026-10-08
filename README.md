@@ -85,7 +85,7 @@ are welcome.
 | Tool | Scope | |
 |---|---|---|
 | `system_status` | tool | Model, release, uptime, load, memory, storage, temperatures, conntrack, every interface (state, addresses, default route, errors), radios/SSIDs, and what is outstanding. Call first. |
-| `logread` | tool | Whole log buffer filtered (substring, RE2, last N minutes) *before* the line limit; `offset` pages back from the newest line. |
+| `logread` | tool | Whole log buffer filtered (substring, RE2, last N minutes) *before* the line limit; `offset` pages back from the newest line. `mode=summary` collapses it to distinct messages (numbers, addresses and ids become placeholders) with count, first and last time and worst severity. `baseline=save` returns a token; `baseline=<token>` shows only the messages that were not in the log then. Baselines hold fingerprints, not log text, and live in memory. |
 | `network_clients` | tool | DHCP leases + static hosts + neighbour table + every AP's association list, joined by MAC: name, IP, SSID, signal, rates, connected time, lease; 100 rows a page, `offset` for the next. |
 | `firewall_show` | tool | `nft list ruleset`, `fw4 print`, `fw4 check`, one table or chain. |
 | `net_diag` | `<action>[.<target>]` | ping / traceroute / nslookup (optionally from a given interface), routes, policy rules, neighbours. |

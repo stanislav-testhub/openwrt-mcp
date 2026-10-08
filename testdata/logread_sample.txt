@@ -1,0 +1,20 @@
+Mon Jan  5 10:00:00 2026 cron.err crond[2058]: USER root pid 1001 cmd /usr/bin/job-a.sh
+Mon Jan  5 10:00:00 2026 cron.err crond[2058]: USER root pid 1004 cmd /usr/bin/job-b.sh >/dev/null 2>&1
+Mon Jan  5 10:00:05 2026 daemon.err dropbear[4455]: Bad password attempt for 'root' from 192.0.2.55:41222
+Mon Jan  5 10:00:22 2026 daemon.info dnsmasq-dhcp[1]: DHCPDISCOVER(phy0-ap1) 00:00:5e:00:53:01
+Mon Jan  5 10:00:23 2026 daemon.info dnsmasq-dhcp[1]: DHCPACK(phy0-ap1) 192.0.2.10 00:00:5e:00:53:01 host-a
+Mon Jan  5 10:00:58 2026 daemon.notice hostapd: phy0-ap1: AP-STA-DISCONNECTED 00:00:5e:00:53:01
+Mon Jan  5 10:00:59 2026 daemon.notice hostapd: phy0-ap1: AP-STA-CONNECTED 00:00:5e:00:53:01 auth_alg=open
+Mon Jan  5 10:00:59 2026 daemon.info hostapd: phy0-ap1: STA 00:00:5e:00:53:01 RADIUS: starting accounting session 293C429C1FD7E6AA
+Mon Jan  5 10:01:00 2026 cron.err crond[2058]: USER root pid 1101 cmd /usr/bin/job-a.sh
+Mon Jan  5 10:01:05 2026 daemon.err dropbear[4461]: Bad password attempt for 'root' from 192.0.2.55:41230
+Mon Jan  5 10:01:22 2026 daemon.info dnsmasq-dhcp[1]: DHCPDISCOVER(phy0-ap1) 00:00:5e:00:53:02
+Mon Jan  5 10:01:23 2026 daemon.info dnsmasq-dhcp[1]: DHCPACK(phy0-ap1) 192.0.2.11 00:00:5e:00:53:02 host-a
+Mon Jan  5 10:01:30 2026 daemon.notice netifd: Network device 'eth1' link is down
+Mon Jan  5 10:01:40 2026 kern.info kernel: [   12.000000] br-lan: port 1(eth0) entered forwarding state
+Mon Jan  5 10:01:41 2026 kern.err kernel: [ 5123.000001] ieee80211 phy0: failed to assign queue 42
+Mon Jan  5 10:02:00 2026 cron.err crond[2058]: USER root pid 1201 cmd /usr/bin/job-a.sh
+Mon Jan  5 10:02:00 2026 cron.err crond[2058]: USER root pid 1204 cmd /usr/bin/job-b.sh >/dev/null 2>&1
+Mon Jan  5 10:02:05 2026 daemon.err dropbear[4470]: Bad password attempt for 'root' from 192.0.2.55:41244
+Mon Jan  5 10:02:20 2026 kern.info kernel: [  150.000000] br-lan: port 1(eth0) entered forwarding state
+not a syslog line at all

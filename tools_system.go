@@ -381,16 +381,28 @@ func contradiction(action string, e rcEntry) string {
 // ---------------------------------------------------------------- logread
 
 type logreadIn struct {
-	Lines   int    `json:"lines,omitempty" jsonschema:"how many of the most recent MATCHING lines to return (default 100, max 2000)"`
-	Pattern string `json:"pattern,omitempty" jsonschema:"only lines containing this substring (case-insensitive)"`
-	Regex   string `json:"regex,omitempty" jsonschema:"only lines matching this RE2 regular expression"`
-	Since   int    `json:"since_minutes,omitempty" jsonschema:"only lines from the last N minutes"`
-	Offset  int    `json:"offset,omitempty" jsonschema:"skip the newest N matching lines, to page back; a cut result names the next offset"`
+	Lines    int    `json:"lines,omitempty" jsonschema:"how many of the most recent MATCHING lines to return (default 100, max 2000)"`
+	Pattern  string `json:"pattern,omitempty" jsonschema:"only lines containing this substring (case-insensitive)"`
+	Regex    string `json:"regex,omitempty" jsonschema:"only lines matching this RE2 regular expression"`
+	Since    int    `json:"since_minutes,omitempty" jsonschema:"only lines from the last N minutes"`
+	Offset   int    `json:"offset,omitempty" jsonschema:"skip the newest N matching lines, to page back; a cut result names the next offset"`
+	Mode     string `json:"mode,omitempty" jsonschema:"lines (default) | summary: distinct messages with counts, times, worst severity"`
+	Baseline string `json:"baseline,omitempty" jsonschema:"save: return a token for the messages in the log now. <token>: only messages not in it"`
 }
 
 // logread filters the whole ring buffer first and limits afterwards, so a rare message is
 // not lost just because it scrolled past the last N lines of noise.
-func logread(ctx context.Context, in logreadIn) (string, string, error) {
+func (b *logBook) logread(ctx context.Context, in logreadIn) (string, string, error) {
+	mode := in.Mode
+	if mode == "" {
+		mode = "lines"
+	}
+	if mode != "lines" && mode != "summary" {
+		return "", "", invalid("mode must be lines or summary, not %q", in.Mode)
+	}
+	if in.Baseline != "" && in.Baseline != "save" && !reBaselineToken.MatchString(in.Baseline) {
+		return "", "", invalid("baseline must be \"save\" or the 8-hex-digit token it returned")
+	}
 	n := clampInt(in.Lines, 100, 1, 2000)
 	var re *regexp.Regexp
 	if in.Regex != "" {
@@ -433,11 +445,30 @@ func logread(ctx context.Context, in logreadIn) (string, string, error) {
 		}
 		keep = append(keep, line)
 	}
+	if in.Baseline == "save" {
+		return b.saveBaseline(keep)
+	}
+	header := ""
+	if in.Baseline != "" {
+		var err error
+		if keep, header, err = b.onlyNew(in.Baseline, keep); err != nil {
+			return "", "", err
+		}
+	}
+	if mode == "summary" {
+		return summariseLog(keep, header, n, in.Offset), fmt.Sprintf("summary of %d lines", len(keep)), nil
+	}
+	withHeader := func(res string) string {
+		if header == "" {
+			return res
+		}
+		return header + "\n" + res
+	}
 	total := len(keep)
 	// Pages count back from the newest line, so offset skips the newest ones.
 	skip := clampInt(in.Offset, 0, 0, total)
 	if total > 0 && in.Offset >= total {
-		return fmt.Sprintf("(no matching log lines at offset %d; %d match in total)", in.Offset, total), "no lines at offset", nil
+		return withHeader(fmt.Sprintf("(no matching log lines at offset %d; %d match in total)", in.Offset, total)), "no lines at offset", nil
 	}
 	keep = keep[:total-skip]
 	older := 0
@@ -453,7 +484,7 @@ func logread(ctx context.Context, in logreadIn) (string, string, error) {
 	if total == 0 {
 		res = "(no matching log lines)"
 	}
-	return res, fmt.Sprintf("%d of %d matching lines", len(keep), total), nil
+	return withHeader(res), fmt.Sprintf("%d of %d matching lines", len(keep), total), nil
 }
 
 // ---------------------------------------------------------------- exec
