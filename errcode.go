@@ -17,6 +17,7 @@ const (
 	codeValidation      = "VALIDATION"       // the request itself is wrong; fix it and retry
 	codeNotFound        = "NOT_FOUND"        // the config, package or id asked for is not there
 	codeConflict        = "CONFLICT"         // the router changed under the caller; re-read first
+	codeNotApplied      = "NOT_APPLIED"      // the router accepted a write, and a re-read does not show it
 	codeTimeout         = "TIMEOUT"          // a command outlived its deadline
 	codeFailed          = "FAILED"           // anything else
 )
@@ -39,6 +40,9 @@ func invalid(format string, a ...any) error {
 }
 func notFound(format string, a ...any) error { return withCode(codeNotFound, fmt.Errorf(format, a...)) }
 func conflict(format string, a ...any) error { return withCode(codeConflict, fmt.Errorf(format, a...)) }
+func notApplied(format string, a ...any) error {
+	return withCode(codeNotApplied, fmt.Errorf(format, a...))
+}
 func pending(format string, a ...any) error {
 	return withCode(codeRollbackPending, fmt.Errorf(format, a...))
 }

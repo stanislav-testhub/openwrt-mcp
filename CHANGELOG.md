@@ -3,6 +3,36 @@
 ## Unreleased
 
 Added
+- **Verify after write (ROADMAP 4.9).** A write the router accepts and then does not keep is
+  `NOT_APPLIED`, a new error code, instead of a success the caller has no reason to doubt. Each
+  write path reads back what it changed:
+  - **`uci_apply`:** after the commit and before any service is reloaded, each config is re-read
+    with `uci show` and every change is compared with what the batch must have left. The last
+    write to a key wins; a `set` to the empty string means unset; `add_list`, `del_list` and
+    `set_list` are checked against the list (order included); `create` against the section type;
+    `delete` against absence. A difference returns `NOT_APPLIED` with the keys, reloads nothing and
+    leaves the rollback armed; the message names `uci_rollback` and says not to confirm. A
+    success says `Verified: re-read dhcp after commit, 3 of 3 change(s) match.`
+  - Sections addressed by position (`@rule[3]`) or by a generated name (`cfg0a1b2c`) are not
+    compared, because an earlier add or delete in the same batch moves them. The result counts
+    them. The value of a secret option (`key`, `private_key`, `psk`, `password`, ...) is never
+    printed in a mismatch.
+  - **`wg_new_client`:** after the commit the peer is looked up by its public key, with its name
+    and address, before anything touches the running interface. After `wg set` it must be on the
+    interface. A failed hot-add stays the note it was (the interface may simply be down); a
+    `wg set` that exits 0 and leaves no peer is `NOT_APPLIED`, and the client's config file is
+    kept for `openwrt-mcp wg-show`.
+  - **`wg_remove_client`:** the peer must be gone from `wg show` before the config is deleted
+    (otherwise a live peer would be listed nowhere), and the section must be gone after the commit.
+  - **`pkg_change`:** after an `add` or `del` with `commit=true`, `/etc/apk/world` must list the
+    package, or no longer list it. Version constraints and repository tags in the file are
+    ignored; `upgrade` is not checked because it changes versions, not what was asked for.
+  - A read-back that cannot run is not a failed write: the result says `Not verified:` and why.
+  - `TestEveryWritePathVerifiesAfterWrite` lists every tool that is not read-only. Each one runs
+    against a backend that accepts the write and keeps none of it and must answer
+    `NOT_APPLIED`, or is exempt with a written reason (`uci_confirm`, `uci_rollback`,
+    `pkg_config_resolve`, `sysupgrade`, `exec`, `ubus_call`, `mfa_unlock`). A tool added later
+    fails the test until it is in one list.
 - **`net_diag` wifi_survey, traffic and usage; airtime in `network_clients` (ROADMAP 4.4, 4.5).**
   All read-only, so the existing `net_diag` grants cover them without widening.
   - **`wifi_survey[.<device>]`:** per radio, busy, rx and tx airtime and noise for the channels the
@@ -96,10 +126,16 @@ Added
   - Tool catalogue: 22,707 bytes; the budget moves to 22,750 and the prose budget to 11,850.
 
 Changed
+- **`service_control` fails when the final state contradicts the action.** It was a trailing
+  `Note:` on a success; it is now `NOT_APPLIED` for `stop` that leaves the service running and
+  for `enable` or `disable` that leave the flag unchanged. For `start`, `restart` and `reload`
+  it is an error only when procd has an instance of the service and none is running, because a
+  one-shot init script (the firewall, say) always reports "stopped" and must not fail; there it
+  stays a note. A caller that tested `err == nil` after a `stop` now sees the failure.
 - **Every error result ends with a code (ROADMAP 4.8).**
   - The last line is `[code: X]`, with X one of `POLICY_DENIED`, `MFA_REQUIRED`,
-    `ROLLBACK_PENDING`, `VALIDATION`, `NOT_FOUND`, `CONFLICT`, `TIMEOUT` or `FAILED` (anything
-    else). A client can branch on it without parsing prose. `TIMEOUT` adds `next: retry once,
+    `ROLLBACK_PENDING`, `VALIDATION`, `NOT_FOUND`, `CONFLICT`, `NOT_APPLIED`, `TIMEOUT` or
+    `FAILED` (anything else). A client can branch on it without parsing prose. `TIMEOUT` adds `next: retry once,
     then narrow the request`.
   - The message above it is unchanged, so the denial text still prints the exact `allow` line,
     and `CONFLICT:` still starts its message. The audit log's outcome is unchanged.

@@ -196,11 +196,23 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 			return "", "", fmt.Errorf("commit %s failed: %w\n%s (restore: %v)", c, err, out, rerr)
 		}
 	}
+	// Read back before any service is reloaded: a commit that kept something else must not be
+	// loaded by the daemons. The rollback stays armed, so the operator can undo what did land.
+	mismatches, verified := verifyApplied(ctx, names, in.Changes)
+	if len(mismatches) > 0 {
+		return "", "", notApplied("committed %s, but re-reading it does not show what was asked for. "+
+			"Nothing was reloaded:\n  %s\n\nThe rollback is still armed: it restores the previous config at %s, "+
+			"or undo it now with uci_rollback {\"token\": \"%s\"}. Do not confirm.",
+			strings.Join(names, ", "), strings.Join(mismatches, "\n  "), p.Deadline.Format(time.RFC3339), p.Token)
+	}
+	if verified != "" {
+		verified += "\n\n"
+	}
 	reloadOut := reloadConfigs(ctx, names, false)
 
 	unlock()
-	msg := fmt.Sprintf("Applied to %s and reloaded. Changes:\n%s\n\n%s\n\n%s\nRevision after apply: %s%s",
-		strings.Join(names, ", "), staged, report, armedNotice(p, timeout), revisionList(names), indentOut(reloadOut))
+	msg := fmt.Sprintf("Applied to %s and reloaded. Changes:\n%s\n\n%s\n\n%s%s\nRevision after apply: %s%s",
+		strings.Join(names, ", "), staged, report, verified, armedNotice(p, timeout), revisionList(names), indentOut(reloadOut))
 	return msg + probeSection(ctx, in, timeout), fmt.Sprintf("applied %d change(s) to %s, rollback armed %s",
 		len(in.Changes), strings.Join(names, ","), timeout), nil
 }

@@ -571,6 +571,18 @@ func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientI
 		return out, "", fmt.Errorf("committing peer: %w", err)
 	}
 
+	// Read the config back before the running interface is touched: a commit that kept nothing
+	// must not be hot-added, or the peer would exist only until the next restart.
+	verified := ""
+	if _, got, err := wgPeerNow(ctx, srv.Iface, pub); err != nil {
+		warn += "\nNot verified: could not re-read the network config (" + err.Error() + ")."
+	} else if got == nil || !got.InUCI || got.Name != name || !contains(got.Allowed, cfg.Address) {
+		return "", "", notApplied("committed network, but peer %q (%s) is not in the network config when read "+
+			"back. Nothing was added to %s. If a partial peer was saved, remove it with wg_remove_client.", name, cfg.Address, srv.Iface)
+	} else {
+		verified = "Verified: the peer is in the network config."
+	}
+
 	// Hot-add so established sessions survive. A failure here is not fatal: the peer is
 	// committed and will load at the next interface restart -- say so.
 	hot := []string{"wg", "set", srv.Iface, "peer", pub, "allowed-ips", cfg.Address}
@@ -584,6 +596,18 @@ func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientI
 	if hotErr != nil {
 		warn += "\nNOTE: the peer is saved but could not be added to the running interface (" + hotErr.Error() +
 			"); it will work after `ifup " + srv.Iface + "`."
+	} else if _, got, err := wgPeerNow(ctx, srv.Iface, pub); err != nil {
+		warn += "\nNot verified: could not re-read " + srv.Iface + " (" + err.Error() + ")."
+	} else if got == nil || !got.InKernel {
+		// The peer is saved and its key exists only in the file: keep the file for wg-show.
+		keepConf = confPath != ""
+		return "", "", notApplied("`wg set` succeeded, but the new peer is not on the running %s when read back. "+
+			"It is saved in the network config and will load after `ifup %s`.%s", srv.Iface, srv.Iface, wgKeepNote(confPath, name))
+	} else if verified != "" {
+		verified = "Verified: the peer is in the network config and on the running " + srv.Iface + "."
+	}
+	if verified != "" {
+		warn += "\n" + verified
 	}
 
 	// Summary is audited; the config and key are not. Keep both out of it.
@@ -709,10 +733,19 @@ func (s *Server) wgRemoveClient(ctx context.Context, client string, in wgRemoveI
 		return "", "", fmt.Errorf("%q completed a handshake %ds ago -- it is connected right now. If you are "+
 			"reaching the router through it you will lose access. Pass force=true to remove it anyway", p.Name, age)
 	}
-	var notes []string
+	var notes, gone []string
 	if p.InKernel {
 		if out, err := run(ctx, defaultCmdTimeout, "wg", "set", srv.Iface, "peer", p.PubKey, "remove"); err != nil {
 			notes = append(notes, "live removal failed: "+strings.TrimSpace(out))
+		} else if _, now, err := wgPeerNow(ctx, srv.Iface, p.PubKey); err != nil {
+			notes = append(notes, "Not verified: could not re-read "+srv.Iface+" ("+err.Error()+").")
+		} else if now != nil && now.InKernel {
+			// Deleting the config now would leave a peer that still carries traffic and is
+			// listed nowhere.
+			return "", "", notApplied("`wg set remove` succeeded, but the peer %q is still on %s when read back. "+
+				"The network config was not touched.", p.Name, srv.Iface)
+		} else {
+			gone = append(gone, "from "+srv.Iface)
 		}
 	}
 	if p.InUCI {
@@ -723,10 +756,21 @@ func (s *Server) wgRemoveClient(ctx context.Context, client string, in wgRemoveI
 		if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", "network"); err != nil {
 			return out, "", fmt.Errorf("committing: %w", err)
 		}
+		if t, _, err := wgPeerNow(ctx, srv.Iface, p.PubKey); err != nil {
+			notes = append(notes, "Not verified: could not re-read the network config ("+err.Error()+").")
+		} else if t.typ[p.Section] != "" {
+			return "", "", notApplied("committed network, but peer %q (section %s) is still in the network config "+
+				"when read back.", p.Name, p.Section)
+		} else {
+			gone = append([]string{"from the network config"}, gone...)
+		}
 	}
 	msg := fmt.Sprintf("Removed %q (%s, key %s…) from %s.", p.Name, strings.Join(p.Allowed, ","), short(p.PubKey), srv.Iface)
 	if len(notes) > 0 {
 		msg += "\n" + strings.Join(notes, "\n")
+	}
+	if len(gone) > 0 {
+		msg += "\nVerified: the peer is gone " + strings.Join(gone, " and ") + "."
 	}
 	return msg, fmt.Sprintf("removed wireguard client %q from %s", p.Name, srv.Iface), nil
 }

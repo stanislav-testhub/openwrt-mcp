@@ -6,21 +6,186 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strings"
 	"testing"
 )
 
+// uciModel is a stand-in for what uci holds, kept apart from the code under test: the
+// committed state, and the working state (committed plus staged) that `uci show` prints. lie
+// makes commit succeed and keep nothing, the failure verify-after-write exists to catch.
+type uciModel struct {
+	committed, working map[string]map[string]*modelSec // config -> section -> contents
+	lie                bool
+}
+
+type modelSec struct {
+	typ  string
+	opts map[string][]string
+}
+
+func newUCIModel(lie bool) *uciModel {
+	return &uciModel{committed: map[string]map[string]*modelSec{}, working: map[string]map[string]*modelSec{}, lie: lie}
+}
+
+func cloneConf(c map[string]*modelSec) map[string]*modelSec {
+	out := map[string]*modelSec{}
+	for n, s := range c {
+		cp := &modelSec{typ: s.typ, opts: map[string][]string{}}
+		for o, v := range s.opts {
+			cp.opts[o] = append([]string(nil), v...)
+		}
+		out[n] = cp
+	}
+	return out
+}
+
+// edit applies one staged uci command (argv without the leading "uci" and "-q").
+func (m *uciModel) edit(op, key string) {
+	lhs, val, hasVal := strings.Cut(key, "=")
+	parts := strings.Split(lhs, ".")
+	if len(parts) < 2 {
+		return
+	}
+	cfg, sec := parts[0], parts[1]
+	if m.working[cfg] == nil {
+		m.working[cfg] = map[string]*modelSec{}
+	}
+	c := m.working[cfg]
+	get := func() *modelSec {
+		if c[sec] == nil {
+			c[sec] = &modelSec{opts: map[string][]string{}}
+		}
+		return c[sec]
+	}
+	switch {
+	case op == "set" && len(parts) == 2 && hasVal:
+		get().typ = val
+	case op == "set" && len(parts) == 3 && val == "":
+		delete(get().opts, parts[2])
+	case op == "set" && len(parts) == 3:
+		get().opts[parts[2]] = []string{val}
+	case op == "delete" && len(parts) == 2:
+		delete(c, sec)
+	case op == "delete" && len(parts) == 3:
+		delete(get().opts, parts[2])
+	case op == "add_list" && len(parts) == 3:
+		s := get()
+		s.opts[parts[2]] = append(s.opts[parts[2]], val)
+	case op == "del_list" && len(parts) == 3:
+		s := get()
+		var keep []string
+		for _, v := range s.opts[parts[2]] {
+			if v != val {
+				keep = append(keep, v)
+			}
+		}
+		if len(keep) == 0 {
+			delete(s.opts, parts[2])
+		} else {
+			s.opts[parts[2]] = keep
+		}
+	}
+}
+
+func (m *uciModel) commit(cfg string) {
+	if !m.lie {
+		m.committed[cfg] = cloneConf(m.working[cfg])
+	}
+	m.working[cfg] = cloneConf(m.committed[cfg])
+}
+
+func (m *uciModel) revert(cfg string) { m.working[cfg] = cloneConf(m.committed[cfg]) }
+
+// seed loads a config from `uci show` text as already committed.
+func (m *uciModel) seed(cfg, show string) {
+	t := parseUCIShow(show)
+	c := map[string]*modelSec{}
+	section := func(name string) *modelSec {
+		if c[name] == nil {
+			c[name] = &modelSec{opts: map[string][]string{}}
+		}
+		return c[name]
+	}
+	for name, typ := range t.typ {
+		section(name).typ = typ
+	}
+	for name, opts := range t.opt {
+		for o, v := range opts {
+			section(name).opts[o] = append([]string(nil), v...)
+		}
+	}
+	m.committed[cfg], m.working[cfg] = c, cloneConf(c)
+}
+
+// show renders `uci show`'s lines for the working state, filtered to key when it names more
+// than a config. A key that matches nothing is an error, as `uci -q show` exits 1.
+func (m *uciModel) show(key string) (string, error) {
+	cfg := strings.SplitN(key, ".", 2)[0]
+	var names []string
+	for n := range m.working[cfg] {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var lines []string
+	for _, n := range names {
+		s := m.working[cfg][n]
+		if s.typ != "" {
+			lines = append(lines, cfg+"."+n+"="+s.typ)
+		}
+		var opts []string
+		for o := range s.opts {
+			opts = append(opts, o)
+		}
+		sort.Strings(opts)
+		for _, o := range opts {
+			var q []string
+			for _, v := range s.opts[o] {
+				q = append(q, "'"+v+"'")
+			}
+			lines = append(lines, cfg+"."+n+"."+o+"="+strings.Join(q, " "))
+		}
+	}
+	if key == cfg {
+		return strings.Join(lines, "\n"), nil
+	}
+	var out []string
+	for _, l := range lines {
+		if strings.HasPrefix(l, key+"=") || strings.HasPrefix(l, key+".") {
+			out = append(out, l)
+		}
+	}
+	if len(out) == 0 {
+		return "", errors.New("exit status 1")
+	}
+	return strings.Join(out, "\n"), nil
+}
+
 // fakeUCI simulates just enough of uci for the apply path: staged changes accumulate per
-// config, `changes` reports them, `revert` drops them, and `commit` writes a marker into the
-// real fixture file so a restore can be checked byte for byte.
+// config, `changes` reports them, `revert` drops them, `show` prints what a model of the
+// config holds, and `commit` writes a marker into the real fixture file so a restore can be
+// checked byte for byte.
 func fakeUCI(t *testing.T, f *fakeRouter) map[string][]string {
+	staged, _ := fakeUCIWith(t, f, false)
+	return staged
+}
+
+// fakeUCIWith is fakeUCI with the model returned, and with lie making every commit a no-op.
+func fakeUCIWith(t *testing.T, f *fakeRouter, lie bool) (map[string][]string, *uciModel) {
+	model := newUCIModel(lie)
 	staged := map[string][]string{}
 	cfgOf := func(key string) string { return strings.SplitN(key, ".", 2)[0] }
 	stage := func(argv []string, _ string) (string, error) {
 		key := argv[len(argv)-1]
 		staged[cfgOf(key)] = append(staged[cfgOf(key)], strings.Join(argv[1:], " "))
+		args := argv[1:]
+		if args[0] == "-q" {
+			args = args[1:]
+		}
+		model.edit(args[0], key)
 		return "", nil
 	}
+	f.onFn("uci -q show", func(argv []string, _ string) (string, error) { return model.show(argv[len(argv)-1]) })
 	f.onFn("uci set", stage)
 	f.onFn("uci delete", stage)
 	f.onFn("uci -q delete", stage)
@@ -38,6 +203,7 @@ func fakeUCI(t *testing.T, f *fakeRouter) map[string][]string {
 	})
 	f.onFn("uci revert", func(argv []string, _ string) (string, error) {
 		delete(staged, argv[2])
+		model.revert(argv[2])
 		return "", nil
 	})
 	f.onFn("uci commit", func(argv []string, _ string) (string, error) {
@@ -46,11 +212,12 @@ func fakeUCI(t *testing.T, f *fakeRouter) map[string][]string {
 		b, _ := os.ReadFile(p)
 		b = append(b, []byte("# committed: "+strings.Join(staged[c], "; ")+"\n")...)
 		delete(staged, c)
+		model.commit(c)
 		return "", os.WriteFile(p, b, 0o644)
 	})
 	f.on("/sbin/reload_config", "")
 	f.on("ubus call service event", "")
-	return staged
+	return staged, model
 }
 
 const origDHCP = "config dnsmasq\n\toption domain 'lan'\n"

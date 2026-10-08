@@ -107,11 +107,7 @@ func TestNewClientAllocatesConfiguresAndHotAdds(t *testing.T) {
 		"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
 	f.on("wg genkey", "CLIENTPRIV=\n")
 	f.on("wg pubkey", "CLIENTPUB=\n")
-	f.on("uci add network wireguard_wg0", "cfg1496fc\n")
-	f.on("uci set", "")
-	f.on("uci add_list", "")
-	f.on("uci commit network", "")
-	f.on("wg set wg0", "")
+	newWGBackend(f, 0, false, false)
 
 	s := testServer(t, "")
 	out, summary, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop", Reveal: true})
@@ -182,9 +178,7 @@ func TestRemoveAmbiguousNameAsksToNarrow(t *testing.T) {
 
 func TestRemoveRefusesALiveTunnelUnlessForced(t *testing.T) {
 	f := wgFake(t, time.Now().Unix()-30)
-	f.on("wg set wg0 peer PEERC= remove", "")
-	f.on("uci delete network.cfg1396fc", "")
-	f.on("uci commit network", "")
+	newWGBackend(f, time.Now().Unix()-30, false, false)
 	s := testServer(t, "")
 	if _, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{Name: "tablet"}); err == nil ||
 		!strings.Contains(err.Error(), "connected right now") {
@@ -263,11 +257,7 @@ func TestWgNewClientThroughTheWrapperIsUntouched(t *testing.T) {
 		"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
 	f.on("wg genkey", "CLIENTPRIV=\n")
 	f.on("wg pubkey", "CLIENTPUB=\n")
-	f.on("uci add network wireguard_wg0", "cfg1496fc\n")
-	f.on("uci set", "")
-	f.on("uci add_list", "")
-	f.on("uci commit network", "")
-	f.on("wg set wg0", "")
+	newWGBackend(f, 0, false, false)
 
 	// The client name is echoed back in the output. Its shape, a UCI option assignment with a
 	// secret name, is exactly what the masker looks for, so only a real exemption leaves it alone.
@@ -277,6 +267,7 @@ func TestWgNewClientThroughTheWrapperIsUntouched(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	newWGBackend(f, 0, false, false) // a fresh router: the first call's peer would make the second a duplicate
 	wrapped, isErr := callText(t, connectClient(t, s, "c"), "wg_new_client", map[string]any{"name": name, "reveal": true})
 	if isErr {
 		t.Fatalf("the tool failed through the wrapper:\n%s", wrapped)
@@ -316,7 +307,11 @@ func TestWgNewClientThroughTheWrapperIsUntouched(t *testing.T) {
 // wgNewFake is wgFake plus everything wg_new_client runs, in a fixture root so the config file
 // lands in a temp dir. The returned directory is where the daemon leaves client configs: beside
 // the default socket, in RAM.
-func wgNewFake(t *testing.T) (*Server, *fakeRouter, string) {
+func wgNewFake(t *testing.T) (*Server, *fakeRouter, string) { return wgNewFakeWith(t, false, false) }
+
+// wgNewFakeWith is wgNewFake over a backend that keeps what is written to it, or, with a lie
+// flag, accepts the write to that layer (the network config, the kernel's peer table) and keeps nothing.
+func wgNewFakeWith(t *testing.T, lieUCI, lieKernel bool) (*Server, *fakeRouter, string) {
 	t.Helper()
 	root := withFixtureRoot(t)
 	f := wgFake(t, 0)
@@ -326,11 +321,7 @@ func wgNewFake(t *testing.T) (*Server, *fakeRouter, string) {
 		"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
 	f.on("wg genkey", "CLIENTPRIV=\n")
 	f.on("wg pubkey", "CLIENTPUB=\n")
-	f.on("uci add network wireguard_wg0", "cfg1496fc\n")
-	f.on("uci set", "")
-	f.on("uci add_list", "")
-	f.on("uci commit network", "")
-	f.on("wg set wg0", "")
+	newWGBackend(f, 0, lieUCI, lieKernel)
 	return testServer(t, ""), f, filepath.Join(root, "var", "run", "openwrt-mcp", "wg")
 }
 

@@ -423,11 +423,7 @@ func TestEveryWritePathLeavesAHistoryEntry(t *testing.T) {
 			"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
 		f.on("wg genkey", "CLIENTPRIV=\n")
 		f.on("wg pubkey", "CLIENTPUB=\n")
-		f.on("uci add network wireguard_wg0", "cfg1496fc\n")
-		f.on("uci set", "")
-		f.on("uci add_list", "")
-		f.on("uci commit network", "")
-		f.on("wg set wg0", "")
+		newWGBackend(f, 0, false, false)
 		s := testServer(t, "")
 		if _, _, err := s.wgNewClient(ctx, "c", wgNewClientIn{Name: "laptop"}); err != nil {
 			t.Fatal(err)
@@ -442,9 +438,7 @@ func TestEveryWritePathLeavesAHistoryEntry(t *testing.T) {
 		root := withFixtureRoot(t)
 		writeFixture(t, root, "etc/config/network", "config interface 'wg0'\n")
 		f := wgFake(t, 0)
-		f.on("wg set wg0 peer PEERC= remove", "")
-		f.on("uci delete network.cfg1396fc", "")
-		f.on("uci commit network", "")
+		newWGBackend(f, 0, false, false)
 		s := testServer(t, "")
 		if _, _, err := s.wgRemoveClient(ctx, "c", wgRemoveIn{Name: "tablet"}); err != nil {
 			t.Fatal(err)

@@ -243,6 +243,15 @@ func pkgChange(ctx context.Context, in pkgChangeIn) (string, string, error) {
 		fmt.Fprintf(&pre, "\n\nNew config defaults were NOT applied because you have local changes; "+
 			"review with pkg_config_diff:\n  %s", strings.Join(fresh, "\n  "))
 	}
+	// An upgrade changes versions, not what the operator asked to have installed, so only add
+	// and del have a record to read back.
+	verified, err := verifyWorld(in.Action, in.Packages)
+	if err != nil {
+		return pre.String(), summary, err
+	}
+	if verified != "" {
+		pre.WriteString("\n\n" + verified)
+	}
 	return pre.String(), summary, nil
 }
 

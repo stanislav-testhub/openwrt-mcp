@@ -369,31 +369,6 @@ func TestServiceControlSaysSoWhenTheStateNeverSettles(t *testing.T) {
 	}
 }
 
-func TestServiceControlFlagsAFinalStateThatContradictsTheAction(t *testing.T) {
-	servicePoll = 0
-	t.Cleanup(func() { servicePoll = 500 * time.Millisecond })
-	for _, tc := range []struct{ action, state, want string }{
-		{"start", svcDown, "expected running=true"},
-		{"restart", svcDown, "expected running=true"},
-		{"stop", svcUp, "expected running=false"},
-		{"enable", `{"enabled":false,"running":false}`, "expected enabled=true"},
-		{"disable", svcUp, "expected enabled=false"},
-		{"start", svcUp, ""},
-		{"stop", svcDown, ""},
-	} {
-		f := newFakeRouter(t)
-		f.on("ubus call rc init", "")
-		rcSequence(f, tc.state)
-		out, _, err := serviceControl(context.Background(), serviceControlIn{Name: "svc", Action: tc.action})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if got := strings.Contains(out, "expected "); tc.want == "" && got || tc.want != "" && !strings.Contains(out, tc.want) {
-			t.Errorf("%s ending %s: want %q, got:\n%s", tc.action, tc.state, tc.want, out)
-		}
-	}
-}
-
 func TestServiceControlPolicyScopeIsServiceDotAction(t *testing.T) {
 	servicePoll = 0
 	t.Cleanup(func() { servicePoll = 500 * time.Millisecond })

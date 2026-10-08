@@ -55,10 +55,11 @@ func mgmtFixture(t *testing.T) (*Server, *fakeRouter) {
 		writeFixture(t, root, "etc/config/"+c, "config x '"+c+"'\n")
 	}
 	f := newFakeRouter(t)
-	fakeUCI(t, f)
-	f.on("uci -q show network", mgmtNetwork)
-	f.on("uci -q show dropbear", mgmtDropbear)
-	f.on("uci -q show firewall", mgmtFirewall)
+	_, model := fakeUCIWith(t, f, false)
+	// Seeded into the model, not answered with fixed text, so a read-back after a commit sees the change.
+	model.seed("network", mgmtNetwork)
+	model.seed("dropbear", mgmtDropbear)
+	model.seed("firewall", mgmtFirewall)
 	return testServer(t, ""), f
 }
 

@@ -352,9 +352,36 @@ func serviceControl(ctx context.Context, in serviceControlIn) (string, string, e
 	msg := fmt.Sprintf("%s %s: done. Now enabled=%v running=%v. Settled after %s.",
 		in.Action, in.Name, e.Enabled, e.Running, took.Round(100*time.Millisecond))
 	if why := contradiction(in.Action, e); why != "" {
+		// A start that ends "stopped" is also what a one-shot init script reports, so it is only
+		// an error when procd has an instance of this service and none of them runs.
+		if !startsService(in.Action) || procdInstanceDown(ctx, in.Name) {
+			return "", "", notApplied("%s %s: the command succeeded, but the service is not in the requested state: "+
+				"%s (now enabled=%v running=%v). Check logread.", in.Action, in.Name, why, e.Enabled, e.Running)
+		}
 		msg += " Note: " + why + " -- check logread."
 	}
 	return msg, in.Action + " " + in.Name, nil
+}
+
+func startsService(action string) bool {
+	return action == "start" || action == "restart" || action == "reload"
+}
+
+// procdInstanceDown reports whether procd has instances of the service and none is running.
+// A service procd does not know, or a reply that cannot be read, is "no": the caller then has
+// nothing firmer than rc list's flag, which a one-shot script always reports as stopped.
+func procdInstanceDown(ctx context.Context, name string) bool {
+	var m map[string]procdService
+	if err := runJSON(ctx, &m, "ubus", "call", "service", "list", fmt.Sprintf(`{"name":%q}`, name)); err != nil {
+		return false
+	}
+	svc := m[name]
+	for _, inst := range svc.Instances {
+		if inst.Running {
+			return false
+		}
+	}
+	return len(svc.Instances) > 0
 }
 
 // awaitService polls rc list until the service's state has been the same for serviceStableReads
