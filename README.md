@@ -4,6 +4,7 @@
 [![Release](https://img.shields.io/github/v/release/stanislav-testhub/openwrt-mcp)](https://github.com/stanislav-testhub/openwrt-mcp/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![OpenWrt 25.12+](https://img.shields.io/badge/OpenWrt-25.12%2B-00B5E2)
+[![M8ven Score](https://m8ven.ai/badge/mcp/stanislav-testhub-openwrt-mcp-1sd9jd?v=be6459adc68e5b28e87e74e3326a9ab7&variant=verified)](https://m8ven.ai/mcp/stanislav-testhub-openwrt-mcp-1sd9jd?s=readme)
 
 An [MCP](https://modelcontextprotocol.io) server that runs **on** an OpenWrt router, so
 Claude Code (or any MCP client) can inspect and change it -- behind deny-by-default policies,
