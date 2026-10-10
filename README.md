@@ -397,8 +397,14 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   a second apply refused while one is pending; `uci_confirm`; `uci_rollback` on demand;
   `dry_run`.
 - **WireGuard:** `wg_new_client` with a preshared key (next free address, peer committed to UCI
-  and hot-added to the kernel, config + QR, CGNAT endpoint warning), listed, then
-  `wg_remove_client` -- `/etc/config/network` back byte-identical, kernel peer gone.
+  and hot-added to the kernel, CGNAT endpoint warning), listed, then `wg_remove_client` --
+  `/etc/config/network` back byte-identical, kernel peer gone. The 1.3.0 hand-over (second
+  run, on an interface enabled for the test through `uci_apply` and disabled again afterwards,
+  its config revision identical to before): the result carried no private key; the config was
+  a root-only `0600` file in a `0700` directory under `/var/run`; `openwrt-mcp wg-show`, run
+  from an operator terminal, printed the config and QR code and deleted the file. The
+  1.4.0 read-back printed `Verified: ...` for `uci_apply`, `wg_new_client` and
+  `wg_remove_client`, each applied with the rollback armed and then confirmed.
 - **Crash recovery:** the daemon `SIGKILL`ed with an unconfirmed apply -> procd respawned it
   after 6 s and it rolled the change back at startup.
 - **Refusals:** `exec`, `ubus_call session.list`, out-of-scope `uci_apply` (each naming the
@@ -470,13 +476,11 @@ the LuCI page rendering, the web-root guard on a real `/www` path or symlink, a 
 recovery path is the same one the `SIGKILL` test exercises), and keep.d across a real sysupgrade. For
 1.2.0 also: a management-path change applied *with* probes (only its refusal without one was run),
 a probe failure left to the rollback timer instead of `uci_rollback`, and history across a
-sysupgrade. For 1.3.0 also: the `wg_new_client` hand-over and `wg-show` (the test router's `wg0` was
-not up, and starting it was not part of the check), `connect --write` against a real Claude Code,
+sysupgrade. For 1.3.0 also: `connect --write` against a real Claude Code,
 Codex, Claude Desktop, Gemini or VS Code (only the file merge and the command line are tested),
 anything on macOS, and the installer's download path on a router (the release workflow has run and
-published 1.2.0 and 1.3.0, but `install-router.sh` has not been run against them). For 1.4.0 also: the read-back after a write (`uci_apply`, `wg_new_client`, `wg_remove_client`,
-`service_control`, `pkg_change`) ran only against the fake router, because the checks above used a
-read-only client, and the log summary has only seen the log of one router. The file modes of the WireGuard hand-over are asserted on Linux in CI. Reports from
+published 1.2.0 and 1.3.0, but `install-router.sh` has not been run against them). For 1.4.0 also: the read-back after a write ran on hardware for `uci_apply`, `wg_new_client`
+and `wg_remove_client` only; `service_control` and `pkg_change` ran against the fake router, and the log summary has only seen the log of one router. The file modes of the WireGuard hand-over are asserted on Linux in CI. Reports from
 other boards are welcome.
 
 ---
