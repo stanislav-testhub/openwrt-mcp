@@ -82,7 +82,7 @@ are welcome.
 | Web UI | GL.iNet oui-httpd page | LuCI page, *Services -> MCP Server* (read-only) |
 | Transport | HTTP over an `ssh -L` tunnel | same, **plus stdio over SSH** via a key-bound forced command -- no tunnel to keep alive |
 | Rollback snapshot | `/tmp` (lost on reboot) | **on flash**; an unconfirmed change is rolled back at the next start, including after a power cycle |
-| `uci_apply` | set / create / delete | **+ `add_list`, `del_list`, `set_list`, `dry_run`**, shows the staged `uci changes`, strict name validation A dry run ends with advice, `warnings from this change`. |
+| `uci_apply` | set / create / delete | **+ `add_list`, `del_list`, `set_list`, `dry_run`**, shows the staged `uci changes`, strict name validation. A dry run ends with advice, `warnings from this change`. |
 | Reload | `ubus call uci reload_config` (async) | `/sbin/reload_config`, plus explicit `config.change` events when it has no checksums (first run after boot) |
 | WireGuard | GL `wireguard_server` / `gl_ddns` | stock `network.<iface>` + `wireguard_<iface>` peers, DDNS from `ddns`, CGNAT warning, PSK, list and remove |
 | Packages | -- | `pkg_query`, `pkg_change` (simulate first), `.apk-new` review with a settings-level diff |
@@ -263,7 +263,7 @@ checks the chain in order and stops at the first break, with one fix for it:
 
 The steps are: SSH reachable, host key, key accepted, forced command, daemon socket, `initialize`,
 `tools/list`. Wrong key, a missing forced command, a stopped daemon and a disabled socket each name
-their own step. 
+their own step.
 
 **After a reboot or a daemon restart.** A reboot, an `install.sh` upgrade or a crash ends every open session: the
 `openwrt-mcp stdio` bridge exits with `daemon closed the connection`, and the client shows the server as disconnected.
@@ -575,10 +575,9 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   installer's steps. `service_list detail=` read tailscale, AdGuard Home and podkop. The dry-run
   warnings and the WireGuard writers ran on a throwaway interface made for the test (never the
   LAN, never the real tunnel), which was removed afterwards: a peer added and removed through the
-  rollback-armed path, a rollback that put the peer back, and the staged-edit refusal. `openwrt-mcp
-  call` ran over SSH from the PC, and a second client entry with `--toolset diag --read-only` saw
-  only the diag tools and was refused a write when it tried one. The hardware run found a false
-  `NOT_APPLIED` after removing a peer that was not the last one (UCI's anonymous section ids are
+  rollback-armed path and a rollback that put the peer back. `openwrt-mcp
+  call` and a session with `--toolset diag --read-only` ran over SSH from the PC. The hardware run
+  found a false   `NOT_APPLIED` after removing a peer that was not the last one (UCI's anonymous section ids are
   positional, so the read-back looked at the wrong section); it is fixed, and the test fake now
   renumbers them the way UCI does.
 
