@@ -216,7 +216,6 @@ func TestOpkgChangeMapsEveryActionToItsOpkgCommand(t *testing.T) {
 		{pkgChangeIn{Action: "add", Packages: []string{"a", "b"}}, "opkg --noaction install a b"},
 		{pkgChangeIn{Action: "del", Packages: []string{"a"}}, "opkg --noaction remove a"},
 		{pkgChangeIn{Action: "upgrade", Packages: []string{"a"}}, "opkg --noaction upgrade a"},
-		{pkgChangeIn{Action: "upgrade"}, "opkg --noaction upgrade"},
 		{pkgChangeIn{Action: "del", Packages: []string{"a"}, Commit: true}, "opkg remove a"},
 		{pkgChangeIn{Action: "upgrade", Packages: []string{"a"}, Commit: true}, "opkg upgrade a"},
 	} {
@@ -227,6 +226,34 @@ func TestOpkgChangeMapsEveryActionToItsOpkgCommand(t *testing.T) {
 		_, summary, _ := pkgChange(context.Background(), c.in)
 		if summary != c.want {
 			t.Errorf("%+v: %q, want %q", c.in, summary, c.want)
+		}
+	}
+}
+
+// opkg upgrade has no upgrade-everything form: it needs the names, so a bare upgrade takes
+// them from list-upgradable (seen on a 24.10.8 rootfs, where a bare "opkg upgrade" prints usage).
+func TestOpkgUpgradeWithNoPackagesNamesWhatIsUpgradable(t *testing.T) {
+	f, _ := opkgRouter(t)
+	f.on("opkg update", "ok")
+	f.on("opkg list-upgradable", "base-files - 1556-r27996 - 1557-r27997\nbusybox - 1.36.1-r1 - 1.36.1-r2\n")
+	f.on("opkg", "done")
+	_, summary, err := pkgChange(context.Background(), pkgChangeIn{Action: "upgrade"})
+	if err != nil || summary != "opkg --noaction upgrade base-files busybox" {
+		t.Errorf("%v / %q", err, summary)
+	}
+}
+
+func TestOpkgUpgradeWithNothingUpgradableRunsNoUpgrade(t *testing.T) {
+	for _, commit := range []bool{false, true} {
+		f, _ := opkgRouter(t)
+		f.on("opkg update", "ok")
+		f.on("opkg list-upgradable", "")
+		out, _, err := pkgChange(context.Background(), pkgChangeIn{Action: "upgrade", Commit: commit})
+		if err != nil || !strings.Contains(out, "upgrade nothing") && !strings.Contains(out, "Nothing to upgrade") {
+			t.Errorf("commit=%v: %v\n%s", commit, err, out)
+		}
+		if f.ran("opkg --noaction") || f.ran("opkg upgrade") {
+			t.Errorf("commit=%v ran an upgrade:\n%s", commit, f.allCalls())
 		}
 	}
 }
