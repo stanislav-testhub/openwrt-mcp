@@ -571,6 +571,16 @@ Windows exactly as Claude Code does (`ssh.exe` with a forced-command key, stdio 
   interfaces for three seconds and ranked the conntrack sources by bytes; `usage` listed the
   devices from nlbwmon for the current monthly period; `network_clients` showed an `AIR` column
   whose shares added up to about 100% on each radio.
+- **Reach and resilience (1.5.0), on the same board, 25.12.5:** the build was deployed with the
+  installer's steps. `service_list detail=` read tailscale, AdGuard Home and podkop. The dry-run
+  warnings and the WireGuard writers ran on a throwaway interface made for the test (never the
+  LAN, never the real tunnel), which was removed afterwards: a peer added and removed through the
+  rollback-armed path, a rollback that put the peer back, and the staged-edit refusal. `openwrt-mcp
+  call` ran over SSH from the PC, and a second client entry with `--toolset diag --read-only` saw
+  only the diag tools and was refused a write when it tried one. The hardware run found a false
+  `NOT_APPLIED` after removing a peer that was not the last one (UCI's anonymous section ids are
+  positional, so the read-back looked at the wrong section); it is fixed, and the test fake now
+  renumbers them the way UCI does.
 
 Unit and end-to-end tests (real MCP client over in-memory transport and over the bridge
 handshake) run on any OS against a fake router: apply/confirm/rollback/timeout, **restart
@@ -588,7 +598,7 @@ Codex, Claude Desktop, Gemini or VS Code (only the file merge and the command li
 anything on macOS, and the installer's download path on a router (the release workflow has run and
 published 1.2.0 and 1.3.0, but `install-router.sh` has not been run against them). For 1.4.0 also: the read-back after a write ran on hardware for `uci_apply`, `wg_new_client`
 and `wg_remove_client` only; `service_control` and `pkg_change` ran against the fake router, and the log summary has only seen the log of one router. The file modes of the WireGuard hand-over are asserted on Linux in CI. Reports from
-other boards are welcome.
+Reports from other boards are welcome.
 
 ---
 
