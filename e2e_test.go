@@ -139,8 +139,18 @@ func TestReadonlyPresetAllowsReadsAndRefusesWrites(t *testing.T) {
 func TestBridgeHandshakeThenMCP(t *testing.T) {
 	s := testServer(t, "")
 	srvSide, cliSide := net.Pipe()
-	go s.handleBridge(srvSide)
-	defer cliSide.Close()
+	done := make(chan struct{})
+	go func() { s.handleBridge(srvSide); close(done) }()
+	// The session-closed audit record is written after the client hangs up; the temp dir must
+	// outlive it.
+	defer func() {
+		cliSide.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the bridge session did not end after the client hung up")
+		}
+	}()
 	_ = cliSide.SetDeadline(time.Now().Add(5 * time.Second))
 
 	w := bufio.NewWriter(cliSide)
