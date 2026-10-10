@@ -56,6 +56,9 @@ Added
   management options.
 
 Changed
+- **`wg_new_client` with `reveal=true` has its own scope**, `wireguard.<iface>.reveal` (`wireguard.reveal` without an
+  interface), so a policy can allow the tool without ever putting the private key in the conversation. A grant for
+  `wireguard.<iface>` alone no longer covers `reveal=true`; `wireguard.*`, `*` and the presets are unchanged.
 - **`wg_new_client` and `wg_remove_client` no longer hot-add or hot-remove with `wg set`.** They save the peer in the network
   config through the standard rollback path (snapshot, armed rollback, reload, read-back) and need `uci_confirm` within 90 s;
   otherwise the change is reverted (a new client's key file is deleted too).

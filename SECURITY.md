@@ -98,7 +98,7 @@ Everything a tool returns goes through one path: sanitise, mask, bound, label.
   `openwrt-mcp wg-show`, which deletes it. An uncollected file is swept after 24 hours and lost
   at reboot. A `sysupgrade` backup is created `0600` before it is written, and the tool keeps
   only the newest archive it made. A model that is told to run `wg_new_client` therefore never
-  sees the key unless it also sets `reveal`, and a policy cannot yet tell the two apart.
+  sees the key unless it also sets `reveal`, and a policy can tell the two apart: `reveal=true` needs the scope `wireguard.<iface>.reveal`, which a grant for `wireguard.<iface>` alone does not cover.
 - **`openwrt-mcp diag` is made to be pasted into a public issue.** It masks IPv4, IPv6 and MAC
   addresses by shape and names (host, DHCP, SSID, domain, WireGuard peer) by looking them up in
   the router's own configuration, and it never prints audit arguments. A name that appears only in

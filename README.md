@@ -112,7 +112,7 @@ are welcome.
 | `pkg_config_resolve` | live path | keep_current (drop the new default) or use_new (install it; rollback-armed for UCI configs). |
 | `sysupgrade` | `<action>` | list (preserved files), test (validate an image in /tmp), check (`owut`), backup (mode 0600; the previous archive this tool made is removed). **Never flashes.** |
 | `wg_list_clients` | tool | Peers with handshake age, endpoint, traffic, config/kernel mismatch, duplicate names. |
-| `wg_new_client` | `wireguard.<iface>` | Keypair, next free address, peer saved in the network config; `uci_confirm` keeps it. The private key and config go to a root-only file; you collect them with `openwrt-mcp wg-show <name>` (config and QR in your own terminal). `reveal=true` returns them in the result instead. |
+| `wg_new_client` | `wireguard.<iface>`; `wireguard.<iface>.reveal` for `reveal=true` | Keypair, next free address, peer saved in the network config; `uci_confirm` keeps it. The private key and config go to a root-only file; you collect them with `openwrt-mcp wg-show <name>` (config and QR in your own terminal). `reveal=true` returns them in the result instead. |
 | `wg_remove_client` | `wireguard.<iface>.<name>` | By name, key or section, from the config and the interface; rollback armed (`uci_confirm` keeps it). Refuses a peer connected in the last 3 minutes, or this session's own, unless `force=true`. |
 | `ubus_list` | *(ungated)* | Discovery: every object, method and argument signature. |
 | `ubus_call` | `<object>.<method>` | Anything else on the bus. Replies over 8 KB have long arrays pruned. |

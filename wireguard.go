@@ -319,11 +319,17 @@ func sweepWGConfigs(dir string, maxAge time.Duration) {
 	}
 }
 
+// reveal=true puts the private key in the result, so it has its own scope: a grant for the
+// interface alone does not cover it, `wireguard.*` and `*` still do.
 func wgNewScope(in wgNewClientIn) []string {
-	if in.Iface == "" {
-		return []string{"wireguard"}
+	sc := "wireguard"
+	if in.Iface != "" {
+		sc += "." + in.Iface
 	}
-	return []string{"wireguard." + in.Iface}
+	if in.Reveal {
+		sc += ".reveal"
+	}
+	return []string{sc}
 }
 
 // nextFreeClientIP picks the lowest host address in the server's subnet that no peer

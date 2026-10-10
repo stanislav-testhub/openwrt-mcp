@@ -1076,3 +1076,25 @@ func TestRemoveClientRefusesOnTopOfStagedNetworkEdits(t *testing.T) {
 		t.Errorf("the refusal came after a change:\n%s", f.allCalls())
 	}
 }
+
+// reveal=true puts the private key in the model's context, so a policy must be able to grant
+// wg_new_client without it. The scope therefore differs, and a grant for the interface alone
+// (or the default result) does not cover it.
+func TestWGNewScopeSeparatesReveal(t *testing.T) {
+	plain := wgNewScope(wgNewClientIn{Iface: "wg0"})[0]
+	rev := wgNewScope(wgNewClientIn{Iface: "wg0", Reveal: true})[0]
+	if rev != "wireguard.wg0.reveal" {
+		t.Fatalf("reveal scope = %q", rev)
+	}
+	if ok, _ := path.Match(plain, rev); ok {
+		t.Error("a grant for wg0 covers reveal=true")
+	}
+	for _, g := range []string{"wireguard.wg0.reveal", "wireguard.*", "*"} {
+		if ok, _ := path.Match(g, rev); !ok {
+			t.Errorf("grant %q does not cover reveal", g)
+		}
+	}
+	if got := wgNewScope(wgNewClientIn{Reveal: true})[0]; got != "wireguard.reveal" {
+		t.Errorf("reveal without iface = %q", got)
+	}
+}
