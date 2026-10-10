@@ -787,6 +787,8 @@ func (s *Server) wgRemoveClient(ctx context.Context, client string, in wgRemoveI
 	if len(gone) > 0 {
 		msg += "\nVerified: the peer is gone " + strings.Join(gone, " and ") + "."
 	}
+	// An uncollected hand-over file holds the removed peer's private key: take it with the peer.
+	_ = os.Remove(sysPath(wgClientFile(s.cfg(), p.Name)))
 	msg += indentOut(reloadOut) + "\n\nThe client is gone for good only once this is confirmed; otherwise it is put back.\n" + armedNotice(pa, timeout)
 	return msg, fmt.Sprintf("removed wireguard client %q from %s", p.Name, srv.Iface), nil
 }

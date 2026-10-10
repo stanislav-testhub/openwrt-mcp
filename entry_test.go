@@ -327,3 +327,22 @@ func bridgeRaw(t *testing.T, sock, lines string) string {
 	}
 	return out.String()
 }
+
+// A refused command ends the session at once, which looks like a daemon crash from the bridge's
+// side. The person at the shell must be told the command was refused, and why.
+func TestRunBridgeNamesTheRefusalNotADeadDaemon(t *testing.T) {
+	s := testServer(t, "")
+	sock := listenTestSocket(t, s)
+	swapStdio(t)
+	t.Setenv("SSH_ORIGINAL_COMMAND", "--toolset bogus")
+	done := make(chan error, 1)
+	go func() { done <- runBridge(sock, "claude-code") }()
+	select {
+	case err := <-done:
+		if err == nil || strings.Contains(err.Error(), "daemon closed") || !strings.Contains(err.Error(), "bad toolset") {
+			t.Fatalf("runBridge = %v, want the refusal reason", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("runBridge did not end after the daemon refused the command")
+	}
+}

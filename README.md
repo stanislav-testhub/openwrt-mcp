@@ -299,6 +299,7 @@ there is no word in it that widens a session.
 ssh -T root@192.168.1.1 call --list
 ssh -T root@192.168.1.1 call uci_get --help
 ssh -T root@192.168.1.1 call uci_get '{"config":"network"}'
+ssh -T root@192.168.1.1 -- --read-only call uci_get '{"config":"network"}'   # after a profile word, `--` ends ssh's own options
 ```
 
 The result is text on stdout; a refusal or error goes to stderr with the `allow` line and exit status 1. The call runs through

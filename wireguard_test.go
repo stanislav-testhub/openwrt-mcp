@@ -1098,3 +1098,25 @@ func TestWGNewScopeSeparatesReveal(t *testing.T) {
 		t.Errorf("reveal without iface = %q", got)
 	}
 }
+
+// Hardware, 2026-10-10: removing a client whose config nobody had collected left the file, and so the
+// removed peer's private key, in the client directory until the 24 h sweep.
+func TestRemoveClientDeletesItsUncollectedConfig(t *testing.T) {
+	withFixtureRoot(t)
+	f := wgFake(t, 0)
+	newWGBackend(t, f, 0, false, false)
+	s := testServer(t, "")
+	file := sysPath(wgClientFile(s.cfg(), "tablet"))
+	if err := privateDir(sysPath(wgClientDir(s.cfg()))); err != nil {
+		t.Fatal(err)
+	}
+	if err := writePrivate(file, []byte("[Interface]\nPrivateKey = KEY\n")); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{Name: "tablet"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(file); err == nil {
+		t.Error("the removed client's config, with its private key, is still on the router")
+	}
+}

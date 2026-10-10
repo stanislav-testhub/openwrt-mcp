@@ -69,6 +69,10 @@ Changed
   - Removal refuses the peer the session arrives through unless `force=true`. A peer that only the running interface knows is
     still removed with `wg set` (no rollback possible).
 - Busy and deadline refusals carry `TIMEOUT`, toolset and read-only refusals `POLICY_DENIED`.
+- `wg_remove_client` deletes the removed peer's uncollected client config (it holds the private key) instead of leaving it
+  for the 24 h sweep.
+- A command the daemon refuses (`--toolset bogus`) now ends the bridge with `command refused: <reason>`, not
+  `daemon closed the connection`, which read like a crash.
 
 Tests
 - The write-path table covers both `wg_*` tools. Every item was mutation-tested (80 to 90 mutants per item, survivors killed or

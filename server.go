@@ -378,6 +378,10 @@ func runBridge(sock, client string) error {
 	select {
 	case <-stdinDone:
 	case <-done:
+		if perr != nil {
+			// The daemon refused the command and hung up: say so, not "daemon closed".
+			return fmt.Errorf("command refused: %w", perr)
+		}
 		// The daemon went away (a restart, a crash). Exit now rather than on the client's next
 		// request: the stdin reader is left blocked, and the process exit ends it.
 		return fmt.Errorf("daemon closed the connection on %s", sock)
