@@ -141,7 +141,8 @@ var mgmtConfigs = map[string]bool{"network": true, "dropbear": true, "firewall":
 // The options that decide whether the path survives. A change to anything else on the same
 // section (a DNS server, a rule's comment) is not flagged.
 var (
-	mgmtNetOpts  = map[string]bool{"ipaddr": true, "netmask": true, "proto": true, "device": true, "ports": true, "name": true, "type": true, "disabled": true, "auto": true, "gateway": true}
+	mgmtNetOpts = map[string]bool{"ipaddr": true, "netmask": true, "proto": true, "device": true, "ports": true, "name": true, "type": true, "disabled": true, "auto": true, "gateway": true,
+		"addresses": true, "listen_port": true, "private_key": true} // the last three carry a WireGuard tunnel
 	mgmtSSHOpts  = map[string]bool{"Port": true, "Interface": true, "enable": true, "disabled": true}
 	mgmtZoneOpts = map[string]bool{"input": true, "network": true, "name": true}
 )
@@ -150,6 +151,7 @@ var (
 type mgmtView struct {
 	net, ssh, fw *uciTree
 	nets         map[string]bool // networks the management path rides on
+	viaPeer      map[string]bool // those of them that only this session's own route adds
 	devices      map[string]bool // device names those networks use (the bridge)
 	ports        []string        // SSH listening ports
 }
@@ -162,7 +164,7 @@ func loadMgmtView(ctx context.Context) *mgmtView {
 		return parseUCIShow("")
 	}
 	v := &mgmtView{net: load("network"), ssh: load("dropbear"), fw: load("firewall"),
-		nets: map[string]bool{"lan": true}, devices: map[string]bool{}}
+		nets: map[string]bool{"lan": true}, viaPeer: map[string]bool{}, devices: map[string]bool{}}
 	for _, sec := range v.ssh.sectionsOfType("dropbear") {
 		if i := v.ssh.get(sec, "Interface"); i != "" {
 			v.nets[i] = true
@@ -172,12 +174,43 @@ func loadMgmtView(ctx context.Context) *mgmtView {
 	if len(v.ports) == 0 {
 		v.ports = []string{"22"}
 	}
+	// The session's own link is part of the path too: the interface its address is reached
+	// through joins the management networks, which covers a session that arrives over a tunnel or
+	// from a network other than lan.
+	if peer := profileFrom(ctx).Peer; peer.IsValid() && !peer.IsLoopback() {
+		if out, err := run(ctx, defaultCmdTimeout, "ip", "route", "get", peer.String()); err == nil {
+			if dev := peerDevice(out); dev != "" {
+				v.devices[dev] = true
+				for _, sec := range v.net.sectionsOfType("interface") {
+					if sec == dev || v.net.get(sec, "device") == dev || v.net.get(sec, "ifname") == dev {
+						v.viaPeer[sec] = v.viaPeer[sec] || !v.nets[sec]
+						v.nets[sec] = true
+					}
+				}
+			}
+		}
+	}
 	for n := range v.nets {
 		if d := v.net.get(n, "device"); d != "" {
 			v.devices[d] = true
 		}
 	}
 	return v
+}
+
+// peerDevice reads the interface out of `ip route get ADDRESS`. A route to the router itself ("local
+// ... dev lo") names none.
+func peerDevice(out string) string {
+	f := strings.Fields(out)
+	for i := 0; i+1 < len(f); i++ {
+		if f[i] == "dev" {
+			if f[i+1] == "lo" {
+				return ""
+			}
+			return f[i+1]
+		}
+	}
+	return ""
 }
 
 // differs says whether applying c to the live option would change it. A create never does here.
@@ -208,6 +241,9 @@ func (v *mgmtView) reason(c UCIChange) string {
 		switch {
 		case typ == "interface" && v.nets[c.Section]:
 			if (mgmtNetOpts[c.Option] || c.Option == "") && differs(c, v.net) {
+				if v.viaPeer[c.Section] {
+					return fmt.Sprintf("network.%s is the interface this session arrives on", c.Section)
+				}
 				return fmt.Sprintf("network.%s is the interface the management path rides on", c.Section)
 			}
 		case typ == "device" && v.devices[v.net.get(c.Section, "name")]:

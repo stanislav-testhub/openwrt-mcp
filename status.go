@@ -36,6 +36,8 @@ type statusReport struct {
 	Policies []policyReport `json:"policies"`
 	Audit    []auditRow     `json:"audit"`
 	Counts   map[string]int `json:"counts"`
+
+	LastDisconnect *disconnectRow `json:"last_disconnect,omitempty"`
 }
 
 // pendingRow is an apply awaiting uci_confirm, read from the daemon's on-flash record.
@@ -128,6 +130,9 @@ func runStatus(configPath, statePath string, auditLines int, asJSON, all bool) e
 		}
 	}
 	rep.Audit = tailAudit(cfg.AuditPath, auditLines)
+	if d := lastDisconnect(cfg.AuditPath); d != nil {
+		rep.LastDisconnect = &disconnectRow{Time: d.Time, Client: sanitizeText(d.Client), Reason: sanitizeText(d.Reason)}
+	}
 	rep.Counts["clients"] = len(rep.Clients)
 	rep.Counts["policies"] = len(rep.Policies)
 	rep.Counts["audit_shown"] = len(rep.Audit)
@@ -228,6 +233,9 @@ func writeStatusText(w io.Writer, r statusReport, all bool) error {
 	fmt.Fprintf(w, "%d paired client(s), %d policy/policies\n", len(r.Clients), len(r.Policies))
 	for _, c := range r.Clients {
 		fmt.Fprintf(w, "  %s (%d policy/policies)\n", c.Name, c.Policies)
+	}
+	if d := r.LastDisconnect; d != nil {
+		fmt.Fprintf(w, "last disconnect: %s %s: %s\n", d.Time, d.Client, d.Reason)
 	}
 	hidden := 0
 	for _, p := range r.Policies {

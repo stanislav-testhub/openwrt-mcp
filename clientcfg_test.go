@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -275,5 +276,50 @@ func TestExpandHome(t *testing.T) {
 		if got := filepath.ToSlash(expandHome(in, "/h")); got != want {
 			t.Errorf("expandHome(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// The session profile (entry.go) is written into the client's entry as the words after the host
+// name, which is where the router's forced command receives them.
+func TestSSHArgsCarryTheSessionProfile(t *testing.T) {
+	p := testParams()
+	p.Session = []string{"--read-only", "--toolset", "diag,pkg"}
+	got := strings.Join(p.sshArgs(), " ")
+	if !strings.HasSuffix(got, " root@192.0.2.1 -- --read-only --toolset diag,pkg") {
+		t.Errorf("ssh args do not end with host, then -- and the profile: %s", got)
+	}
+	if err := p.validate(); err != nil {
+		t.Errorf("a valid profile refused: %v", err)
+	}
+}
+
+func TestConnectRefusesASessionProfileTheRouterWouldRefuse(t *testing.T) {
+	for name, session := range map[string][]string{
+		"another client name": {"--client", "other"},
+		"a tool call":         {"call", "uci_get"},
+		"unknown toolset":     {"--toolset", "all"},
+		"a shell word":        {"--read-only;", "id"},
+	} {
+		p := testParams()
+		p.Session = session
+		if err := p.validate(); err == nil {
+			t.Errorf("%s: %v accepted", name, session)
+		}
+	}
+}
+
+// OpenSSH re-parses what follows the host name and takes "--read-only" for an option of its own
+// ("unknown option -- -"), so the profile words need a "--" in front. `ssh -G` prints the
+// configuration without connecting anywhere, which is enough to see whether the command line parses.
+func TestSSHArgsWithAProfileParseInRealOpenSSH(t *testing.T) {
+	ssh, err := exec.LookPath("ssh")
+	if err != nil {
+		t.Skip("no ssh on this machine")
+	}
+	p := testParams()
+	p.Session = []string{"--read-only", "--toolset", "diag"}
+	out, err := exec.Command(ssh, append([]string{"-G"}, p.sshArgs()...)...).CombinedOutput()
+	if err != nil || !strings.Contains(string(out), "host 192.0.2.1") {
+		t.Errorf("ssh -G %v: %v\n%s", p.sshArgs(), err, out)
 	}
 }

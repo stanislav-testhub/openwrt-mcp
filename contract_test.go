@@ -56,11 +56,14 @@ var goldenCalls = []struct {
 		"probe":   []map[string]any{{"kind": "ping", "target": "192.0.2.1"}, {"kind": "resolve", "target": "example.com", "server": "192.0.2.53"}},
 		"changes": []map[string]any{{"config": "dhcp", "section": "pi", "option": "ip", "value": "192.0.2.5"}}}},
 	{"uci_apply", map[string]any{"dry_run": true, "restore": "dhcp:20261007-100000.001-abcdef12"}},
+	{"uci_get", map[string]any{"refs": "lan"}},
+	{"uci_get", map[string]any{"refs": "lan", "config": "firewall", "ids": true}},
 	{"uci_get", map[string]any{"config": "dhcp", "history": "list"}},
 	{"uci_get", map[string]any{"config": "dhcp", "history": "diff:dhcp:20261007-100000.001-abcdef12"}},
 	{"uci_confirm", map[string]any{"token": "abc"}},
 	{"uci_rollback", map[string]any{"token": "abc"}},
 	{"service_list", map[string]any{"filter": "dns"}},
+	{"service_list", map[string]any{"detail": "tailscale"}},
 	{"service_control", map[string]any{"name": "dnsmasq", "action": "restart", "wait": 2}},
 	{"pkg_query", map[string]any{"action": "installed", "package": "luci-*"}},
 	{"pkg_query", map[string]any{"action": "info", "package": "dnsmasq"}},
@@ -86,7 +89,7 @@ func everythingFake(t *testing.T) *fakeRouter {
 	f := newFakeRouter(t)
 	for p, out := range map[string]string{
 		"ubus": "{}", "uci": "", "ip": "[]", "nft": "", "fw4": "", "logread": "", "date": "2026-01-01 00:00:00",
-		"apk": "", "wg": "", "ping": "", "traceroute": "", "nslookup": "", "sysupgrade": "", "owut": "",
+		"apk": "", "opkg": "", "iptables-save": "", "fw3": "", "wg": "", "ping": "", "traceroute": "", "nslookup": "", "sysupgrade": "", "owut": "",
 		"ls": "", "/sbin/reload_config": "",
 	} {
 		f.on(p, out)
@@ -203,16 +206,24 @@ func TestToolSchemasArePortable(t *testing.T) {
 // picked in advance: ROADMAP 3.5 first said 18 KB, set before titles and hints (3.4) and
 // the SDK's explicit false hints added about 2 KB that no description edit can remove. Raising
 // a limit needs a reason in the commit; so does a new tool.
+//
+// 1.5 (5.2): +200 and +50 for service_list's `detail` parameter, which serves every add-on
+// adapter without a tool per add-on (23,422 and 12,411 measured on top of 1.4).
+// 1.5 (5.1): +150 and +150 so the package tools can name both managers' files (.apk-new / -opkg,
+// .pre-apk-new / .pre-opkg-new) and say what an opkg router cannot answer (23,606 and 12,595 measured).
+// 1.5 (5.10): +250 and +250 for uci_get's `refs` mode, a search across configs that the cross-config
+// warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 23300 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions)
-	catalogueProseBudget = 12300 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 23900 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg)
+	catalogueProseBudget = 12875 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
 // toolBudgets are the tools allowed more than toolBudgetBytes, each for a reason: uci_apply
 // carries a nested request with its own options; wg_new_client has nine parameters, one of
-// which (reveal) keeps a private key out of the conversation by default.
-var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700, "net_diag": 1700}
+// which (reveal) keeps a private key out of the conversation by default; uci_get reads, shows history and
+// searches references, each with its own parameter.
+var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700, "net_diag": 1700, "uci_get": 1650}
 
 func TestCatalogueStaysWithinBudget(t *testing.T) {
 	cs := connectClient(t, testServer(t, ""), "c")
@@ -565,20 +576,40 @@ func readOnlyCommand(a []string) bool {
 		return len(a) > 1 && (a[1] == "check" || (a[1] == "-q" && len(a) > 2 && a[2] == "print"))
 	case "apk":
 		return len(a) > 1 && contains([]string{"list", "search", "info", "policy", "audit"}, a[1])
+	case "opkg": // update and the changes are not read-only, and not listed
+		return len(a) > 1 && contains([]string{"list-installed", "list-upgradable", "find", "info", "files", "search"}, a[1])
+	case "iptables-save": // firewall_show on fw3
+		return true
+	case "fw3":
+		return len(a) > 1 && a[len(a)-1] == "print"
 	case "wg":
 		return len(a) > 1 && a[1] == "show"
 	case "nlbw": // usage reads nlbwmon's database; -c commit and the like are not read-only
 		return len(a) >= 3 && a[1] == "-c" && (a[2] == "json" || a[2] == "list")
 	case "chronyc": // the doctor asks chrony whether it is synchronised
 		return len(a) == 3 && a[1] == "-c" && a[2] == "tracking"
-	case "logread", "date", "ping", "traceroute", "nslookup":
+	case "logread", "date", "ping", "traceroute", "nslookup", "pidof":
 		return true
+	case "tailscale": // the add-on adapters (service_list detail=)
+		return len(a) > 1 && a[1] == "status"
+	case "sing-box":
+		return len(a) > 1 && a[1] == "version"
 	}
 	return false
 }
 
-func TestReadOnlyToolsOnlyIssueReadOnlyCommands(t *testing.T) {
-	withFixtureRoot(t)
+func TestReadOnlyToolsOnlyIssueReadOnlyCommands(t *testing.T) { readOnlyToolsCheck(t) }
+
+// The same on a 24.10 router (opkg) and on an iptables one (fw3): the files name the binaries.
+func TestReadOnlyToolsOnlyIssueReadOnlyCommandsOnOpkgAndFw3(t *testing.T) {
+	readOnlyToolsCheck(t, "bin/opkg", "sbin/fw3")
+}
+
+func readOnlyToolsCheck(t *testing.T, binaries ...string) {
+	root := withFixtureRoot(t)
+	for _, b := range binaries {
+		writeFixture(t, root, b, "")
+	}
 	cs := connectClient(t, testServer(t, grantAll()), "c")
 	readOnly := map[string]bool{}
 	for _, tl := range listedTools(t, cs) {
@@ -610,7 +641,7 @@ func TestReadOnlyToolsOnlyIssueReadOnlyCommands(t *testing.T) {
 var optionFlags = map[string]bool{
 	"-q": true, "-X": true, "-4": true, "-6": true, "-c": true, "-t": true, "-W": true, "-I": true, "-i": true,
 	"-n": true, "-w": true, "-m": true, "-a": true, "-L": true, "-l": true, "-T": true, "-k": true, "-b": true,
-	"-v": true, "-j": true, "-g": true, "--who-owns": true, "--upgradable": true, "--simulate": true, "--installed": true,
+	"-v": true, "-j": true, "-g": true, "--who-owns": true, "--upgradable": true, "--simulate": true, "--installed": true, "--noaction": true,
 }
 
 var hostileValues = []string{"-x", "--help", "-f", "--", "-", "-rf", "--version", "-q"}
@@ -657,10 +688,21 @@ func setLeaf(v any, path []any, val string) {
 // Every string field of every tool is replaced, one at a time, with option-looking values; the
 // commands the tool then builds are inspected. exec is exempt: running a caller-named program
 // with caller-chosen arguments is what it is for, and what scopes it.
-func TestHostileValuesNeverReachArgvAsOptions(t *testing.T) {
+func TestHostileValuesNeverReachArgvAsOptions(t *testing.T) { hostileValuesCheck(t) }
+
+// The same on a 24.10 router (opkg) and on an iptables one (fw3).
+func TestHostileValuesNeverReachArgvAsOptionsOnOpkgAndFw3(t *testing.T) {
+	hostileValuesCheck(t, "bin/opkg", "sbin/fw3")
+}
+
+func hostileValuesCheck(t *testing.T, binaries ...string) {
 	root := withFixtureRoot(t)
+	for _, b := range binaries {
+		writeFixture(t, root, b, "")
+	}
 	writeFixture(t, root, "etc/config/dhcp", "config dnsmasq\n")
 	writeFixture(t, root, "etc/config/dhcp.apk-new", "config dnsmasq\n")
+	writeFixture(t, root, "etc/config/dhcp-opkg", "config dnsmasq\n")
 	cs := connectClient(t, testServer(t, grantAll()), "c")
 
 	for _, c := range goldenCalls {

@@ -3,7 +3,7 @@
   "name": "io.github.stanislav-testhub/openwrt-mcp",
   "title": "OpenWrt MCP",
   "description": "MCP server that runs on an OpenWrt router: deny-by-default policy, audit log, rollback-armed changes",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "repository": {
     "url": "https://github.com/stanislav-testhub/openwrt-mcp",
     "source": "github"

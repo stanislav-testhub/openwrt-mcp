@@ -1,4 +1,4 @@
-# openwrt-mcp -- an MCP server for OpenWrt 25.12+
+# openwrt-mcp -- an MCP server for OpenWrt 24.10 and 25.12
 
 **English** · [Русский](README.ru.md) · [简体中文](README.zh-CN.md)
 
@@ -31,9 +31,19 @@ GL-MT6000 right after start, and 23 tools in about 22 KB of tool descriptions. E
 
 ## Requirements
 
-- **Router:** stock OpenWrt **25.12.0 or newer** (the `apk` releases). Nothing to install on the
-  router beforehand. 24.10 and older (`opkg`, 21.02-era tooling) are not supported -- use
-  upstream for GL.iNet 4.x firmware.
+- **Router:** stock OpenWrt **25.12** (`apk`) or **24.10** (`opkg`), both with fw4/nftables. Nothing to install on the
+  router beforehand. The package tools pick the manager from the binaries on the router (`apk` first, then `opkg`);
+  `system_status` says which one and which firewall it found.
+  - **What differs on 24.10:** `pkg_query` has no `policy` and no `audit` (opkg has neither; the tool says so). `pkg_change`
+    simulates with `opkg --noaction`. New package defaults arrive as `<file>-opkg` instead of `<file>.apk-new`, and
+    `pkg_config_diff` / `pkg_config_resolve` handle both (the old copy is kept as `.pre-opkg-new`). `world` lists the packages
+    opkg marks "user installed". `system_status mode=doctor` reports `opkg-new-pending`; `mode=audit` skips the package audit
+    and says why.
+  - **fw3 (OpenWrt 21.02 and older, or firmware built on it):** best effort. `firewall_show` answers `ruleset` (`iptables-save`,
+    IPv4) and `rendered` (`fw3 -q print`); `check`, `table` and `chain` are refused; a firewall apply is not pre-checked.
+  - **Tested on:** 25.12.5 on a GL-MT6000 (hardware); the unit tests run both managers on fakes; CI runs the package and uci
+    tools in the `openwrt/rootfs` container of 24.10 and 25.12 (no ubus or netifd there, so network, wireless and firewall
+    paths are not covered). Firmware derived from OpenWrt (GL.iNet, ImmortalWrt) is best effort.
 - **Your PC:** OpenSSH (Windows 10 and later, macOS and Linux have it). Installing from a release
   needs nothing else. Building from source needs Go 1.26+, `ssh` and `tar` (Linux, macOS, or Git
   Bash on Windows).
@@ -58,7 +68,7 @@ are welcome.
 | Changes configuration | yes, through one tool that checks first and arms a rollback | yes, including packages and a firmware flash | read-only unless `ENABLE_WRITE_OPERATIONS=1` | no |
 | Automatic rollback of a bad change | yes, and it survives a reboot | not stated | not stated | not applicable |
 | Access control and audit | per-client grants with scopes, expiry and a rate limit, audit log, optional TOTP | command whitelist, audit log | audit log | secrets hidden, no audit log |
-| Package manager | `apk` (OpenWrt 25.12+) | `opkg` | `opkg` | lists installed and available |
+| Package manager | `apk` (25.12) or `opkg` (24.10) | `opkg` | `opkg` | lists installed and available |
 | Flashing firmware | never | yes | not stated | no |
 | Needs on the router | the binary | SSH | SSH | `uhttpd-mod-ubus`, `rpcd` |
 
@@ -72,7 +82,7 @@ are welcome.
 | Web UI | GL.iNet oui-httpd page | LuCI page, *Services -> MCP Server* (read-only) |
 | Transport | HTTP over an `ssh -L` tunnel | same, **plus stdio over SSH** via a key-bound forced command -- no tunnel to keep alive |
 | Rollback snapshot | `/tmp` (lost on reboot) | **on flash**; an unconfirmed change is rolled back at the next start, including after a power cycle |
-| `uci_apply` | set / create / delete | **+ `add_list`, `del_list`, `set_list`, `dry_run`**, shows the staged `uci changes`, strict name validation |
+| `uci_apply` | set / create / delete | **+ `add_list`, `del_list`, `set_list`, `dry_run`**, shows the staged `uci changes`, strict name validation A dry run ends with advice, `warnings from this change`. |
 | Reload | `ubus call uci reload_config` (async) | `/sbin/reload_config`, plus explicit `config.change` events when it has no checksums (first run after boot) |
 | WireGuard | GL `wireguard_server` / `gl_ddns` | stock `network.<iface>` + `wireguard_<iface>` peers, DDNS from `ddns`, CGNAT warning, PSK, list and remove |
 | Packages | -- | `pkg_query`, `pkg_change` (simulate first), `.apk-new` review with a settings-level diff |
@@ -92,18 +102,18 @@ are welcome.
 | `network_clients` | tool | DHCP leases + static hosts + neighbour table + every AP's association list, joined by MAC: name, IP, SSID, signal, rates, connected time, each client's share of its radio's airtime (from hostapd), lease; 100 rows a page, `offset` for the next. |
 | `firewall_show` | tool | `nft list ruleset`, `fw4 print`, `fw4 check`, one table or chain. |
 | `net_diag` | `<action>[.<target>]` | ping / traceroute / nslookup (optionally from a given interface), routes, policy rules, neighbours. `wifi_survey` reports, per radio, how busy the channel it stays on has been (busy, rx and tx airtime, noise); other channels are unmeasured, so it never recommends one. `traffic` samples interface rates for a few seconds and ranks the conntrack table by source. `usage` reads nlbwmon's totals per device for an accounting period (a month by default). All three only read. |
-| `uci_get` | `<config>[.<section>[.<option>]]` | `uci show`, optionally with stable `cfgXXXXXX` ids. Ends with the config's **revision**. `history=list` / `diff:<id>` shows the kept versions from before each confirmed change. |
+| `uci_get` | `<config>[.<section>[.<option>]]`; `refs` for a name search | `uci show`, optionally with stable `cfgXXXXXX` ids. Ends with the config's **revision**. `history=list` / `diff:<id>` shows the kept versions from before each confirmed change. `refs=NAME` finds what defines and uses a name across configs. |
 | `uci_apply` | `<config>.<section>[.<option>]` per change; `<config>` for `restore`; `probe.<kind>.<target>` per probe | Stage, check, commit, reload, **rollback armed**. `dry_run` shows exactly what would change and what the service's own checker says. `expected_revisions` refuses if a config moved meanwhile, `probe` checks the router afterwards, `restore=<id>` puts a past version back. After the commit the config is read back; a change the router did not keep is `NOT_APPLIED` and nothing is reloaded. |
 | `uci_confirm` / `uci_rollback` | tool | Make a pending change permanent / undo it now. |
-| `service_list` / `service_control` | tool / `<service>.<action>` | procd services; stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. `service_control` waits for the state to settle (`wait`) and says if it did not; a final state that contradicts the action is `NOT_APPLIED`. |
+| `service_list` / `service_control` | tool, `<service>.detail` / `<service>.<action>` | procd services; `service_list detail=NAME` returns an installed add-on's own status (tailscale, AdGuard Home, podkop; the plain list names the ones installed here); stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. `service_control` waits for the state to settle (`wait`) and says if it did not; a final state that contradicts the action is `NOT_APPLIED`. |
 | `pkg_query` | tool | installed, upgradable, search, info, files, owner, policy, `apk audit`, world; 200 lines a page, `offset` for the next. |
 | `pkg_change` | `<action>.<pkg>` / `upgrade` | apk add/del/upgrade; **simulates unless `commit=true`**; reports new `.apk-new` files; checks `/etc/apk/world` afterwards. |
 | `pkg_config_diff` | tool | Every `.apk-new` as a diff against the live file -- for `/etc/config/*` by setting (`uci show`), so quoting/indentation noise disappears. |
 | `pkg_config_resolve` | live path | keep_current (drop the new default) or use_new (install it; rollback-armed for UCI configs). |
 | `sysupgrade` | `<action>` | list (preserved files), test (validate an image in /tmp), check (`owut`), backup (mode 0600; the previous archive this tool made is removed). **Never flashes.** |
 | `wg_list_clients` | tool | Peers with handshake age, endpoint, traffic, config/kernel mismatch, duplicate names. |
-| `wg_new_client` | `wireguard.<iface>` | Keypair, next free address, peer saved, hot-added and read back. The private key and config go to a root-only file; you collect them with `openwrt-mcp wg-show <name>` (config and QR in your own terminal). `reveal=true` returns them in the result instead. |
-| `wg_remove_client` | `wireguard.<iface>.<name>` | By name, key or section; refuses a peer connected in the last 3 minutes unless forced; reads the peer's absence back. |
+| `wg_new_client` | `wireguard.<iface>` | Keypair, next free address, peer saved in the network config; `uci_confirm` keeps it. The private key and config go to a root-only file; you collect them with `openwrt-mcp wg-show <name>` (config and QR in your own terminal). `reveal=true` returns them in the result instead. |
+| `wg_remove_client` | `wireguard.<iface>.<name>` | By name, key or section, from the config and the interface; rollback armed (`uci_confirm` keeps it). Refuses a peer connected in the last 3 minutes, or this session's own, unless `force=true`. |
 | `ubus_list` | *(ungated)* | Discovery: every object, method and argument signature. |
 | `ubus_call` | `<object>.<method>` | Anything else on the bus. Replies over 8 KB have long arrays pruned. |
 | `exec` | `argv[0]` | One program, no shell. A grant for `sh`, `find`, `awk`, `env`, `ssh` and the like is a root shell: `allow` refuses it without `--shell-equivalent`. |
@@ -117,6 +127,48 @@ cost nothing until used. Listing or fetching one runs nothing on the router, so 
 and nothing is audited.
 
 ---
+
+### Warnings, references, peers and add-ons
+
+**Warnings in a dry run.** `uci_apply dry_run` ends with `warnings from this change`: findings the change would add that the router
+does not have today, ranked like the audit's, each with a next step and an OpenWrt wiki page. They are advice, never a refusal.
+They cover a port or port forward opened to the internet, WAN zone input or forward set to `ACCEPT`, SSH password logins switched
+on, an SSID left without encryption, a name a change removes or misspells while other sections still use it (`ref-removed`,
+`ref-unknown`, with a "did you mean" for a case mismatch), and a change that turns off the Wi-Fi network your own session is
+connected through (`radio-in-use`). Something already wrong before the change is not reported again. A real apply does not
+repeat them, so run the dry run first.
+
+**The management path follows your session.** Besides the LAN, its bridge, the SSH listener and the zone and rule for SSH, the
+interface your own SSH connection arrives through counts as the management path (the daemon resolves the client address with
+`ip route get`), so changes to a WireGuard tunnel you are connected over need a probe or `force=true` like changes to the LAN.
+
+**Before you rename or delete an interface, zone or device.** `uci_get refs=lan` lists what defines the name (a network interface,
+a firewall zone, a device, a radio, an mwan3 member or policy) and every reference field that uses it: zone `network`,
+rule/forwarding/redirect `src` and `dest`, dhcp `interface`, wireless `network` and `device`, network `device`, `ports`,
+`route.interface`, `sqm` and `mwan3` when installed. "defined as: nothing" means no section has that name (a typo or a case
+mismatch). Only these fields are read, so the search cannot be used to look for a key. It needs the scope `refs`, which
+`@readonly` and `@operator` include; `config=firewall` narrows it to one config.
+
+**Adding and removing WireGuard peers is a normal, rollback-armed change.** The peer is written to `/etc/config/network` and netifd
+loads it, so other peers' sessions stay up. Both tools wait for the peer to appear on (or leave) the running interface and say
+what they verified. Nothing is permanent until `uci_confirm`: otherwise, after the timeout or a restart, the peer is taken out
+again and a new client's key file is deleted. Only one change can wait for confirmation at a time. Removing the peer your own
+session arrives through needs `force=true`.
+
+**Add-on status.** `service_list detail=NAME` reads an add-on that is installed (its init script exists) and prints a
+fixed set of fields, read-only: it never echoes a config file or a command's raw output, because those hold login
+hashes, proxy links, node keys and tokens. A grant needs the service's scope (`tailscale.detail`, or `*` as in
+`@readonly`); the plain list needs none. Text that someone else chose, such as a tailnet peer's host name, is clipped,
+sanitised and marked untrusted.
+
+| Add-on | What it reports | Verified |
+|---|---|---|
+| tailscale | state, tailnet DNS suffix, this node's addresses, advertised routes, exit node, health, peers (online, direct or relayed, traffic) | GL-MT6000, 25.12 |
+| AdGuard Home | running, listen addresses, protection and filtering switches, upstreams (scheme and host only), bootstrap, filter list and rule counts, whether dnsmasq forwards to it | GL-MT6000, 25.12 |
+| podkop | version, sing-box running, nft table, dnsmasq path, settings, one line per section (type, interface, community lists, size of dynamic lists) | GL-MT6000, 25.12 |
+
+Deliberately not read: AdGuard Home's web API (it needs the UI login), podkop's `proxy_string`, selector and outbound
+settings, and the user's domain and subnet lists.
 
 ## Install
 
@@ -211,7 +263,51 @@ checks the chain in order and stops at the first break, with one fix for it:
 
 The steps are: SSH reachable, host key, key accepted, forced command, daemon socket, `initialize`,
 `tools/list`. Wrong key, a missing forced command, a stopped daemon and a disabled socket each name
-their own step. The weekly reboot disconnects the bridge; the client reconnects on its next start.
+their own step. 
+
+**After a reboot or a daemon restart.** A reboot, an `install.sh` upgrade or a crash ends every open session: the
+`openwrt-mcp stdio` bridge exits with `daemon closed the connection`, and the client shows the server as disconnected.
+MCP clients do not all reconnect by themselves, so reconnect from the client (its MCP menu, or restart the client).
+SSH answers a few seconds before the daemon is listening after a boot; the bridge waits up to 10 seconds for the
+daemon's socket before it fails with `daemon not reachable ... after waiting 10s` (and `[code: TIMEOUT; ...]`), so a
+reconnect right after the router comes back normally just works, and if it does not, wait a few seconds and reconnect again.
+A change that was still waiting for `uci_confirm` is rolled back at the next start. `openwrt-mcp status` shows the last
+disconnect and why (`client closed the connection`, `connection error: ...`, or `the daemon restarted (router reboot,
+upgrade or crash)`), read from the audit log, which also carries one `stdio session closed after ...` line per session and
+one `daemon started` line per start.
+
+### Narrower sessions, and the shell
+
+**Ask for less than the key allows.** The policy decides what a client may do; a client can also ask for *less* for one session.
+
+```sh
+openwrt-mcp connect --client claude-code --host 192.168.1.1 --read-only            # nothing that changes the router
+openwrt-mcp connect --client claude-code --host 192.168.1.1 --toolset diag,pkg      # only those tools
+```
+
+Toolsets are `diag` (`logread`, `network_clients`, `firewall_show`, `net_diag`, `service_list`, `ubus_list`, `ubus_call`),
+`config` (`uci_get`, `uci_apply`, `uci_confirm`, `uci_rollback`, `service_control`), `pkg` (`pkg_query`, `pkg_change`,
+`pkg_config_diff`, `pkg_config_resolve`, `sysupgrade`) and `wg` (the three WireGuard tools). `system_status` is always there;
+`exec` is in no toolset. `--read-only` is the `@readonly` preset intersected with the client's grants, so it can only remove
+things, and a hidden tool is refused when called, not just left out of the list. The profile travels as words after the forced
+command (`SSH_ORIGINAL_COMMAND`), which the daemon parses against a fixed grammar: anything else is refused and audited, and
+there is no word in it that widens a session.
+
+**From a shell or a script, no MCP client.** The same SSH key runs one tool at a time:
+
+```sh
+ssh -T root@192.168.1.1 call --list
+ssh -T root@192.168.1.1 call uci_get --help
+ssh -T root@192.168.1.1 call uci_get '{"config":"network"}'
+```
+
+The result is text on stdout; a refusal or error goes to stderr with the `allow` line and exit status 1. The call runs through
+the same policy, audit and redaction as an MCP session. `skills/openwrt-mcp/SKILL.md` is a ready-made skill file for agents
+that prefer a shell to MCP.
+
+**Limits.** Each tool has a deadline above its own waits, and at most 8 calls run at once: the rest wait up to 30 s and then
+get a `busy` refusal (`TIMEOUT`). A client that cancels a call kills the command it started. `uci_confirm`, `uci_rollback` and
+`mfa_unlock` never wait for a slot.
 
 ### stdio over SSH, by hand
 
@@ -355,7 +451,8 @@ holds a client's token can keep that client locked out for up to an hour.
   options (`-f`) are refused.
 - **Lifelines.** `service_control` will not stop or disable dropbear, network, rpcd or
   openwrt-mcp. `sysupgrade` has no flash action -- validate an image with `test`, flash by hand.
-  `wg_remove_client` will not drop a tunnel that handshook in the last 3 minutes unless forced.
+  `wg_remove_client` will not drop a tunnel that handshook in the last 3 minutes, or the one this
+  session arrives through, unless forced.
 - **Credentials stay out of the conversation.** `wg_new_client` writes the new client's config
   (private key included) to a root-only file in RAM, beside the socket, and returns the public
   key and the command to run. `openwrt-mcp wg-show <name>` on the router prints the config and

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +37,8 @@ type Server struct {
 	cfgTime time.Time
 	servers map[string]*mcp.Server // per authenticated client name
 	pending map[string]*pendingApply
+
+	slots chan struct{} // one entry per running tool call, capacity inflightLimit (limits.go)
 }
 
 // cfg returns the current policy set, re-reading the config file when it has changed on
@@ -96,6 +99,7 @@ func NewServer(configPath, statePath string) (*Server, error) {
 		audit:      NewAuditor(cfg.AuditPath, cfg.AuditMaxMB),
 		servers:    map[string]*mcp.Server{},
 		pending:    map[string]*pendingApply{},
+		slots:      make(chan struct{}, inflightLimit),
 	}
 	if !cfg.RedactOutput {
 		s.noteRedaction(false, "option redact_output '0' at startup")
@@ -194,8 +198,10 @@ func isLoopbackOrigin(o string) bool {
 // authentication.
 
 type bridgeHello struct {
-	Client string `json:"client"`
-	Origin string `json:"origin,omitempty"`
+	Client  string `json:"client"`
+	Origin  string `json:"origin,omitempty"`
+	Command string `json:"command,omitempty"` // SSH_ORIGINAL_COMMAND, raw; the daemon parses it (entry.go)
+	Peer    string `json:"peer,omitempty"`    // the client's address from SSH_CLIENT; the daemon keeps it only if it is an address
 }
 
 var reClientName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
@@ -249,16 +255,39 @@ func (s *Server) handleBridge(conn net.Conn) {
 		return
 	}
 	_ = conn.SetReadDeadline(time.Time{})
-	s.audit.Record(AuditEvent{Time: nowISO(), Client: hello.Client, Tool: "session", Outcome: OutcomeOK,
-		Summary: "stdio session opened via " + orDefault(hello.Origin, "local socket")})
+	ent, err := parseEntry(hello.Command)
+	if err != nil {
+		s.audit.Record(AuditEvent{Time: nowISO(), Client: hello.Client, Tool: "session", Outcome: OutcomeDenied,
+			Summary: "session refused, command " + strconv.Quote(hello.Command), Error: err.Error()})
+		msg, _ := json.Marshal("openwrt-mcp: " + err.Error())
+		fmt.Fprintf(conn, `{"jsonrpc":"2.0","error":{"code":-32600,"message":%s}}`+"\n", msg)
+		return
+	}
+	profile := sessionProfile{Toolsets: ent.Toolsets, ReadOnly: ent.ReadOnly, Peer: parsePeer(hello.Peer)}
+	opened := stdioOpened + orDefault(hello.Origin, "local socket")
+	if ent.Mode == entryCall {
+		opened = "call via " + orDefault(hello.Origin, "local socket")
+	}
+	if note := profile.String(); note != "" {
+		opened += " [" + note + "]"
+	}
+	s.audit.Record(AuditEvent{Time: nowISO(), Client: hello.Client, Tool: "session", Outcome: OutcomeOK, Summary: opened})
+	if ent.Mode == entryCall {
+		s.handleCall(conn, br, hello.Client, ent, profile)
+		return
+	}
 
-	ss, err := s.serverFor(hello.Client).Connect(context.Background(),
+	start := time.Now()
+	ss, err := s.serverFor(hello.Client).Connect(withProfile(context.Background(), profile),
 		&mcp.IOTransport{Reader: readCloser{br, conn}, Writer: conn}, nil)
 	if err != nil {
 		log.Printf("openwrt-mcp: bridge session for %s: %v", hello.Client, err)
 		return
 	}
-	_ = ss.Wait()
+	werr := ss.Wait()
+	took := time.Since(start)
+	s.audit.Record(AuditEvent{Time: nowISO(), Client: hello.Client, Tool: "session", Outcome: OutcomeOK,
+		Summary: sessionClosedSummary(took, werr), Duration: took.Milliseconds()})
 }
 
 type readCloser struct {
@@ -291,6 +320,8 @@ func (s *Server) Serve() error {
 		}
 		go s.serveSocket(sl)
 	}
+	// The old daemon could not write anything as it died, so `status` reads a restart off this line.
+	s.audit.Record(AuditEvent{Time: nowISO(), Client: "<daemon>", Tool: "daemon", Outcome: OutcomeOK, Summary: "daemon started " + version})
 	log.Printf("openwrt-mcp %s listening on %s and %s (%d policies, %d paired clients)",
 		version, cfg.Listen, orDefault(cfg.Socket, "(no socket)"), len(cfg.Policies), len(s.tokens.Clients()))
 	srv := &http.Server{
@@ -307,18 +338,32 @@ func runBridge(sock, client string) error {
 	if !reClientName.MatchString(client) {
 		return fmt.Errorf("bad client name %q", client)
 	}
-	conn, err := net.Dial("unix", sock)
+	cmd := os.Getenv("SSH_ORIGINAL_COMMAND")
+	if len(cmd) > entryMaxLen {
+		return fmt.Errorf("SSH command too long (%d bytes, limit %d)", len(cmd), entryMaxLen)
+	}
+	conn, err := dialDaemon(sock)
 	if err != nil {
-		return fmt.Errorf("daemon not reachable on %s (is it running? /etc/init.d/openwrt-mcp start): %w", sock, err)
+		return err
 	}
 	defer conn.Close()
-	origin := "stdio"
+	origin, peer := "stdio", ""
 	if c := os.Getenv("SSH_CLIENT"); c != "" {
-		origin = "ssh from " + strings.Fields(c)[0]
+		peer = strings.Fields(c)[0]
+		origin = "ssh from " + peer
 	}
-	hello, _ := json.Marshal(bridgeHello{Client: client, Origin: origin})
+	hello, _ := json.Marshal(bridgeHello{Client: client, Origin: origin, Command: cmd, Peer: peer})
 	if _, err := conn.Write(append(hello, '\n')); err != nil {
 		return err
+	}
+	e, perr := parseEntry(cmd)
+	switch {
+	case perr == nil && e.Mode == entryCall:
+		return readCallReply(conn, sock)
+	case perr != nil && contains(strings.Fields(cmd), "call"):
+		// A call the grammar refused: the person at the shell gets the reason as text, not the
+		// JSON-RPC line an MCP client would be sent.
+		return readCallRefusal(conn, sock)
 	}
 	done := make(chan struct{})
 	go func() {

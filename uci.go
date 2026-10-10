@@ -217,19 +217,25 @@ func uciScopes(in uciApplyIn) []string {
 // ---------------------------------------------------------------- uci_get
 
 type uciGetIn struct {
-	Config  string `json:"config" jsonschema:"UCI config to read, e.g. 'dhcp' or 'network'"`
+	Config  string `json:"config,omitempty" jsonschema:"UCI config to read, e.g. 'dhcp' or 'network'. With refs: search only this config"`
 	Section string `json:"section,omitempty" jsonschema:"section to narrow to, e.g. 'lan' or '@wifi-iface[0]'. Omit to read the whole config."`
 	Option  string `json:"option,omitempty" jsonschema:"option to read a single value. Omit to read the whole section."`
-	IDs     bool   `json:"ids,omitempty" jsonschema:"show anonymous sections by their stable internal id (cfgXXXXXX) instead of @type[n]; ids survive reordering, indexes do not"`
+	IDs     bool   `json:"ids,omitempty" jsonschema:"show anonymous sections by cfgXXXXXX id instead of @type[n]; both are positional, a delete renumbers later ones"`
 
 	History string `json:"history,omitempty" jsonschema:"'list' shows the kept past versions of the config (from before each confirmed change); 'diff:<id>' compares one with the current config. Whole config only: give no section or option"`
+
+	Refs string `json:"refs,omitempty" jsonschema:"a name (interface, zone, device, radio, mwan3 member or policy) to find across configs: what defines it and every field that uses it, for a rename or delete."`
 }
 
 // uciGetScope is the read counterpart of uciScopes: a read is scoped with the same identity
 // a write would use. A whole-config read addresses just "<config>", so it is covered by a
 // "<config>" or "<config>*" grant but deliberately NOT by "<config>.*" -- reading every
-// section of a config is a broader permission than reading one named section.
+// section of a config is a broader permission than reading one named section. A refs search
+// reads several configs, so it has a scope of its own, the same whatever the name.
 func uciGetScope(in uciGetIn) []string {
+	if in.Refs != "" {
+		return []string{"refs"}
+	}
 	key := in.Config
 	if in.Section != "" {
 		key += "." + in.Section

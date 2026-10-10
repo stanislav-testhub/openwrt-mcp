@@ -67,3 +67,28 @@ jobs:
                    /www/luci-static/resources/view/openwrt-mcp/status.js; do
             grep -qx "$f" files/lib/upgrade/keep.d/openwrt-mcp || { echo "keep.d misses $f"; exit 1; }
           done
+
+  # The fakes in the unit tests cannot say whether apk or opkg accept the command lines the tools
+  # build, or whether their output still has the shape the parsers expect. These tests run the
+  # package and uci tools inside the OpenWrt rootfs of each supported release. There is no ubus
+  # or netifd in a container, so network, wireless and firewall paths are not covered here.
+  real-target:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { tag: x86-64-24.10.8, pkg: opkg }
+          - { tag: x86-64-25.12.5, pkg: apk }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: build the real-target tests
+        run: CGO_ENABLED=0 go test -c -tags realtarget -o realtarget.test .
+      # /var/lock is made by the init scripts, which a container does not run; opkg needs it.
+      - name: run them in the ${{ matrix.tag }} rootfs
+        run: |
+          docker run --rm -v "$PWD:/w" -e REALTARGET_PKG=${{ matrix.pkg }} openwrt/rootfs:${{ matrix.tag }} \
+            sh -c 'mkdir -p /var/lock /var/run /var/state && exec /w/realtarget.test -test.v -test.timeout 10m'

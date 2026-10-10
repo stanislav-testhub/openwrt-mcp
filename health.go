@@ -54,6 +54,7 @@ type snapshot struct {
 	procd    lazy[map[string]procdService]
 	rc       lazy[map[string]rcEntry]
 	uci      map[string]*lazy[*uciTree]
+	ids      bool // read configs with section ids, so an unnamed section keeps its name across two snapshots
 }
 
 func newSnapshot(ctx context.Context) *snapshot {
@@ -105,7 +106,7 @@ func (sn *snapshot) getUCI(config string) (*uciTree, error) {
 		l = &lazy[*uciTree]{}
 		sn.uci[config] = l
 	}
-	return l.get(func() (*uciTree, error) { return uciShow(sn.ctx, config, false) })
+	return l.get(func() (*uciTree, error) { return uciShow(sn.ctx, config, sn.ids) })
 }
 
 type check struct {
@@ -116,8 +117,11 @@ type check struct {
 // runChecks runs every check against one snapshot. A check that returns an error is listed under
 // "not checked" with the reason, not turned into a finding.
 func runChecks(ctx context.Context, title string, checks []check) *findingsRun {
+	return runChecksOn(newSnapshot(ctx), title, checks)
+}
+
+func runChecksOn(sn *snapshot, title string, checks []check) *findingsRun {
 	r := &findingsRun{title: title}
-	sn := newSnapshot(ctx)
 	for _, c := range checks {
 		fs, err := c.run(sn)
 		if err != nil {
@@ -139,7 +143,7 @@ func healthFindings(ctx context.Context) *findingsRun {
 		{"services", checkServices},
 		{"conntrack", checkConntrack},
 		{"storage", checkStorage},
-		{"apk-new", checkApkNew},
+		{currentPkgManager().name() + "-new", checkNewConfigs},
 		{"ntp", checkNTP},
 		{"kernel", checkKernel},
 	})
@@ -286,8 +290,8 @@ func checkStorage(sn *snapshot) ([]finding, error) {
 	return out, nil
 }
 
-func checkApkNew(sn *snapshot) ([]finding, error) {
-	files := findApkNew()
+func checkNewConfigs(sn *snapshot) ([]finding, error) {
+	files := findNewConfigs()
 	if len(files) == 0 {
 		return nil, nil
 	}
@@ -299,7 +303,7 @@ func checkApkNew(sn *snapshot) ([]finding, error) {
 	if len(files) > len(shown) {
 		ev += fmt.Sprintf(" (+%d more)", len(files)-len(shown))
 	}
-	return []finding{newFinding("apk-new-pending", sevLow,
+	return []finding{newFinding(currentPkgManager().name()+"-new-pending", sevLow,
 		fmt.Sprintf("%d package config file(s) wait for a merge: an upgrade left the new default beside yours", len(files)), ev)}, nil
 }
 
@@ -347,18 +351,14 @@ func checkKernel(sn *snapshot) ([]finding, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, err := run(sn.ctx, defaultCmdTimeout, "apk", "list", "--installed", "kernel")
+	installed, err := currentPkgManager().installedKernel(sn.ctx)
 	if err != nil {
-		return nil, fmt.Errorf("apk list: %w", err)
+		return nil, err
 	}
-	m := reKernelPkg.FindStringSubmatch(out)
-	if m == nil {
-		return nil, fmt.Errorf("no installed kernel package found")
-	}
-	if board.Kernel == "" || board.Kernel == m[1] {
+	if board.Kernel == "" || board.Kernel == installed {
 		return nil, nil
 	}
 	return []finding{newFinding("reboot-needed", sevMedium,
 		"a newer kernel is installed than the one running; it loads at the next restart",
-		fmt.Sprintf("running %s, installed %s", board.Kernel, m[1]))}, nil
+		fmt.Sprintf("running %s, installed %s", board.Kernel, installed))}, nil
 }

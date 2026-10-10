@@ -35,11 +35,14 @@ import (
 //		list allowed_ips '10.0.0.2/32'
 //
 // Adding a client by hand is: generate a keypair, find a free address, write that section,
-// commit, hot-add the peer, then transcribe a config onto a phone. The transcription is what
+// commit, load the peer, then transcribe a config onto a phone. The transcription is what
 // actually goes wrong, so wg_new_client returns a scannable QR alongside the text.
 //
-// Peers are hot-added and removed with `wg set` rather than by restarting the interface: a
-// restart drops every established session, which is a poor trade for one client.
+// Peers reach the running interface the way any config change does: snapshot, armed rollback,
+// commit, reload, and netifd's WireGuard handler does the rest. On 25.12 that handler syncs the
+// peers with `wg syncconf`, which leaves the sessions of the other peers alone; other releases
+// are untested. A peer that is in the config is never changed with `wg set`, so a rollback that
+// puts the file back puts the interface back with it.
 
 type wgServer struct {
 	Iface  string
@@ -411,23 +414,6 @@ func qrOrNote(conf string) string {
 	return "Scan with the WireGuard app:\n\n" + qr
 }
 
-// guardNetworkCommit refuses a direct commit of /etc/config/network while someone else has
-// staged edits there, or while a uci_apply on it awaits confirmation (a rollback would then
-// silently delete the peer from config while the kernel keeps it).
-func (s *Server) guardNetworkCommit(ctx context.Context) error {
-	if out, err := uncommitted(ctx, "network"); err == nil && out != "" {
-		return conflict("refusing: /etc/config/network has uncommitted changes (someone else's edit):\n%s", out)
-	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	for _, p := range s.pending {
-		if contains(p.Configs, "network") {
-			return pending("refusing: a uci_apply on network (%s) awaits confirmation; confirm or roll it back first", p.Token)
-		}
-	}
-	return nil
-}
-
 func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientIn) (string, string, error) {
 	name := strings.TrimSpace(in.Name)
 	if name == "" || strings.ContainsAny(name, "\x00\n\r'") {
@@ -435,7 +421,7 @@ func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientI
 	}
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
-	if err := s.guardNetworkCommit(ctx); err != nil {
+	if err := s.preflight(ctx, []string{"network"}, uciApplyIn{}); err != nil {
 		return "", "", err
 	}
 	_, srv, peers, err := loadWG(ctx, in.Iface)
@@ -566,49 +552,54 @@ func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientI
 			return out, "", fmt.Errorf("staging peer: %w", err)
 		}
 	}
-	s.recordHistory("network", client, "wg_new_client "+name)
-	if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", "network"); err != nil {
-		return out, "", fmt.Errorf("committing peer: %w", err)
+	// The same path as uci_apply: snapshot, armed rollback, commit, read back, reload. The running
+	// interface is brought in line by netifd, not by `wg set`, so a rollback that restores the file
+	// takes the peer off the interface as well, and its key file goes with it.
+	timeout := time.Duration(applyDefaultSec(nil)) * time.Second
+	pa, err := s.snapshot([]string{"network"}, client, "wg_new_client "+name, timeout)
+	if err != nil {
+		_, _ = run(ctx, defaultCmdTimeout, "uci", "revert", "network")
+		return "", "", err
+	}
+	pa.Renew = []string{srv.Iface}
+	if confPath != "" {
+		pa.Files = []string{confPath}
+	}
+	if err := s.commitArmed(ctx, pa, []string{"network"}, timeout); err != nil {
+		return "", "", fmt.Errorf("committing peer: %w", err)
 	}
 
-	// Read the config back before the running interface is touched: a commit that kept nothing
-	// must not be hot-added, or the peer would exist only until the next restart.
+	// Read the config back before anything is reloaded: a commit that kept nothing must not be
+	// loaded by netifd.
 	verified := ""
 	if _, got, err := wgPeerNow(ctx, srv.Iface, pub); err != nil {
 		warn += "\nNot verified: could not re-read the network config (" + err.Error() + ")."
 	} else if got == nil || !got.InUCI || got.Name != name || !contains(got.Allowed, cfg.Address) {
 		return "", "", notApplied("committed network, but peer %q (%s) is not in the network config when read "+
-			"back. Nothing was added to %s. If a partial peer was saved, remove it with wg_remove_client.", name, cfg.Address, srv.Iface)
+			"back. Nothing was reloaded.\n\nThe rollback is still armed: it restores the previous config at %s, "+
+			"or undo it now with uci_rollback {\"token\": \"%s\"}. Do not confirm.", name, cfg.Address, pa.Deadline.Format(time.RFC3339), pa.Token)
 	} else {
 		verified = "Verified: the peer is in the network config."
 	}
 
-	// Hot-add so established sessions survive. A failure here is not fatal: the peer is
-	// committed and will load at the next interface restart -- say so.
-	hot := []string{"wg", "set", srv.Iface, "peer", pub, "allowed-ips", cfg.Address}
-	var hotErr error
-	if psk != "" {
-		hot = append(hot, "preshared-key", "/dev/stdin")
-		_, hotErr = runStdin(ctx, defaultCmdTimeout, psk+"\n", hot...)
-	} else {
-		_, hotErr = run(ctx, defaultCmdTimeout, hot...)
-	}
-	if hotErr != nil {
-		warn += "\nNOTE: the peer is saved but could not be added to the running interface (" + hotErr.Error() +
-			"); it will work after `ifup " + srv.Iface + "`."
-	} else if _, got, err := wgPeerNow(ctx, srv.Iface, pub); err != nil {
+	warn += indentOut(reloadConfigs(ctx, []string{"network"}, false))
+	if settled, err := wgSettle(ctx, srv.Iface, pub, true); err != nil {
 		warn += "\nNot verified: could not re-read " + srv.Iface + " (" + err.Error() + ")."
-	} else if got == nil || !got.InKernel {
+	} else if !settled {
 		// The peer is saved and its key exists only in the file: keep the file for wg-show.
 		keepConf = confPath != ""
-		return "", "", notApplied("`wg set` succeeded, but the new peer is not on the running %s when read back. "+
-			"It is saved in the network config and will load after `ifup %s`.%s", srv.Iface, srv.Iface, wgKeepNote(confPath, name))
+		return "", "", notApplied("committed and reloaded network, but the new peer is not on the running %s after %s, "+
+			"although the interface was asked to renew. It is in the network config and loads at the next `ifup %s`.%s\n\n"+
+			"The rollback is still armed: undo it with uci_rollback {\"token\": \"%s\"}, or confirm it to keep the saved peer.",
+			srv.Iface, wgSettleFor, srv.Iface, wgKeepNote(confPath, name), pa.Token)
 	} else if verified != "" {
 		verified = "Verified: the peer is in the network config and on the running " + srv.Iface + "."
 	}
 	if verified != "" {
 		warn += "\n" + verified
 	}
+	warn += "\n\nThe client exists for good only once this is confirmed; otherwise it is taken out again and its config file deleted.\n" +
+		armedNotice(pa, timeout)
 
 	// Summary is audited; the config and key are not. Keep both out of it.
 	summary := fmt.Sprintf("created wireguard client %q (%s) at %s", name, sec, cfg.Address)
@@ -703,7 +694,7 @@ func (s *Server) wgRemoveClient(ctx context.Context, client string, in wgRemoveI
 	}
 	s.applyMu.Lock()
 	defer s.applyMu.Unlock()
-	if err := s.guardNetworkCommit(ctx); err != nil {
+	if err := s.preflight(ctx, []string{"network"}, uciApplyIn{}); err != nil {
 		return "", "", err
 	}
 	_, srv, peers, err := loadWG(ctx, in.Iface)
@@ -733,36 +724,54 @@ func (s *Server) wgRemoveClient(ctx context.Context, client string, in wgRemoveI
 		return "", "", fmt.Errorf("%q completed a handshake %ds ago -- it is connected right now. If you are "+
 			"reaching the router through it you will lose access. Pass force=true to remove it anyway", p.Name, age)
 	}
+	// The handshake check misses a tunnel that has been quiet for a few minutes; the address sshd saw
+	// for this session does not.
+	if peer := profileFrom(ctx).Peer; !in.Force && peer.IsValid() && !peer.IsLoopback() && inAllowed(p.Allowed, peer) {
+		return "", "", fmt.Errorf("%q is the peer this session arrives through (%s is in its allowed IPs): removing it "+
+			"ends the session that has to confirm the change. Pass force=true to remove it anyway", p.Name, peer)
+	}
+	if !p.InUCI {
+		return s.wgRemoveLoose(ctx, srv, p)
+	}
+
+	// The same path as uci_apply: snapshot, armed rollback, commit, read back, reload. netifd takes
+	// the peer off the interface, so a rollback that restores the file puts it back on.
+	if out, err := run(ctx, defaultCmdTimeout, "uci", "delete", "network."+p.Section); err != nil {
+		_, _ = run(ctx, defaultCmdTimeout, "uci", "revert", "network")
+		return out, "", fmt.Errorf("deleting section: %w", err)
+	}
+	timeout := time.Duration(applyDefaultSec(nil)) * time.Second
+	pa, err := s.snapshot([]string{"network"}, client, "wg_remove_client "+p.Name, timeout)
+	if err != nil {
+		_, _ = run(ctx, defaultCmdTimeout, "uci", "revert", "network")
+		return "", "", err
+	}
+	pa.Renew = []string{srv.Iface}
+	if err := s.commitArmed(ctx, pa, []string{"network"}, timeout); err != nil {
+		return "", "", fmt.Errorf("committing: %w", err)
+	}
 	var notes, gone []string
+	// By key, not by section id: uci numbers anonymous sections by position, so the peer after the
+	// removed one now carries its id.
+	if _, now, err := wgPeerNow(ctx, srv.Iface, p.PubKey); err != nil {
+		notes = append(notes, "Not verified: could not re-read the network config ("+err.Error()+").")
+	} else if now != nil && now.InUCI {
+		return "", "", notApplied("committed network, but peer %q (section %s) is still in the network config when read "+
+			"back. Nothing was reloaded.\n\nThe rollback is still armed: it restores the previous config at %s, "+
+			"or undo it now with uci_rollback {\"token\": \"%s\"}. Do not confirm.", p.Name, p.Section, pa.Deadline.Format(time.RFC3339), pa.Token)
+	} else {
+		gone = append(gone, "from the network config")
+	}
+	reloadOut := reloadConfigs(ctx, []string{"network"}, false)
 	if p.InKernel {
-		if out, err := run(ctx, defaultCmdTimeout, "wg", "set", srv.Iface, "peer", p.PubKey, "remove"); err != nil {
-			notes = append(notes, "live removal failed: "+strings.TrimSpace(out))
-		} else if _, now, err := wgPeerNow(ctx, srv.Iface, p.PubKey); err != nil {
+		if settled, err := wgSettle(ctx, srv.Iface, p.PubKey, false); err != nil {
 			notes = append(notes, "Not verified: could not re-read "+srv.Iface+" ("+err.Error()+").")
-		} else if now != nil && now.InKernel {
-			// Deleting the config now would leave a peer that still carries traffic and is
-			// listed nowhere.
-			return "", "", notApplied("`wg set remove` succeeded, but the peer %q is still on %s when read back. "+
-				"The network config was not touched.", p.Name, srv.Iface)
+		} else if !settled {
+			return "", "", notApplied("committed and reloaded network without the peer, but %q is still on the running %s after %s, "+
+				"although the interface was asked to renew.\n\nThe rollback is still armed: undo it with uci_rollback "+
+				"{\"token\": \"%s\"}, or confirm it to keep the removal in the config.", p.Name, srv.Iface, wgSettleFor, pa.Token)
 		} else {
 			gone = append(gone, "from "+srv.Iface)
-		}
-	}
-	if p.InUCI {
-		if out, err := run(ctx, defaultCmdTimeout, "uci", "delete", "network."+p.Section); err != nil {
-			return out, "", fmt.Errorf("deleting section: %w", err)
-		}
-		s.recordHistory("network", client, "wg_remove_client "+p.Name)
-		if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", "network"); err != nil {
-			return out, "", fmt.Errorf("committing: %w", err)
-		}
-		if t, _, err := wgPeerNow(ctx, srv.Iface, p.PubKey); err != nil {
-			notes = append(notes, "Not verified: could not re-read the network config ("+err.Error()+").")
-		} else if t.typ[p.Section] != "" {
-			return "", "", notApplied("committed network, but peer %q (section %s) is still in the network config "+
-				"when read back.", p.Name, p.Section)
-		} else {
-			gone = append([]string{"from the network config"}, gone...)
 		}
 	}
 	msg := fmt.Sprintf("Removed %q (%s, key %s…) from %s.", p.Name, strings.Join(p.Allowed, ","), short(p.PubKey), srv.Iface)
@@ -772,7 +781,77 @@ func (s *Server) wgRemoveClient(ctx context.Context, client string, in wgRemoveI
 	if len(gone) > 0 {
 		msg += "\nVerified: the peer is gone " + strings.Join(gone, " and ") + "."
 	}
+	msg += indentOut(reloadOut) + "\n\nThe client is gone for good only once this is confirmed; otherwise it is put back.\n" + armedNotice(pa, timeout)
 	return msg, fmt.Sprintf("removed wireguard client %q from %s", p.Name, srv.Iface), nil
+}
+
+// wgRemoveLoose removes a peer that only the running interface knows (someone ran `wg set`). There
+// is no config to snapshot and nothing for a rollback to restore, and the peer would not survive
+// the next restart anyway.
+func (s *Server) wgRemoveLoose(ctx context.Context, srv *wgServer, p *wgPeer) (string, string, error) {
+	if out, err := run(ctx, defaultCmdTimeout, "wg", "set", srv.Iface, "peer", p.PubKey, "remove"); err != nil {
+		return out, "", fmt.Errorf("live removal failed: %w", err)
+	}
+	msg := fmt.Sprintf("Removed %q (%s, key %s…) from %s; it was not in the network config.", p.Name, strings.Join(p.Allowed, ","), short(p.PubKey), srv.Iface)
+	if _, now, err := wgPeerNow(ctx, srv.Iface, p.PubKey); err != nil {
+		msg += "\nNot verified: could not re-read " + srv.Iface + " (" + err.Error() + ")."
+	} else if now != nil && now.InKernel {
+		return "", "", notApplied("`wg set remove` succeeded, but the peer %q is still on %s when read back.", p.Name, srv.Iface)
+	} else {
+		msg += "\nVerified: the peer is gone from " + srv.Iface + "."
+	}
+	return msg, fmt.Sprintf("removed wireguard client %q from %s", p.Name, srv.Iface), nil
+}
+
+// inAllowed reports whether addr is inside one of a peer's allowed IPs. A route that covers
+// everything (/0) says nothing about where a session comes from, so it never counts.
+func inAllowed(allowed []string, addr netip.Addr) bool {
+	for _, a := range allowed {
+		if pfx, err := netip.ParsePrefix(a); err == nil && pfx.Bits() > 0 && pfx.Contains(addr) {
+			return true
+		}
+		if one, err := netip.ParseAddr(a); err == nil && one == addr {
+			return true
+		}
+	}
+	return false
+}
+
+// wgSettleFor is how long netifd gets to bring the running interface in line with the committed
+// config before the interface is asked to renew, and then how long again after that. Variables
+// so a test need not wait.
+var (
+	wgSettleFor  = 8 * time.Second
+	wgSettleStep = 500 * time.Millisecond
+)
+
+// wgSettle waits for the peer to be on the running interface (wantOn) or off it, and reports
+// whether it got there. A reload normally does it; if not, the interface is renewed once, which
+// makes netifd's WireGuard handler sync the peers from the config, and waited for as long again.
+func wgSettle(ctx context.Context, iface, pub string, wantOn bool) (bool, error) {
+	for renewed := false; ; renewed = true {
+		for end := time.Now().Add(wgSettleFor); ; {
+			_, got, err := wgPeerNow(ctx, iface, pub)
+			if err != nil {
+				return false, err
+			}
+			if (got != nil && got.InKernel) == wantOn {
+				return true, nil
+			}
+			if !time.Now().Before(end) {
+				break
+			}
+			select {
+			case <-ctx.Done():
+				return false, ctx.Err()
+			case <-time.After(wgSettleStep):
+			}
+		}
+		if renewed {
+			return false, nil
+		}
+		_ = renewInterface(ctx, iface) // a failure shows up as the peer still being wrong
+	}
 }
 
 // ------------------------------------------------------------------ helpers

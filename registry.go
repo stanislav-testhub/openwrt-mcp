@@ -9,7 +9,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-const serverInstructions = `openwrt-mcp runs ON an OpenWrt 25.12 router (apk, fw4/nftables, procd, netifd).
+const serverInstructions = `openwrt-mcp runs ON an OpenWrt router: 25.12 (apk) or 24.10 (opkg), with fw4/nftables, procd, netifd.
 Start with system_status. Prefer the specific tools over ubus_call/exec; use ubus_list to discover
 anything else. Every call is authorised by a standing policy and audited; a denial names the
 missing scope and the exact grant command, so relay it to the operator rather than working around it.
@@ -26,6 +26,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		&mcp.ServerOptions{Instructions: serverInstructions})
 
 	addPrompts(srv)
+	srv.AddReceivingMiddleware(profileCatalogue)
 
 	// ---- discovery and generic access
 
@@ -82,7 +83,8 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 
 	addTool(s, srv, client, "firewall_show",
 		"Read the fw4/nftables firewall: the live ruleset, what fw4 would render from /etc/config/firewall, a "+
-			"config check, or one table/chain. (iptables does not exist on OpenWrt 22.03+.)",
+			"config check, or one table/chain. (iptables does not exist on OpenWrt 22.03+; a router still on fw3 "+
+			"answers ruleset and rendered only.)",
 		annRead, noScope[firewallShowIn], firewallShow)
 
 	addTool(s, srv, client, "net_diag",
@@ -97,11 +99,14 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 
 	addTool(s, srv, client, "uci_get",
 		"Read configuration as config.section.option=value lines: a config dumps it, a section narrows, an option "+
-			"gives one value; ids=true shows anonymous sections by stable id. The output ends with "+
+			"gives one value; ids=true shows anonymous sections by cfgXXXXXX id. The output ends with "+
 			"'# revision of <config>: <hex>', for uci_apply's expected_revisions. history=list|diff:<id> shows "+
-			"the versions kept from before each confirmed change.",
+			"the versions kept from before each confirmed change. refs=NAME finds every use of a name.",
 		annRead, uciGetScope,
 		func(ctx context.Context, in uciGetIn) (string, string, error) {
+			if in.Refs != "" {
+				return uciRefs(ctx, in)
+			}
 			if in.History != "" {
 				return s.uciHistory(ctx, in)
 			}
@@ -137,8 +142,9 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 	// ---- services
 
 	addTool(s, srv, client, "service_list",
-		"List init scripts with boot state (enabled/disabled) and whether procd has them running.",
-		annRead, noScope[serviceListIn], serviceList)
+		"List init scripts with boot state (enabled/disabled) and whether procd has them running. "+
+			"detail=NAME gives an add-on's status.",
+		annRead, serviceListScope, serviceList)
 
 	addTool(s, srv, client, "service_control",
 		"start / stop / restart / reload / enable / disable an init script via procd. Stopping or disabling "+
@@ -149,25 +155,26 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 	// ---- packages (apk)
 
 	addTool(s, srv, client, "pkg_query",
-		"Query apk: installed (optionally a glob), upgradable, search, info, files, owner (which package owns a "+
-			"path), policy (available versions), audit (files changed since install), world (explicitly requested "+
-			"packages). refresh=true runs 'apk update' first.",
+		"Query the package manager (apk; opkg on 24.10): installed (optionally a glob), upgradable, search, info, "+
+			"files, owner (which package owns a path), policy and audit (apk only), world (explicitly requested "+
+			"packages). refresh=true updates the lists first.",
 		annRead, noScope[pkgQueryIn], pkgQuery)
 
 	addTool(s, srv, client, "pkg_change",
-		"Install, remove or upgrade packages with apk. SIMULATES unless commit=true, so call once to see the "+
-			"plan, then again to do it. Reports any new .apk-new config files. Upgrading everything in place is "+
-			"discouraged on OpenWrt.",
+		"Install, remove or upgrade packages with apk (opkg on 24.10). SIMULATES unless commit=true, so call once "+
+			"to see the plan, then again to do it. Reports any new .apk-new (opkg: -opkg) config files. Upgrading "+
+			"everything in place is discouraged on OpenWrt.",
 		annDest, pkgChangeScope, pkgChange)
 
 	addTool(s, srv, client, "pkg_config_diff",
-		"Show the .apk-new files an upgrade left behind (new package defaults not applied because the live config "+
-			"was modified), each as a diff against the live file.",
+		"Show the .apk-new (opkg: -opkg) files an upgrade left behind (new package defaults not applied because "+
+			"the live config was modified), each as a diff against the live file.",
 		annRead, noScope[pkgConfigDiffIn], pkgConfigDiff)
 
 	addTool(s, srv, client, "pkg_config_resolve",
-		"Resolve one .apk-new: keep_current deletes it; use_new installs it over the live file (old copy kept as "+
-			".pre-apk-new; for /etc/config/* with a rollback timer and uci_confirm, like uci_apply).",
+		"Resolve one .apk-new (opkg: -opkg): keep_current deletes it; use_new installs it over the live file (old "+
+			"copy kept as .pre-apk-new, opkg: .pre-opkg-new; for /etc/config/* with a rollback timer and uci_confirm, "+
+			"like uci_apply).",
 		annDest, pkgResolveScope,
 		func(ctx context.Context, in pkgConfigResolveIn) (string, string, error) {
 			return s.pkgConfigResolve(ctx, client, in)
@@ -185,8 +192,8 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		annRead, noScope[wgListIn], wgListClients)
 
 	addTool(s, srv, client, "wg_new_client",
-		"Issue a WireGuard client: keypair, next free tunnel address, peer saved and hot-added without an "+
-			"interface restart. The private key and config go to a root-only file for the operator "+
+		"Issue a WireGuard client: keypair, next free tunnel address, peer saved; uci_confirm keeps it. "+
+			"The private key and config go to a root-only file for the operator "+
 			"(`openwrt-mcp wg-show <name>` on the router prints them with a QR code); reveal=true returns them "+
 			"here instead. One config per device.",
 		annDest, wgNewScope,
@@ -195,8 +202,9 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		})
 
 	addTool(s, srv, client, "wg_remove_client",
-		"Remove a WireGuard peer (by name, public key or section) from the running interface and the config. "+
-			"Refuses a peer connected in the last 3 minutes unless force=true.",
+		"Remove a WireGuard peer (by name, public key or section) from the config and interface; rollback "+
+			"armed (uci_confirm keeps it). Refuses a peer connected in the last 3 minutes, or this session's own, "+
+			"unless force=true.",
 		annDestIdem, wgRemoveScope,
 		func(ctx context.Context, in wgRemoveIn) (string, string, error) {
 			return s.wgRemoveClient(ctx, client, in)

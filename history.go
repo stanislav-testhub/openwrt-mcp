@@ -21,10 +21,9 @@ import (
 // The newest history_keep versions per config are kept; uci_get history=list|diff:<id> reads
 // them and uci_apply restore=<id> puts one back through the normal rollback-armed apply.
 //
-// A rollback-armed writer (uci_apply, a restore, pkg_config_resolve) already snapshots the old
-// file, so confirming promotes that snapshot instead of deleting it; a rolled-back change
-// leaves nothing, and failed experiments cannot push real history out. The WireGuard tools
-// commit straight away with no rollback, so they record the file just before committing.
+// A rollback-armed writer (uci_apply, a restore, pkg_config_resolve, the WireGuard tools) already
+// snapshots the old file, so confirming promotes that snapshot instead of deleting it; a
+// rolled-back change leaves nothing, and failed experiments cannot push real history out.
 //
 // Entries are whole config files, secrets included, so they get the snapshots' protection: a
 // 0700 directory under the state dir, 0600 files, and they are masked when shown.
@@ -108,20 +107,6 @@ func (s *Server) promoteHistory(p *pendingApply) {
 		}
 		s.saveHistory(c, b, p.Modes[c], p.Client, p.What, p.Token)
 	}
-}
-
-// recordHistory keeps the live file as it is now, for writers that commit with no snapshot.
-func (s *Server) recordHistory(config, client, what string) {
-	p := filepath.Join(uciConfDir, config)
-	b, err := os.ReadFile(p)
-	if err != nil {
-		return
-	}
-	mode := uint32(0o644)
-	if st, err := os.Stat(p); err == nil {
-		mode = uint32(st.Mode().Perm())
-	}
-	s.saveHistory(config, b, mode, client, what, randToken())
 }
 
 // historyEntries returns a config's entries, newest first.

@@ -49,7 +49,7 @@ var rawTools = map[string]string{
 	"firewall_show":    "nftables rules carry addresses and ports, not credentials",
 	"net_diag":         "ping, traceroute, DNS and route output: no configuration values",
 	"network_clients":  "host names, addresses and signal levels: no credentials",
-	"service_list":     "service names and run state only",
+	"service_list":     "service names and run state; an add-on's status prints fixed fields only, never its config, keys or links",
 	"service_control":  "the init script's own output; no configuration values are read or printed",
 	"pkg_query":        "package names, versions and file ownership only",
 	"pkg_change":       "apk's transaction output; no configuration values",

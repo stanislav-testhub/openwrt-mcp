@@ -1,5 +1,76 @@
 # Changelog
 
+## 1.5.0 -- Reach and resilience
+
+Reach routers the 25.12-only server could not, run it from a plain shell, let a client ask for less than its grants allow,
+and survive the things a router does (reboots, restarts, dropped sessions). The one behaviour change to know about: adding
+or removing a WireGuard peer is now a normal rollback-armed change (see Changed).
+
+Added
+- **opkg and 24.10 (ROADMAP 5.1).** The package tools use `opkg` when the router has no `apk` (`pkg_query`, `pkg_change`,
+  `pkg_config_diff`, `pkg_config_resolve`, the doctor's new-defaults and kernel checks). `system_status` shows
+  `packages: apk|opkg; firewall: fw4|fw3`.
+  - New doctor finding `opkg-new-pending` (the apk one stays `apk-new-pending`); the audit skips the package check on opkg.
+  - `firewall_show` on an fw3 router: `ruleset` and `rendered`; other views are refused with a reason.
+  - CI: a `real-target` job runs the package and uci tools in the openwrt/rootfs 24.10 and 25.12 containers.
+  - Catalogue budget raised from 23,500 to 23,650 bytes (prose 12,450 to 12,650) for the descriptions that now name both managers.
+- **`openwrt-mcp call` and a skill file (ROADMAP 5.3).** `ssh ROUTER call TOOL '{json}'` runs one tool and prints its text:
+  no MCP client needed. `call --list` names the tools of the session, `call TOOL --help` prints a tool's schema. It runs
+  through the same server as an MCP session, so policy, audit, redaction and rollback are the existing path. A refusal goes
+  to stderr with the `allow` line, exit status 1. `skills/openwrt-mcp/SKILL.md` is generated from the catalogue
+  (`UPDATE_SKILL=1 go test -run TestSkillFileIsCurrent`).
+- **Client-chosen tool profile (ROADMAP 5.4).** `--read-only` and `--toolset diag,config,pkg,wg` narrow one session: read-only
+  is the `@readonly` preset intersected with the client's grants; a toolset lists only its tools (`system_status` is always
+  there, `exec` is in none). It is enforced when a tool is called, not only in `tools/list`. `connect --read-only` and
+  `connect --toolset` write the profile into the client entry (after `--`, because OpenSSH reads `--read-only` as its own option).
+- **Entry grammar.** The words after the forced command (`SSH_ORIGINAL_COMMAND`) are parsed by the daemon against an
+  allow-list: `--toolset`, `--read-only` and `call`, with a length cap and no control characters, never through a shell.
+  Anything else is refused and audited. Existing `authorized_keys` lines keep working.
+- **Deadlines and a workload cap (ROADMAP 5.7).** Each tool has a deadline above its own waits; at most 8 calls run at once,
+  the rest queue for up to 30 s and then get a `busy` refusal (audited DENIED, code `TIMEOUT`). `uci_confirm`, `uci_rollback`
+  and `mfa_unlock` never queue. A cancelled call kills the command it started and is audited as `cancelled by the client`; a
+  deadline hit as `<tool> hit its <limit>`.
+- **Session resilience (ROADMAP 5.6).**
+  - The bridge waits up to 10 s for the daemon's socket (reboot, upgrade, crash) instead of failing on the first refused dial,
+    and ends with `[code: TIMEOUT; next: ... wait a few seconds and retry]` when it gives up.
+  - Audit: a `stdio session closed after <duration>: <reason>` line per stdio session and a `daemon started` line per start.
+  - `status` (text and `--json` `last_disconnect`) shows the last disconnect and its reason; a session still open when the
+    daemon started again is reported as cut by the restart.
+- **Add-on status (ROADMAP 5.2).** `service_list` takes `detail=<service>`: a read-only status for installed add-ons
+  (tailscale, AdGuard Home, podkop). The list ends with the names that apply on the router. Scope `<service>.detail`. Fixed
+  fields only, no credentials. Catalogue budget raised from 22,100 to 22,300 bytes (prose 11,500 to 11,550): one parameter
+  serves every adapter, instead of a tool per add-on. The other six adapters (adblock, adblock-fast, https-dns-proxy, mwan3,
+  pbr, ddns) are in 1.6.
+- **Cross-config references (ROADMAP 5.10).** `uci_get` takes `refs=<name>`: finds what defines an interface, zone, device,
+  radio or mwan3 member/policy of that name and every reference field in network, firewall, dhcp, wireless, sqm and mwan3
+  that uses it. `config` narrows the search (and is optional with `refs`). Scope `refs`. Catalogue budget raised from 23,650
+  to 23,900 bytes (prose 12,650 to 12,875); `uci_get` gets a per-tool budget of 1,650 bytes.
+- **Warnings in a dry run (ROADMAP 5.9).** `uci_apply` dry run lists `warnings from this change`: the audit's firewall, SSH,
+  LuCI, UPnP and Wi-Fi checks run on the live and on the staged configuration, and only what the change adds is reported, with
+  the audit's next steps and wiki pages. Two new findings: `ref-removed` / `ref-unknown` (a deleted, renamed or misspelled name
+  that other sections still use, with a case-mismatch hint) and `radio-in-use` (the change turns off the Wi-Fi network this
+  session is connected through). A real apply reads no warnings.
+- **The management path follows the session.** The stdio and `call` bridges send the client address from `SSH_CLIENT`, the daemon
+  resolves it with `ip route get`, and the interface it leaves by is treated like the LAN, so a session over a WireGuard tunnel
+  is protected by the probe and `force` rules too. A WireGuard interface's `addresses`, `listen_port` and `private_key` are
+  management options.
+
+Changed
+- **`wg_new_client` and `wg_remove_client` no longer hot-add or hot-remove with `wg set`.** They save the peer in the network
+  config through the standard rollback path (snapshot, armed rollback, reload, read-back) and need `uci_confirm` within 90 s;
+  otherwise the change is reverted (a new client's key file is deleted too).
+  - netifd loads the peer; if it has not after a short wait, the interface is asked to renew (`ubus call network.interface.X
+    renew`), and a rollback does the same.
+  - A commit that fails restores the snapshot and reverts the staged edit. One apply can be pending at a time
+    (`ROLLBACK_PENDING`); staged `network` edits are refused (`CONFLICT`).
+  - Removal refuses the peer the session arrives through unless `force=true`. A peer that only the running interface knows is
+    still removed with `wg set` (no rollback possible).
+- Busy and deadline refusals carry `TIMEOUT`, toolset and read-only refusals `POLICY_DENIED`.
+
+Tests
+- The write-path table covers both `wg_*` tools. Every item was mutation-tested (80 to 90 mutants per item, survivors killed or
+  explained as equivalent); `FuzzParseEntry` and the adapter parsers were fuzzed.
+
 ## 1.4.0 -- Diagnose
 
 Answer "is it healthy, is it exposed, what is going on" in a few calls, and check that a change landed.

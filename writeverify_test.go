@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -280,12 +281,32 @@ type wgBackend struct {
 	kernel            []string
 	lieUCI, lieKernel bool
 	dropOnCommit      string // a commit keeps every staged line except those containing this
+
+	// The config file on disk is the truth, as it is on the router: a commit writes a new
+	// version of it, and a reload (netifd) reads whatever file is there, so a rollback that puts
+	// the snapshot back is seen by the next reload. lieKernel makes netifd load nothing;
+	// blindReload makes only the reload blind, so only an explicit renew loads the peers.
+	confFile    string
+	versions    map[string][]string // file body -> the committed lines it stands for
+	rev         int
+	renews      int
+	blindReload bool
+	slowLoad    int // the reload takes effect only after this many reads of the interface
+	loadIn      int
 }
 
-func newWGBackend(f *fakeRouter, handshakeC int64, lieUCI, lieKernel bool) *wgBackend {
-	b := &wgBackend{dropped: map[string]bool{}, lieUCI: lieUCI, lieKernel: lieKernel}
+func newWGBackend(t *testing.T, f *fakeRouter, handshakeC int64, lieUCI, lieKernel bool) *wgBackend {
+	b := &wgBackend{dropped: map[string]bool{}, lieUCI: lieUCI, lieKernel: lieKernel, versions: map[string][]string{}}
 	b.committed = strings.Split(strings.TrimSpace(sampleNetworkX), "\n")
 	b.kernel = strings.Split(strings.TrimSpace(wgDump(handshakeC)), "\n")[1:]
+	b.confFile = filepath.Join(uciConfDir, "network")
+	seed := "rev 0\n"
+	if body, err := os.ReadFile(b.confFile); err == nil {
+		seed = string(body)
+	} else if err := os.WriteFile(b.confFile, []byte(seed), 0o644); err != nil {
+		t.Fatalf("the wireguard backend needs a fixture root for /etc/config/network: %v", err)
+	}
+	b.versions[seed] = append([]string(nil), b.committed...)
 	locked := func(fn func(argv []string) string) func([]string, string) (string, error) {
 		return func(argv []string, _ string) (string, error) {
 			b.mu.Lock()
@@ -295,6 +316,12 @@ func newWGBackend(f *fakeRouter, handshakeC int64, lieUCI, lieKernel bool) *wgBa
 	}
 	f.onFn("uci -q -X show network", locked(func([]string) string { return strings.Join(b.committed, "\n") }))
 	f.onFn("wg show wg0 dump", locked(func([]string) string {
+		if b.loadIn > 0 {
+			b.loadIn--
+			if b.loadIn == 0 {
+				b.load()
+			}
+		}
 		return "SERVERPRIV=\tSERVERPUB=\t51820\toff\n" + strings.Join(b.kernel, "\n")
 	}))
 	f.onFn("uci add network wireguard_wg0", locked(func([]string) string {
@@ -330,11 +357,31 @@ func newWGBackend(f *fakeRouter, handshakeC int64, lieUCI, lieKernel bool) *wgBa
 					keep = append(keep, l)
 				}
 			}
-			b.committed = keep
+			b.committed = renumberAnon(keep)
 		}
 		b.staged, b.dropped = nil, map[string]bool{}
+		b.rev++
+		body := fmt.Sprintf("rev %d\n", b.rev)
+		b.versions[body] = append([]string(nil), b.committed...)
+		_ = os.WriteFile(b.confFile, []byte(body), 0o644)
 		return ""
 	}))
+	f.onFn("/sbin/reload_config", locked(func([]string) string {
+		b.reread()
+		if b.slowLoad > 0 {
+			b.loadIn = b.slowLoad
+		} else if !b.blindReload {
+			b.load()
+		}
+		return ""
+	}))
+	f.onFn("ubus call network.interface.wg0 renew", locked(func([]string) string {
+		b.renews++
+		b.reread()
+		b.load()
+		return ""
+	}))
+	f.on("ubus call service event", "")
 	f.onFn("wg set wg0", locked(func(argv []string) string {
 		pub := argv[4]
 		if b.lieKernel {
@@ -354,6 +401,93 @@ func newWGBackend(f *fakeRouter, handshakeC int64, lieUCI, lieKernel bool) *wgBa
 		return ""
 	}))
 	return b
+}
+
+// renumberAnon gives the anonymous sections the ids uci would give them on the next load. The
+// file does not store them: uci numbers them by position (cfg + two hex digits counting up in file
+// order + four of the type), so deleting a section hands its id to the next one.
+func renumberAnon(lines []string) []string {
+	idOf := func(l string) string { // "network.ID=type" or "network.ID.opt=v"
+		id := strings.TrimPrefix(l, "network.")
+		if i := strings.IndexAny(id, ".="); i >= 0 {
+			id = id[:i]
+		}
+		return id
+	}
+	anon := func(id string) bool {
+		if len(id) != 9 || !strings.HasPrefix(id, "cfg") {
+			return false
+		}
+		var n int
+		_, err := fmt.Sscanf(id[3:], "%x", &n)
+		return err == nil
+	}
+	rename := map[string]string{}
+	for _, l := range lines {
+		if id := idOf(l); anon(id) && rename[id] == "" {
+			rename[id] = fmt.Sprintf("cfg%02x%s", 0x11+len(rename), id[5:])
+		}
+	}
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = l
+		if to := rename[idOf(l)]; to != "" {
+			out[i] = "network." + to + strings.TrimPrefix(strings.TrimPrefix(l, "network."), idOf(l))
+		}
+	}
+	return out
+}
+
+// reread is uci reading the file on disk again; the caller holds mu.
+func (b *wgBackend) reread() {
+	if body, err := os.ReadFile(b.confFile); err == nil {
+		if lines, ok := b.versions[string(body)]; ok {
+			b.committed = append([]string(nil), lines...)
+		}
+	}
+}
+
+// load is netifd running the interface's setup: the kernel ends up with the peers the committed
+// config lists and no others, and a peer it already had keeps its counters. The caller holds mu.
+func (b *wgBackend) load() {
+	if b.lieKernel {
+		return
+	}
+	pubs, allowed := map[string]string{}, map[string]string{}
+	for _, l := range b.committed {
+		if sec, ok := strings.CutSuffix(l, "=wireguard_wg0"); ok {
+			pubs[sec], allowed[sec] = "", ""
+		}
+	}
+	for _, l := range b.committed {
+		lhs, val, _ := strings.Cut(l, "=")
+		val = strings.Trim(val, "'")
+		for sec := range pubs {
+			switch lhs {
+			case sec + ".public_key":
+				pubs[sec] = val
+			case sec + ".allowed_ips":
+				allowed[sec] = val
+			}
+		}
+	}
+	var kernel []string
+	have := map[string]bool{}
+	for _, l := range b.kernel {
+		pub, _, _ := strings.Cut(l, "\t")
+		for _, want := range pubs {
+			if want == pub {
+				kernel = append(kernel, l)
+				have[pub] = true
+			}
+		}
+	}
+	for sec, pub := range pubs {
+		if pub != "" && !have[pub] {
+			kernel = append(kernel, pub+"\t(none)\t(none)\t"+allowed[sec]+"\t0\t0\t0\toff")
+		}
+	}
+	b.kernel = kernel
 }
 
 func (b *wgBackend) kernelHas(pub string) bool {
@@ -384,8 +518,11 @@ func TestNewClientFailsWhenTheCommitDidNotKeepThePeer(t *testing.T) {
 	if err == nil || errCode(err) != "NOT_APPLIED" || !strings.Contains(err.Error(), "not in the network config") {
 		t.Fatalf("want NOT_APPLIED naming the config, got %v", err)
 	}
-	if f.ran("wg set") {
-		t.Error("a peer that is not in the config must not be hot-added to the running interface")
+	if f.ran("/sbin/reload_config") {
+		t.Error("a peer that is not in the config must not be loaded: nothing may be reloaded")
+	}
+	if firstToken(s) == "" || !strings.Contains(err.Error(), "The rollback is still armed") || !strings.Contains(err.Error(), firstToken(s)) {
+		t.Errorf("the rollback must stay armed and the error name its token:\n%v", err)
 	}
 }
 
@@ -402,30 +539,30 @@ func TestNewClientFailsWhenTheCommitKeptOnlyPartOfThePeer(t *testing.T) {
 			"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
 		f.on("wg genkey", "CLIENTPRIV=\n")
 		f.on("wg pubkey", "CLIENTPUB=\n")
-		b := newWGBackend(f, 0, false, false)
+		b := newWGBackend(t, f, 0, false, false)
 		b.dropOnCommit = lost
 		s := testServer(t, "")
 		_, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop"})
 		if err == nil || errCode(err) != "NOT_APPLIED" || !strings.Contains(err.Error(), "not in the network config") {
 			t.Errorf("a commit that lost %s: want NOT_APPLIED, got %v", lost, err)
 		}
-		if f.ran("wg set") {
-			t.Errorf("a commit that lost %s: the interface must not be touched", lost)
+		if f.ran("/sbin/reload_config") {
+			t.Errorf("a commit that lost %s: nothing may be reloaded", lost)
 		}
 	}
 }
 
-func TestNewClientFailsWhenTheHotAddDidNotReachTheInterface(t *testing.T) {
+func TestNewClientFailsWhenNetifdDidNotLoadThePeer(t *testing.T) {
 	s, f, dir := wgNewFakeWith(t, false, true)
 	_, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop"})
 	if err == nil || errCode(err) != "NOT_APPLIED" || !strings.Contains(err.Error(), "not on the running wg0") {
 		t.Fatalf("want NOT_APPLIED naming the interface, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "ifup wg0") {
-		t.Errorf("the error must say how to load the saved peer:\n%s", err)
+	if !strings.Contains(err.Error(), "ifup wg0") || !strings.Contains(err.Error(), "uci_rollback") || !strings.Contains(err.Error(), firstToken(s)) {
+		t.Errorf("the error must say how to load the saved peer and how to undo it:\n%s", err)
 	}
-	if !f.ran("wg set wg0") {
-		t.Fatal("the hot-add never ran, so this proved nothing")
+	if !f.ran("/sbin/reload_config") || !f.ran("ubus call network.interface.wg0 renew") || f.ran("wg set") {
+		t.Fatalf("want a reload, then a renew of the interface, and no wg set:\n%s", f.allCalls())
 	}
 	// The peer is saved and the operator cannot be handed the key by this error: leave the
 	// client file where wg-show finds it.
@@ -434,21 +571,36 @@ func TestNewClientFailsWhenTheHotAddDidNotReachTheInterface(t *testing.T) {
 	}
 }
 
-func TestNewClientKeepsAFailedHotAddAsANote(t *testing.T) {
-	s, f, _ := wgNewFake(t)
-	f.fail("wg set wg0", "Unable to access interface: No such device")
-	out, _, err := s.wgNewClient(context.Background(), "c", wgNewClientIn{Name: "laptop"})
+// A kernel-only peer (someone ran `wg set`) is in no config, so there is nothing to snapshot or
+// to roll back; it is removed from the interface directly, and checked there.
+func TestRemoveClientRemovesAPeerOnlyTheInterfaceKnows(t *testing.T) {
+	withFixtureRoot(t)
+	f := wgFake(t, 0)
+	b := newWGBackend(t, f, 0, false, false)
+	b.kernel = append(b.kernel, "LOOSE=\t(none)\t(none)\t10.20.30.9/32\t0\t0\t0\toff")
+	s := testServer(t, "")
+	out, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{PublicKey: "LOOSE="})
 	if err != nil {
-		t.Fatalf("a hot-add that failed (interface down) is the old note, not an error: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(out, "could not be added to the running interface") || strings.Contains(out, "Verified: the peer is in the network config and on the running") {
-		t.Errorf("want the note and no claim that it is live:\n%s", out)
+	if b.kernelHas("LOOSE=") || !f.ran("wg set wg0 peer LOOSE= remove") || f.ran("uci commit") || firstToken(s) != "" {
+		t.Errorf("want a direct removal and no config change or rollback:\n%s", f.allCalls())
+	}
+	if !strings.Contains(out, "Verified: the peer is gone from wg0.") {
+		t.Errorf("a verified removal must say so:\n%s", out)
+	}
+	f.fail("wg set wg0", "Unable to access interface: No such device")
+	b.kernel = append(b.kernel, "LOOSE=\t(none)\t(none)\t10.20.30.9/32\t0\t0\t0\toff")
+	if _, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{PublicKey: "LOOSE="}); err == nil ||
+		!strings.Contains(err.Error(), "live removal failed") {
+		t.Errorf("a failed removal must be reported as the failed wg call, got %v", err)
 	}
 }
 
 func TestRemoveClientSaysWhatItVerified(t *testing.T) {
+	withFixtureRoot(t)
 	f := wgFake(t, 0)
-	newWGBackend(f, 0, false, false)
+	newWGBackend(t, f, 0, false, false)
 	s := testServer(t, "")
 	out, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{Name: "tablet"})
 	if err != nil {
@@ -460,21 +612,23 @@ func TestRemoveClientSaysWhatItVerified(t *testing.T) {
 }
 
 func TestRemoveClientStopsWhenThePeerIsStillOnTheInterface(t *testing.T) {
+	withFixtureRoot(t)
 	f := wgFake(t, 0)
-	newWGBackend(f, 0, false, true)
+	newWGBackend(t, f, 0, false, true)
 	s := testServer(t, "")
 	_, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{Name: "tablet"})
-	if err == nil || errCode(err) != "NOT_APPLIED" || !strings.Contains(err.Error(), "still on wg0") {
+	if err == nil || errCode(err) != "NOT_APPLIED" || !strings.Contains(err.Error(), "still on the running wg0") {
 		t.Fatalf("want NOT_APPLIED naming the interface, got %v", err)
 	}
-	if f.ran("uci delete") || f.ran("uci commit") {
-		t.Error("the config must not be touched while the peer still carries traffic: it would be live and unlisted")
+	if !strings.Contains(err.Error(), "uci_rollback") || !strings.Contains(err.Error(), firstToken(s)) || !f.ran("ubus call network.interface.wg0 renew") {
+		t.Errorf("the interface must have been renewed, and the error say how to undo the removal:\n%v", err)
 	}
 }
 
 func TestRemoveClientFailsWhenTheCommitDidNotDropThePeer(t *testing.T) {
+	withFixtureRoot(t)
 	f := wgFake(t, 0)
-	newWGBackend(f, 0, true, false)
+	newWGBackend(t, f, 0, true, false)
 	s := testServer(t, "")
 	_, _, err := s.wgRemoveClient(context.Background(), "c", wgRemoveIn{Name: "tablet"})
 	if err == nil || errCode(err) != "NOT_APPLIED" || !strings.Contains(err.Error(), "still in the network config") {
@@ -664,8 +818,9 @@ func TestEveryWritePathVerifiesAfterWrite(t *testing.T) {
 			return callText(t, cs, "wg_new_client", map[string]any{"name": "laptop"})
 		},
 		"wg_remove_client": func(t *testing.T) (string, bool) {
+			withFixtureRoot(t)
 			f := wgFake(t, 0)
-			newWGBackend(f, 0, true, false)
+			newWGBackend(t, f, 0, true, false)
 			cs := connectClient(t, testServer(t, grantAll()), "c")
 			return callText(t, cs, "wg_remove_client", map[string]any{"name": "tablet"})
 		},

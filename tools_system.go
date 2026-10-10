@@ -108,6 +108,7 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 	} else {
 		fmt.Fprintf(&b, "board: %v\n", err)
 	}
+	b.WriteString(capabilityLine() + "\n")
 	var si ubusSysInfo
 	if err := runJSON(ctx, &si, "ubus", "call", "system", "info"); err == nil {
 		load := make([]string, len(si.Load))
@@ -198,8 +199,8 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 		fmt.Fprintf(&b, "  uci_apply awaiting confirmation: %s\n", p)
 		n++
 	}
-	if files := findApkNew(); len(files) > 0 {
-		fmt.Fprintf(&b, "  %d .apk-new config file(s) awaiting review (pkg_config_diff)\n", len(files))
+	if files := findNewConfigs(); len(files) > 0 {
+		fmt.Fprintf(&b, "  %d %s config file(s) awaiting review (pkg_config_diff)\n", len(files), currentPkgManager().newConfigSuffix())
 		n++
 	}
 	if n == 0 {
@@ -267,30 +268,42 @@ func rcList(ctx context.Context) (map[string]rcEntry, error) {
 
 type serviceListIn struct {
 	Filter string `json:"filter,omitempty" jsonschema:"only services whose name contains this"`
+	Detail string `json:"detail,omitempty" jsonschema:"add-on init script name (the list names those installed): its status. Overrides filter"`
+}
+
+// serviceListScope is empty for a list and "<service>.detail" for an add-on's status, which
+// reads more than the list does: a grant must name the service (or '*') to get it. A malformed
+// name gets no scope so it reaches the handler's refusal instead of a grant hint built from it.
+func serviceListScope(in serviceListIn) []string {
+	if !reServiceName.MatchString(in.Detail) { // also true for ""
+		return nil
+	}
+	return []string{in.Detail + ".detail"}
 }
 
 func serviceList(ctx context.Context, in serviceListIn) (string, string, error) {
+	if in.Detail != "" && !reServiceName.MatchString(in.Detail) {
+		return "", "", fmt.Errorf("detail must be an init script name (letters, digits, '.', '_' and '-'); see service_list")
+	}
 	m, err := rcList(ctx)
 	if err != nil {
 		return "", "", err
 	}
+	if in.Detail != "" {
+		return serviceDetail(ctx, m, in.Detail)
+	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%-24s %-9s %-8s %s\n", "SERVICE", "BOOT", "STATE", "START/STOP")
+	b.WriteString(serviceHeader() + "\n")
 	for _, name := range sortedKeys(m) {
 		if in.Filter != "" && !strings.Contains(name, in.Filter) {
 			continue
 		}
-		e := m[name]
-		boot, state := "disabled", "stopped"
-		if e.Enabled {
-			boot = "enabled"
-		}
-		if e.Running {
-			state = "running"
-		}
-		fmt.Fprintf(&b, "%-24s %-9s %-8s %d/%d\n", name, boot, state, e.Start, e.Stop)
+		b.WriteString(serviceRow(name, m[name]) + "\n")
 	}
 	b.WriteString("\n(\"stopped\" is also what one-shot init scripts without a procd instance report)")
+	if here := adaptersHere(m); len(here) > 0 {
+		b.WriteString("\nAdd-on status (service_list detail=NAME): " + strings.Join(here, ", "))
+	}
 	return b.String(), "listed services", nil
 }
 

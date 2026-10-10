@@ -40,6 +40,8 @@ type pendingApply struct {
 	Missing  []string          `json:"missing,omitempty"` // configs that did not exist; restore deletes them
 	Client   string            `json:"client"`
 	What     string            `json:"what"`
+	Renew    []string          `json:"renew,omitempty"` // interfaces netifd is asked to renew after a restore (WireGuard peers)
+	Files    []string          `json:"files,omitempty"` // client configs deleted when it is rolled back: they hold the key of a peer that goes
 
 	timer *time.Timer
 }
@@ -128,6 +130,10 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 		}
 	}
 	mgmt := mgmtReasons(ctx, in.Changes)
+	var live *advice // the live state, for the dry run to compare the staged one with
+	if in.DryRun && warnsOn(in.Changes) {
+		live = takeAdvice(ctx)
+	}
 	baseline := checkAll(ctx, names)
 	var skipped []string
 	for _, c := range in.Changes {
@@ -160,10 +166,11 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 	report, fresh := validationReport(names, baseline, checkAll(ctx, names))
 
 	if in.DryRun {
+		warnings := live.report(ctx)
 		revertAll()
-		return fmt.Sprintf("DRY RUN -- nothing was committed. uci would change:\n%s\n\n%s\n\n%s"+
+		return fmt.Sprintf("DRY RUN -- nothing was committed. uci would change:\n%s\n\n%s\n\n%s%s"+
 				"Call uci_apply again without dry_run to apply this with a rollback timer. To refuse the apply "+
-				"if a config changes first, pass expected_revisions with: %s", staged, report, mgmtNote(mgmt), revisionList(names)),
+				"if a config changes first, pass expected_revisions with: %s", staged, report, mgmtNote(mgmt), warnings, revisionList(names)),
 			fmt.Sprintf("dry run of %d change(s)", len(in.Changes)), nil
 	}
 	if fresh != "" && !in.Force {
@@ -183,18 +190,8 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 		revertAll()
 		return "", "", err
 	}
-	// Armed before the commit, so there is no instant at which a committed change exists
-	// without a pending record on flash to undo it.
-	s.arm(p, timeout)
-	for _, c := range names {
-		if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", c); err != nil {
-			var rerr error
-			if s.take(p.Token) != nil {
-				rerr = s.restore(ctx, p, false)
-				s.savePending()
-			}
-			return "", "", fmt.Errorf("commit %s failed: %w\n%s (restore: %v)", c, err, out, rerr)
-		}
+	if err := s.commitArmed(ctx, p, names, timeout); err != nil {
+		return "", "", err
 	}
 	// Read back before any service is reloaded: a commit that kept something else must not be
 	// loaded by the daemons. The rollback stays armed, so the operator can undo what did land.
@@ -408,6 +405,24 @@ func (s *Server) snapshot(configs []string, client, what string, timeout time.Du
 	return p, nil
 }
 
+// commitArmed arms the rollback of a snapshotted change, then commits the staged configs. Armed
+// before the commit, so there is no instant at which a committed change exists without a pending
+// record on flash to undo it. A commit that fails puts the snapshot back at once.
+func (s *Server) commitArmed(ctx context.Context, p *pendingApply, names []string, timeout time.Duration) error {
+	s.arm(p, timeout)
+	for _, c := range names {
+		if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", c); err != nil {
+			var rerr error
+			if s.take(p.Token) != nil {
+				rerr = s.restore(ctx, p, false)
+				s.savePending()
+			}
+			return fmt.Errorf("commit %s failed: %w\n%s (restore: %v)", c, err, out, rerr)
+		}
+	}
+	return nil
+}
+
 // arm registers a snapshotted change and starts its timer. The pending record is written
 // before this returns, so a crash or reboot from here on rolls back.
 func (s *Server) arm(p *pendingApply, timeout time.Duration) {
@@ -505,6 +520,14 @@ func (s *Server) restore(ctx context.Context, p *pendingApply, atBoot bool) erro
 		_, _ = run(ctx, defaultCmdTimeout, "uci", "revert", c)
 	}
 	reloadConfigs(ctx, p.Configs, atBoot)
+	if !atBoot { // at boot the interfaces come up from the restored file
+		for _, iface := range p.Renew {
+			_ = renewInterface(ctx, iface)
+		}
+	}
+	for _, f := range p.Files {
+		s.removeClientFile(f)
+	}
 	if len(failed) > 0 {
 		return fmt.Errorf("restore incomplete: %s", strings.Join(failed, "; "))
 	}
@@ -532,6 +555,27 @@ func reloadConfigs(ctx context.Context, configs []string, force bool) string {
 		}
 	}
 	return strings.TrimSpace(out)
+}
+
+// renewInterface asks netifd to run the protocol handler's renew action. For WireGuard that syncs
+// the peers from the config without taking the interface down. The name comes from our own state
+// file but goes into an argv, so it must still be a UCI name.
+func renewInterface(ctx context.Context, iface string) error {
+	if !reUCIOption.MatchString(iface) {
+		return fmt.Errorf("bad interface name %q", iface)
+	}
+	if out, err := run(ctx, defaultCmdTimeout, "ubus", "call", "network.interface."+iface, "renew"); err != nil {
+		return fmt.Errorf("renewing %s: %w %s", iface, err, strings.TrimSpace(out))
+	}
+	return nil
+}
+
+// removeClientFile deletes a client config named in a pending record, if it is one: a record the
+// daemon wrote can only name a .conf file in the directory wg_new_client leaves them in.
+func (s *Server) removeClientFile(name string) {
+	if path.Dir(name) == wgClientDir(s.cfg()) && strings.HasSuffix(name, ".conf") {
+		_ = os.Remove(sysPath(name))
+	}
 }
 
 func (s *Server) savePending() {

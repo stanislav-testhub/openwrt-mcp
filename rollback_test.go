@@ -186,6 +186,7 @@ func fakeUCIWith(t *testing.T, f *fakeRouter, lie bool) (map[string][]string, *u
 		return "", nil
 	}
 	f.onFn("uci -q show", func(argv []string, _ string) (string, error) { return model.show(argv[len(argv)-1]) })
+	f.onFn("uci -q -X show", func(argv []string, _ string) (string, error) { return model.show(argv[len(argv)-1]) })
 	f.onFn("uci set", stage)
 	f.onFn("uci delete", stage)
 	f.onFn("uci -q delete", stage)

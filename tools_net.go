@@ -320,6 +320,9 @@ var reNftName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$`)
 // the rules an agent needs to reason about are fw4's rendered ruleset plus whatever other
 // packages (docker, tailscale, banip, pbr, ...) have added as their own tables.
 func firewallShow(ctx context.Context, in firewallShowIn) (string, string, error) {
+	if firewallBackend() == "fw3" {
+		return firewallShowFw3(ctx, in)
+	}
 	fam, table := orDefault(in.Family, "inet"), orDefault(in.Table, "fw4")
 	var argv []string
 	switch orDefault(in.View, "ruleset") {
@@ -346,5 +349,24 @@ func firewallShow(ctx context.Context, in firewallShowIn) (string, string, error
 	if in.View == "check" && err == nil && strings.TrimSpace(out) == "" {
 		out = "firewall configuration is valid"
 	}
+	return out, strings.Join(argv, " "), err
+}
+
+// firewallShowFw3 reads an iptables firewall (OpenWrt 21.02 and older, and firmware built on
+// it). There are no nftables tables and fw3 has no config check, so only the live IPv4 rules and
+// fw3's rendering of /etc/config/firewall are offered.
+func firewallShowFw3(ctx context.Context, in firewallShowIn) (string, string, error) {
+	var argv []string
+	switch orDefault(in.View, "ruleset") {
+	case "ruleset":
+		argv = []string{"iptables-save"}
+	case "rendered":
+		argv = []string{"fw3", "-q", "print"}
+	case "check", "table", "chain":
+		return "", "", invalid("view=%s needs fw4 (nftables); this router runs fw3 (iptables), so use view=ruleset or rendered", in.View)
+	default:
+		return "", "", invalid("unknown view %q", in.View)
+	}
+	out, err := run(ctx, defaultCmdTimeout, argv...)
 	return out, strings.Join(argv, " "), err
 }

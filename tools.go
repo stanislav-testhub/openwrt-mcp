@@ -50,6 +50,7 @@ func runWith(ctx context.Context, timeout time.Duration, stdin *string, argv ...
 	if timeout <= 0 {
 		timeout = defaultCmdTimeout
 	}
+	started := time.Now()
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 	out, errOut, err := cmdRunner(ctx, stdin, argv)
@@ -60,6 +61,10 @@ func runWith(ctx context.Context, timeout time.Duration, stdin *string, argv ...
 		out += e
 	}
 	if ctx.Err() == context.DeadlineExceeded {
+		// The caller's own deadline can fire before this command's: say how long it really ran.
+		if took := time.Since(started); took < timeout {
+			timeout = took.Round(10 * time.Millisecond)
+		}
 		return out, withCode(codeTimeout, fmt.Errorf("timed out after %s", timeout))
 	}
 	return out, err
@@ -300,6 +305,9 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				return res, nil, nil
 			}
 
+			if reason := profileFrom(ctx).refusal(name, scopes); reason != "" {
+				return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
+			}
 			if !ungatedTools[name] {
 				now := time.Now()
 				p, reason := s.cfg().AuthorisePolicy(client, name, scopes, now)
@@ -313,8 +321,25 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				}
 			}
 
-			out, summary, err := fn(ctx, in)
+			if !slotExempt[name] {
+				release, refusal := s.acquireSlot(ctx)
+				if release == nil {
+					return finish(errResultCoded(refusal, codeLine(codeTimeout)), OutcomeDenied, "", refusal)
+				}
+				defer release()
+			}
+			limit := deadlineFor(name)
+			callCtx, cancel := context.WithTimeout(ctx, limit)
+			defer cancel()
+
+			out, summary, err := fn(callCtx, in)
 			if err != nil {
+				switch {
+				case errors.Is(callCtx.Err(), context.DeadlineExceeded):
+					err = withCode(codeTimeout, fmt.Errorf("%s hit its %s limit: %w", name, limit, err))
+				case errors.Is(ctx.Err(), context.Canceled):
+					err = fmt.Errorf("cancelled by the client: %w", err)
+				}
 				msg := err.Error()
 				if out != "" {
 					msg += "\n" + out

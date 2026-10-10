@@ -38,12 +38,21 @@ func fw4Problems(ctx context.Context) []string {
 	return warn
 }
 
+// checkerFor is the checker of a config, if any. fw3 has no check command, so on an iptables
+// router the firewall config has none and is reported as not checked.
+func checkerFor(name string) func(ctx context.Context) []string {
+	if name == "firewall" && firewallBackend() == "fw3" {
+		return nil
+	}
+	return checkers[name]
+}
+
 // checkAll runs the checker of every named config that has one. A config with a checker has a
 // key in the result, even when it reported nothing.
 func checkAll(ctx context.Context, names []string) map[string][]string {
 	out := map[string][]string{}
 	for _, c := range names {
-		if chk := checkers[c]; chk != nil {
+		if chk := checkerFor(c); chk != nil {
 			out[c] = chk(ctx)
 		}
 	}

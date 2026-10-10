@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -16,7 +17,7 @@ import (
 //
 // Released under the MIT Licence. See the LICENSE file.
 
-var version = "1.4.0"
+var version = "1.5.0"
 
 const sourceURL = "https://github.com/stanislav-testhub/openwrt-mcp (based on github.com/GlassOnTin/openwrt-mcp)"
 
@@ -65,7 +66,14 @@ func main() {
 		if cfg.Socket == "" {
 			die("the stdio bridge is disabled (option socket '' in %s)", *configPath)
 		}
-		must(runBridge(cfg.Socket, *client))
+		switch err := runBridge(cfg.Socket, *client); {
+		case errors.Is(err, errCallFailed):
+			os.Exit(1) // a failed call: the reason is already on stderr
+		case errCode(err) == codeTimeout:
+			die("%v\n%s", err, daemonStartingLine) // the only TIMEOUT the bridge itself returns
+		default:
+			must(err)
+		}
 
 	case "authorize-key":
 		if len(args) != 3 {

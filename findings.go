@@ -54,6 +54,7 @@ const (
 	docServices = "https://openwrt.org/docs/guide-user/base-system/managing_services"
 	docExtroot  = "https://openwrt.org/docs/guide-user/additional-software/extroot_configuration"
 	docApk      = "https://openwrt.org/docs/guide-user/additional-software/apk"
+	docOpkg     = "https://openwrt.org/docs/guide-user/additional-software/opkg"
 	docNTP      = "https://openwrt.org/docs/guide-user/advanced/ntp_configuration"
 	docFirewall = "https://openwrt.org/docs/guide-user/firewall/firewall_configuration"
 	docDropbear = "https://openwrt.org/docs/guide-user/base-system/dropbear"
@@ -64,9 +65,9 @@ const (
 )
 
 // verifiedDocs are the wiki pages the findings link to. DokuWiki answers 200 for a page that does
-// not exist, so each was opened and read for its content on 2026-10-08; a link is added to this
+// not exist, so each was opened and read for its content on 2026-10-08 (docOpkg on 2026-10-09); a link is added to this
 // list only after that.
-var verifiedDocs = []string{docWifi, docWifiEnc, docNetwork, docServices, docExtroot, docApk, docNTP,
+var verifiedDocs = []string{docWifi, docWifiEnc, docNetwork, docServices, docExtroot, docApk, docOpkg, docNTP,
 	docFirewall, docDropbear, docLuciSec, docUPnP, docSecure, docWG}
 
 var findingHints = map[string]findingHint{
@@ -78,6 +79,7 @@ var findingHints = map[string]findingHint{
 	"overlay-full":     {"pkg_query action=installed lists what takes flash; pkg_change action=del removes what you do not use", docExtroot},
 	"tmp-full":         {"/tmp is RAM: logs and downloads there vanish on reboot; system_status shows the use", ""},
 	"apk-new-pending":  {"pkg_config_diff to read each file, pkg_config_resolve to keep yours or take the new one", docApk},
+	"opkg-new-pending": {"pkg_config_diff to read each file, pkg_config_resolve to keep yours or take the new one", docOpkg},
 	"ntp-unsynced":     {"logread with pattern=chronyd; net_diag action=nslookup target=pool.ntp.org tests name resolution", docNTP},
 	"clock-unset":      {"set up an NTP client (chronyd or sysntpd); logread with pattern=ntp shows whether it ran", docNTP},
 	"reboot-needed":    {"reboot when convenient: the new kernel loads only after a restart (no tool here reboots the router)", ""},
@@ -100,6 +102,11 @@ var findingHints = map[string]findingHint{
 	"root-no-password":        {"set a root password with passwd on the router (no tool here sets it) and prefer SSH keys", docSecure},
 	"apk-audit-modified":      {"pkg_query action=owner with the path shows the package; reinstall it with pkg_change if the change is not yours", docApk},
 	"wg-stale-peer":           {"wg_list_clients shows every handshake; wg_remove_client removes a peer nobody uses", docWG},
+
+	// dry-run warnings (warnings.go)
+	"ref-removed":  {"uci_get refs=NAME lists what defines and uses the name; change or remove every use in the same uci_apply", docNetwork},
+	"ref-unknown":  {"check the spelling and case; uci_get refs=NAME shows what the name matches", docNetwork},
+	"radio-in-use": {"reach the router another way first (a cable, or the other radio): this session cannot confirm over a radio it switched off, and the rollback restores it", docWifi},
 }
 
 func allFindingHints() map[string]findingHint { return findingHints }

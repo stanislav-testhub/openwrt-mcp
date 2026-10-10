@@ -423,9 +423,12 @@ func TestEveryWritePathLeavesAHistoryEntry(t *testing.T) {
 			"route":[{"target":"0.0.0.0","mask":0,"nexthop":"100.64.0.1"}]}]}`)
 		f.on("wg genkey", "CLIENTPRIV=\n")
 		f.on("wg pubkey", "CLIENTPUB=\n")
-		newWGBackend(f, 0, false, false)
+		newWGBackend(t, f, 0, false, false)
 		s := testServer(t, "")
 		if _, _, err := s.wgNewClient(ctx, "c", wgNewClientIn{Name: "laptop"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.uciConfirm(ctx, firstToken(s)); err != nil {
 			t.Fatal(err)
 		}
 		es := s.historyEntries("network")
@@ -438,9 +441,12 @@ func TestEveryWritePathLeavesAHistoryEntry(t *testing.T) {
 		root := withFixtureRoot(t)
 		writeFixture(t, root, "etc/config/network", "config interface 'wg0'\n")
 		f := wgFake(t, 0)
-		newWGBackend(f, 0, false, false)
+		newWGBackend(t, f, 0, false, false)
 		s := testServer(t, "")
 		if _, _, err := s.wgRemoveClient(ctx, "c", wgRemoveIn{Name: "tablet"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := s.uciConfirm(ctx, firstToken(s)); err != nil {
 			t.Fatal(err)
 		}
 		es := s.historyEntries("network")

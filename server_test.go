@@ -575,7 +575,7 @@ func TestRunBridgeCarriesMCPBothWaysAndEndsWhenStdinCloses(t *testing.T) {
 
 	var origin string
 	for _, ev := range auditEvents(t, s) {
-		if ev.Tool == "session" {
+		if ev.Tool == "session" && strings.HasPrefix(ev.Summary, stdioOpened) {
 			origin = ev.Summary
 		}
 	}

@@ -409,9 +409,9 @@ var reApkAudit = regexp.MustCompile(`^([AUD]) (\S.*)$`)
 var apkAuditBenign = []string{"etc/", "tmp/", "var/", "overlay/", "root/", "mnt/"}
 
 func checkPackagesAudit(sn *snapshot) ([]finding, error) {
-	out, err := run(sn.ctx, 2*time.Minute, "apk", "audit")
+	out, err := currentPkgManager().audit(sn.ctx)
 	if err != nil {
-		return nil, fmt.Errorf("apk audit: %w", err)
+		return nil, err
 	}
 	var changed []string
 lines:

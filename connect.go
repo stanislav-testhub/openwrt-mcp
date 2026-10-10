@@ -28,6 +28,10 @@ type connectParams struct {
 	Port   int
 	User   string
 	Key    string // path of the private key on this PC
+
+	// Session is the profile the entry asks for (--read-only, --toolset): the words that follow
+	// the host in the ssh command, where the router's forced command reads them (entry.go).
+	Session []string
 }
 
 var (
@@ -48,18 +52,31 @@ func (p connectParams) validate() error {
 	case p.Key == "" || strings.HasPrefix(p.Key, "-"):
 		return fmt.Errorf("bad --key %q", p.Key)
 	}
+	if len(p.Session) > 0 {
+		// The router parses the same words, so what it would refuse is refused here.
+		if e, err := parseEntry(strings.Join(p.Session, " ")); err != nil || e.Mode != entryStdio {
+			return errors.New("bad --read-only / --toolset: use --read-only and/or --toolset NAME[,NAME] (" +
+				strings.Join(toolsetNames, ", ") + ")")
+		}
+	}
 	return nil
 }
 
 // sshArgs is the command line the client runs, after "ssh": no terminal, only this key, never a
 // prompt (a client cannot answer one), and keep-alives so a router that went away is noticed.
 func (p connectParams) sshArgs() []string {
-	return []string{
+	args := []string{
 		"-T", "-i", p.Key, "-p", strconv.Itoa(p.Port),
 		"-o", "BatchMode=yes", "-o", "IdentitiesOnly=yes",
 		"-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=3",
 		p.User + "@" + p.Host,
 	}
+	if len(p.Session) > 0 {
+		// ssh reads "--read-only" after the host as an option of its own; "--" ends its options
+		// and is not sent on, so the router's forced command receives just the words.
+		args = append(append(args, "--"), p.Session...)
+	}
+	return args
 }
 
 // sshCommand and keygenCommand are the programs run on this PC, as variables so a test can
@@ -275,17 +292,25 @@ func connectMain(args []string) error {
 	write := fs.Bool("write", false, "change the client's configuration instead of only showing what to add")
 	replace := fs.Bool("replace", false, "with --write, overwrite an existing entry of the same name")
 	file := fs.String("file", "", "with --write, the client's configuration file, when it is not in the usual place")
+	readOnly := fs.Bool("read-only", false, "the client's sessions may not change anything (limited to what @readonly grants)")
+	toolset := fs.String("toolset", "", "limit the client's tools to these toolsets, comma separated: "+strings.Join(toolsetNames, ", "))
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
 	if fs.NArg() != 0 || *host == "" || (!doctor && *client == "") {
-		return errors.New("usage: openwrt-mcp connect --client <" + strings.Join(connectClients, "|") + "> --host <router> [--port 22] [--user root] [--key PATH] [--name NAME] [--write [--replace] [--file PATH]]\n" +
+		return errors.New("usage: openwrt-mcp connect --client <" + strings.Join(connectClients, "|") + "> --host <router> [--port 22] [--user root] [--key PATH] [--name NAME] [--read-only] [--toolset NAMES] [--write [--replace] [--file PATH]]\n" +
 			"       openwrt-mcp connect doctor --host <router> [--port 22] [--user root] [--key PATH] [--name NAME]")
 	}
 	env := currentEnv()
 	p := connectParams{Client: *client, Name: *name, Host: *host, Port: *port, User: *user, Key: expandHome(*key, env.home)}
 	if p.Name == "" {
 		p.Name = orDefault(*client, "claude-code")
+	}
+	if *readOnly {
+		p.Session = append(p.Session, "--read-only")
+	}
+	if *toolset != "" {
+		p.Session = append(p.Session, "--toolset", *toolset)
 	}
 	if doctor {
 		return runDoctor(context.Background(), os.Stdout, p)

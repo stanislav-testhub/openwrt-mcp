@@ -1,0 +1,83 @@
+http:
+  pprof:
+    port: 6060
+    enabled: false
+  address: 0.0.0.0:3000
+  session_ttl: 720h
+users:
+  - name: canary-admin
+    password: $2a$10$CanaryHashCanaryHashCanaryHashCanaryHashCanaryHash00
+auth_attempts: 5
+block_auth_min: 15
+http_proxy: ""
+language: en
+dns:
+  bind_hosts:
+    - 127.0.0.1
+  port: 5354
+  upstream_dns:
+    - https://dns.example.net/dns-query/canarytoken123
+    - tls://canaryuser:canarypass@dns.example.org:853
+    - 9.9.9.9
+    - '[/lan/]192.0.2.1'
+    - sdns://AgcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACanary
+  upstream_dns_file: /etc/adguardhome/upstreams.txt
+  bootstrap_dns:
+    - 9.9.9.9
+    - 149.112.112.112
+  fallback_dns: []
+  cache_enabled: true
+  enable_dnssec: true
+  ratelimit: 50
+tls:
+  enabled: false
+  server_name: ""
+  private_key: CanaryPrivateKeyPem
+  private_key_path: /etc/ssl/canary.key
+querylog:
+  dir_path: ""
+  enabled: true
+  file_enabled: true
+statistics:
+  dir_path: ""
+  enabled: true
+filters:
+  - enabled: true
+    url: https://example.org/list-one.txt
+    name: List one
+    id: 1
+  - enabled: true
+    url: https://example.org/list-two.txt
+    name: List two
+    id: 2
+  - enabled: false
+    url: https://example.org/list-three.txt
+    name: List three
+    id: 3
+whitelist_filters: []
+user_rules:
+  - '||ads.example.com^'
+  - '#||commented-out.example.com^'
+  - '@@||good.example.com^'
+  - '! a comment'
+dhcp:
+  enabled: false
+  interface_name: ""
+filtering:
+  blocking_mode: default
+  rewrites:
+    - domain: canary-rewrite.example.lan
+      answer: 192.0.2.99
+  protection_enabled: true
+  filtering_enabled: true
+  safebrowsing_enabled: false
+  parental_enabled: false
+  protection_disabled_until: null
+clients:
+  persistent:
+    - name: canary-client
+      ids:
+        - 02:00:00:00:00:01
+log:
+  enabled: true
+schema_version: 34

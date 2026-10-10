@@ -13,10 +13,11 @@ import (
 	"time"
 )
 
-// OpenWrt 25.12 manages packages with apk-tools 3 (opkg is gone). What changed for an agent:
+// OpenWrt 25.12 manages packages with apk-tools 3; 24.10 and older with opkg (pkgmanager.go
+// picks the one on the router). What changed for an agent with apk:
 //   - `apk list --installed|--upgradable`, `apk info -L`, `apk info --who-owns`, `apk policy`
 //   - a modified config file is never overwritten on upgrade: the new default lands beside it
-//     as <file>.apk-new and waits for someone to merge it -- pkg_config_diff / _resolve.
+//     as <file>.apk-new (opkg: <file>-opkg) and waits for someone to merge it -- pkg_config_diff / _resolve.
 //   - `apk audit` reports files changed since installation.
 
 var (
@@ -30,7 +31,7 @@ type pkgQueryIn struct {
 	Action  string `json:"action" jsonschema:"installed | upgradable | search | info | files | owner | policy | audit | world"`
 	Package string `json:"package,omitempty" jsonschema:"package name (info/files/policy), search term (search), or glob (installed, e.g. 'luci-app-*')"`
 	Path    string `json:"path,omitempty" jsonschema:"for owner: absolute file path, e.g. /usr/sbin/nft"`
-	Refresh bool   `json:"refresh,omitempty" jsonschema:"run 'apk update' first so upgradable/search/policy see current repository indexes"`
+	Refresh bool   `json:"refresh,omitempty" jsonschema:"update the package lists first so upgradable/search/policy see current repository indexes"`
 	Offset  int    `json:"offset,omitempty" jsonschema:"first line to return (200 per page); a cut result names the next offset"`
 }
 
@@ -41,67 +42,58 @@ func pkgQuery(ctx context.Context, in pkgQueryIn) (string, string, error) {
 		}
 		return nil
 	}
+	m := currentPkgManager()
 	pre := ""
 	if in.Refresh {
-		out, err := run(ctx, 2*time.Minute, "apk", "update")
+		out, err := run(ctx, 2*time.Minute, m.updateArgv()...)
 		if err != nil {
-			return out, "", fmt.Errorf("apk update: %w", err)
+			return out, "", fmt.Errorf("%s update: %w", m.name(), err)
 		}
 		pre = lastLine(out) + "\n\n"
 	}
-	var argv []string
+	arg := ""
 	compact := false
 	switch in.Action {
 	case "installed":
-		argv = []string{"apk", "list", "--installed"}
 		if in.Package != "" {
 			if err := needPkg(rePkgPattern); err != nil {
 				return "", "", err
 			}
-			argv = append(argv, in.Package)
+			arg = in.Package
 		}
 		compact = true
 	case "upgradable":
-		argv, compact = []string{"apk", "list", "--upgradable"}, true
+		compact = true
 	case "search":
 		if err := needPkg(rePkgPattern); err != nil {
 			return "", "", err
 		}
-		argv = []string{"apk", "search", in.Package}
-	case "info":
+		arg = in.Package
+	case "info", "files", "policy":
 		if err := needPkg(rePkgName); err != nil {
 			return "", "", err
 		}
-		argv = []string{"apk", "info", "-a", in.Package}
-	case "files":
-		if err := needPkg(rePkgName); err != nil {
-			return "", "", err
-		}
-		argv = []string{"apk", "info", "-L", in.Package}
+		arg = in.Package
 	case "owner":
 		p := path.Clean(in.Path)
 		if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "/-") {
 			return "", "", fmt.Errorf("owner needs an absolute path")
 		}
-		argv = []string{"apk", "info", "--who-owns", p}
-	case "policy":
-		if err := needPkg(rePkgName); err != nil {
-			return "", "", err
-		}
-		argv = []string{"apk", "policy", in.Package}
+		arg = p
 	case "audit":
-		// A: added, U: updated (differs from the package), X: missing. Config drift and
-		// hand-patched binaries both show up here.
-		argv = []string{"apk", "audit"}
 	case "world":
-		w, err := readSys("/etc/apk/world")
+		w, err := m.world()
 		return pre + w, "read world", err
 	default:
 		return "", "", invalid("unknown action %q", in.Action)
 	}
+	argv, err := m.queryArgv(in.Action, arg)
+	if err != nil {
+		return "", "", err
+	}
 	out, err := run(ctx, time.Minute, argv...)
 	if compact {
-		out = compactApkList(out)
+		out = m.compactList(out)
 	}
 	if strings.TrimSpace(out) == "" && err == nil {
 		out = "(nothing)"
@@ -199,18 +191,14 @@ func pkgChange(ctx context.Context, in pkgChangeIn) (string, string, error) {
 			return "", "", invalid("bad package name %q", p)
 		}
 	}
+	m := currentPkgManager()
 	var pre strings.Builder
 	if in.Action != "del" {
-		if out, err := run(ctx, 2*time.Minute, "apk", "update"); err != nil {
-			return out, "", fmt.Errorf("apk update: %w", err)
+		if out, err := run(ctx, 2*time.Minute, m.updateArgv()...); err != nil {
+			return out, "", fmt.Errorf("%s update: %w", m.name(), err)
 		}
 	}
-	argv := []string{"apk"}
-	if !in.Commit {
-		argv = append(argv, "--simulate")
-	}
-	argv = append(argv, in.Action)
-	argv = append(argv, in.Packages...)
+	argv := m.changeArgv(in.Action, in.Commit, in.Packages)
 	summary := strings.Join(argv, " ")
 
 	if !in.Commit {
@@ -223,18 +211,18 @@ func pkgChange(ctx context.Context, in pkgChangeIn) (string, string, error) {
 			note = "\nNote: upgrading everything in place is discouraged on OpenWrt (kernel modules and " +
 				"base-files can end up out of step with the kernel); a sysupgrade/owut image is the supported path."
 		}
-		return fmt.Sprintf("SIMULATION -- nothing changed. apk would:\n%s%s\n\nCall again with commit=true to do it.",
-			strings.TrimSpace(out), note), summary, nil
+		return fmt.Sprintf("SIMULATION -- nothing changed. %s would:\n%s%s\n\nCall again with commit=true to do it.",
+			m.name(), strings.TrimSpace(out), note), summary, nil
 	}
 
-	before := findApkNew()
+	before := findNewConfigs()
 	out, err := run(ctx, 5*time.Minute, argv...)
 	pre.WriteString(strings.TrimSpace(out))
 	if err != nil {
-		return pre.String(), summary, fmt.Errorf("apk %s failed: %w", in.Action, err)
+		return pre.String(), summary, fmt.Errorf("%s %s failed: %w", m.name(), in.Action, err)
 	}
 	var fresh []string
-	for _, f := range findApkNew() {
+	for _, f := range findNewConfigs() {
 		if !contains(before, f) {
 			fresh = append(fresh, f)
 		}
@@ -245,7 +233,7 @@ func pkgChange(ctx context.Context, in pkgChangeIn) (string, string, error) {
 	}
 	// An upgrade changes versions, not what the operator asked to have installed, so only add
 	// and del have a record to read back.
-	verified, err := verifyWorld(in.Action, in.Packages)
+	verified, err := m.verify(ctx, in.Action, in.Packages)
 	if err != nil {
 		return pre.String(), summary, err
 	}
@@ -255,16 +243,17 @@ func pkgChange(ctx context.Context, in pkgChangeIn) (string, string, error) {
 	return pre.String(), summary, nil
 }
 
-// ---------------------------------------------------------------- .apk-new review
+// ---------------------------------------------------------------- new package defaults (.apk-new, -opkg)
 
-func findApkNew() []string {
+func findNewConfigs() []string {
 	var out []string
 	root := sysPath("/etc")
+	suffix := currentPkgManager().newConfigSuffix()
 	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
-		if !d.IsDir() && strings.HasSuffix(d.Name(), ".apk-new") {
+		if !d.IsDir() && strings.HasSuffix(d.Name(), suffix) {
 			rel, _ := filepath.Rel(root, p)
 			out = append(out, "/etc/"+filepath.ToSlash(rel))
 		}
@@ -275,21 +264,22 @@ func findApkNew() []string {
 }
 
 type pkgConfigDiffIn struct {
-	Path    string `json:"path,omitempty" jsonschema:"one file to show in full, e.g. /etc/config/dhcp (the .apk-new suffix is optional). Omit for all."`
+	Path    string `json:"path,omitempty" jsonschema:"one file to show in full, e.g. /etc/config/dhcp (the .apk-new / -opkg suffix is optional). Omit for all."`
 	Context int    `json:"context,omitempty" jsonschema:"lines of context around each change (default 2)"`
 }
 
 func pkgConfigDiff(ctx context.Context, in pkgConfigDiffIn) (string, string, error) {
-	files := findApkNew()
+	suffix := currentPkgManager().newConfigSuffix()
+	files := findNewConfigs()
 	if in.Path != "" {
-		want := strings.TrimSuffix(path.Clean(in.Path), ".apk-new") + ".apk-new"
+		want := strings.TrimSuffix(path.Clean(in.Path), suffix) + suffix
 		if !contains(files, want) {
 			return "", "", fmt.Errorf("no %s", want)
 		}
 		files = []string{want}
 	}
 	if len(files) == 0 {
-		return "No .apk-new files: every package config is as installed or already merged.", "none", nil
+		return "No " + suffix + " files: every package config is as installed or already merged.", "none", nil
 	}
 	ctxLines := clampInt(in.Context, 2, 0, 10)
 	perFile := 120
@@ -297,18 +287,18 @@ func pkgConfigDiff(ctx context.Context, in pkgConfigDiffIn) (string, string, err
 		perFile = 2000
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%d .apk-new file(s). Each is a package's NEW default that was not applied because the live file differs.\n", len(files))
+	fmt.Fprintf(&b, "%d %s file(s). Each is a package's NEW default that was not applied because the live file differs.\n", len(files), suffix)
 	for _, f := range files {
-		live := strings.TrimSuffix(f, ".apk-new")
+		live := strings.TrimSuffix(f, suffix)
 		newB, _ := readSys(f)
 		liveB, err := readSys(live)
 		b.WriteString("\n=== " + live + "\n")
 		if err != nil {
-			b.WriteString("live file is missing; the .apk-new would be installed as-is\n")
+			b.WriteString("live file is missing; the " + suffix + " would be installed as-is\n")
 			continue
 		}
 		if liveB == newB {
-			b.WriteString("identical -- the .apk-new can simply be removed (keep_current)\n")
+			b.WriteString("identical -- the " + suffix + " can simply be removed (keep_current)\n")
 			continue
 		}
 		a, bb, how := strings.Split(liveB, "\n"), strings.Split(newB, "\n"), "line diff"
@@ -371,19 +361,21 @@ func uciNormalised(ctx context.Context, name, body string) ([]string, error) {
 }
 
 type pkgConfigResolveIn struct {
-	Path    string `json:"path" jsonschema:"the live file, e.g. /etc/config/dhcp (or its .apk-new name)"`
-	Action  string `json:"action" jsonschema:"keep_current: delete the .apk-new | use_new: replace the live file with it (the old one is kept as <file>.pre-apk-new)"`
+	Path    string `json:"path" jsonschema:"the live file, e.g. /etc/config/dhcp (or its .apk-new / -opkg name)"`
+	Action  string `json:"action" jsonschema:"keep_current: delete the new default | use_new: replace the live file with it (the old one is kept as <file>.pre-apk-new, opkg: .pre-opkg-new)"`
 	Timeout int    `json:"timeout,omitempty" jsonschema:"use_new on /etc/config/*: seconds before automatic rollback (default 90, max 600)"`
 }
 
 func pkgResolveScope(in pkgConfigResolveIn) []string {
-	return []string{strings.TrimSuffix(path.Clean(in.Path), ".apk-new")}
+	return []string{strings.TrimSuffix(path.Clean(in.Path), currentPkgManager().newConfigSuffix())}
 }
 
 func (s *Server) pkgConfigResolve(ctx context.Context, client string, in pkgConfigResolveIn) (string, string, error) {
-	live := strings.TrimSuffix(path.Clean(in.Path), ".apk-new")
-	newF := live + ".apk-new"
-	if !strings.HasPrefix(live, "/etc/") || !contains(findApkNew(), newF) {
+	m := currentPkgManager()
+	live := strings.TrimSuffix(path.Clean(in.Path), m.newConfigSuffix())
+	newF := live + m.newConfigSuffix()
+	oldF := live + m.oldConfigSuffix()
+	if !strings.HasPrefix(live, "/etc/") || !contains(findNewConfigs(), newF) {
 		return "", "", fmt.Errorf("no %s", newF)
 	}
 	if in.Action == "use_new" && s.isPolicyFile(live) {
@@ -408,7 +400,7 @@ func (s *Server) pkgConfigResolve(ctx context.Context, client string, in pkgConf
 	if st, err := os.Stat(sysPath(live)); err == nil {
 		mode = st.Mode().Perm()
 		old, _ := os.ReadFile(sysPath(live))
-		if err := writeSynced(sysPath(live+".pre-apk-new"), old, mode); err != nil {
+		if err := writeSynced(sysPath(oldF), old, mode); err != nil {
 			return "", "", fmt.Errorf("backing up %s: %w", live, err)
 		}
 	}
@@ -441,17 +433,17 @@ func (s *Server) pkgConfigResolve(ctx context.Context, client string, in pkgConf
 			return "", "", err
 		}
 		out := reloadConfigs(ctx, []string{name}, false)
-		return fmt.Sprintf("Replaced %s with the package default (old copy: %s.pre-apk-new) and reloaded.\n\n"+
+		return fmt.Sprintf("Replaced %s with the package default (old copy: %s) and reloaded.\n\n"+
 			"ROLLBACK ARMED: reverts at %s unless you call uci_confirm {\"token\": %q}.%s",
-			live, live, p.Deadline.Format(time.RFC3339), p.Token, indentOut(out)), "use_new " + live, nil
+			live, oldF, p.Deadline.Format(time.RFC3339), p.Token, indentOut(out)), "use_new " + live, nil
 	}
 
 	if err := writeSynced(sysPath(live), newB, mode); err != nil {
 		return "", "", err
 	}
 	_ = os.Remove(sysPath(newF))
-	return fmt.Sprintf("Replaced %s with the package default (old copy: %s.pre-apk-new). "+
-		"Restart the owning service for it to take effect.", live, live), "use_new " + live, nil
+	return fmt.Sprintf("Replaced %s with the package default (old copy: %s). "+
+		"Restart the owning service for it to take effect.", live, oldF), "use_new " + live, nil
 }
 
 // ---------------------------------------------------------------- unified diff

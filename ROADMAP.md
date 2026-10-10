@@ -551,6 +551,23 @@ Read-only value: the questions operators actually ask, answered in few tokens.
 
 ## Milestone 5: Reach and resilience (v1.5)
 
+**Status: shipped in 1.5.0** (see `CHANGELOG.md`), except 5.5 and 5.8, which move to 1.6, and 5.11, which is not part of the
+code release. Where the build differs from the text below:
+
+- 5.1: opkg and fw4/fw3 behind one package-manager seam. The line for derived firmware is "OpenWrt 24.10+ userland, tested in
+  CI in the `openwrt/rootfs` containers (package, uci, ubus-less paths); anything else is best effort". fw3 is read-only
+  best effort (`firewall_show` `ruleset` and `rendered`).
+- 5.2: the framework and three adapters (tailscale, AdGuard Home, podkop), each run on a real router. The other six wait for 1.6.
+- 5.3, 5.4: `call`, `--read-only` and `--toolset`, through a fixed grammar of words after the forced command. A second
+  parallel client entry with its own entry name is not built (`connect` writes the entry `openwrt`).
+- 5.6, 5.7: bridge retry, session lines in the audit, `status` last disconnect, deadlines per tool and a cap of 8 running
+  calls. The in-flight cap is a constant, not a UCI option.
+- 5.9: warnings are the audit's configuration checks run on the live and the staged config, plus `ref-removed`,
+  `ref-unknown` and `radio-in-use`. `uci_apply restore=` has no warnings.
+- 5.10: `uci_get refs=NAME`. The near-miss hint ("differs only in case") is in the 5.9 warnings.
+- Not in the 5 list but shipped: the management path follows the session's interface (MCP-2), and the WireGuard writers
+  moved to the standard rollback path (MCP-1).
+
 ### 5.1 opkg, 24.10 and derived firmware
 
 - **Problem.** 25.12 dominates vanilla OpenWrt upgrades. But 24.10 and the firmware derived from it still ship
@@ -604,6 +621,8 @@ Read-only value: the questions operators actually ask, answered in few tokens.
 
 ### 5.5 Structured output
 
+*Moved to 1.6.*
+
 *Replaces the `format=json` option.*
 
 - **Ships.** An `outputSchema` per tool, with the data in `structuredContent` and the existing text table kept in
@@ -631,6 +650,8 @@ Read-only value: the questions operators actually ask, answered in few tokens.
 - **Done when.** An e2e test cancels a long `traceroute` and asserts that the process is gone.
 
 ### 5.8 Progress for long operations
+
+*Moved to 1.6.*
 
 - **Ships.** MCP progress notifications for `pkg_change` commit, `sysupgrade` test and `traceroute`, and the Tasks
   extension where the client supports it.
@@ -664,6 +685,15 @@ Read-only value: the questions operators actually ask, answered in few tokens.
 
 - **Ships.** `README.zh-CN.md` and `README.ru.md`. Much of the OpenWrt community writes in those languages. Tool
   output stays English (see Non-goals).
+
+---
+
+## Milestone 5b: Carried over from 1.5 (v1.6)
+
+- **5.5 structured output** and **5.8 progress for long operations**, as written above.
+- **Add-on adapters** for adblock, adblock-fast, https-dns-proxy, mwan3, pbr and ddns, on the 1.5 framework (`adapters.go`):
+  one small file each, built from upstream source, run on a real router before release. Deferred from 1.5 because none is
+  installed on the verification router.
 
 ---
 
@@ -863,6 +893,7 @@ These are deliberately not planned, with the reason for each.
   operator's own terminal enough?
 - 5.1: how far should support for derived firmware go? Vendor firmware can patch `uci`, `fw4` or rpcd. Should
   the line be "OpenWrt 24.10+ userland", tested in CI, with anything else best effort?
+  *Answered in 1.5: yes. The README says 25.12 and 24.10 are supported; derived firmware is best effort.*
 - 7.1: container rootfs or full QEMU image. The container cannot exercise netifd and wireless, while QEMU is
   slower in CI.
 - 7.3: should the hub hold SSH sessions open, or connect per call? Open sessions are faster, but they hide router
