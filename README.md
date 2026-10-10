@@ -158,6 +158,13 @@ Either way the same installer runs on the router.
 
 **Why not an `.apk`:** 25.12 packages are apk-tools v3 ADB archives. Building one needs the
 OpenWrt SDK or a host apk-tools with `mkpkg` (the router's apk has no `mkpkg`), and an
+### LuCI status page
+
+After install, *Services -> MCP Server* in LuCI shows the daemon (running or stopped, version, HTTP
+listener, stdio socket), a pending `uci_apply` with its automatic-rollback deadline, the paired HTTP
+clients, the standing policies and the recent audit entries. It is read-only by design: pairing and
+grants stay on the command line, so nothing reachable over the network can widen what an agent may do.
+
 unsigned package then needs `--allow-untrusted` anyway. A static binary loses nothing by being
 installed as files: `/etc/config` survives sysupgrade on its own, and `/lib/upgrade/keep.d/openwrt-mcp`
 carries the binary, init script, rc.d links, state and LuCI page. (An `owut`/ASU image

@@ -821,8 +821,16 @@ Starts with a design note in `docs/`, because approval interacts with policies a
 - **Update check.** `openwrt-mcp version --check` against GitHub releases, shown by `status`. Then
   `install.sh upgrade`.
 - **Packaging.** An `apk` package or feed for 25.12.
-- **LuCI control page.** Per-tool enable or disable, a read-only switch, pending approvals (6.1), a redacted audit
-  tail and the policy list.
+- **LuCI control page.** The read-only status page (*Services -> MCP Server*: daemon, paired HTTP clients,
+  standing policies, recent activity, a pending `uci_apply` with its deadline) ships today. Next, in order
+  of risk:
+  - read-only additions: audit filters, rollback countdown;
+  - revoke a grant with a button (it only narrows rights);
+  - approve or deny a pending call (6.1), tied to the LuCI session through its own rpcd ACL, never a
+    shared token, with no path for an agent to reach it.
+
+  Issuing grants stays on the command line: the page is read-only by design, so nothing reachable over
+  the network can widen what an agent may do.
 - **PR template.** A checklist with a red-first regression test, a `goldenCalls` entry and a mutation run for
   security rules.
 
