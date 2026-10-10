@@ -198,7 +198,26 @@ func pkgChange(ctx context.Context, in pkgChangeIn) (string, string, error) {
 			return out, "", fmt.Errorf("%s update: %w", m.name(), err)
 		}
 	}
-	argv := m.changeArgv(in.Action, in.Commit, in.Packages)
+	targets := in.Packages
+	if in.Action == "upgrade" && len(targets) == 0 && m.name() == "opkg" {
+		// opkg upgrade takes package names and has no upgrade-everything form.
+		out, err := run(ctx, defaultCmdTimeout, "opkg", "list-upgradable")
+		if err != nil {
+			return out, "", fmt.Errorf("opkg list-upgradable: %w", err)
+		}
+		for _, line := range strings.Split(out, "\n") {
+			if f := strings.Fields(line); len(f) > 0 {
+				targets = append(targets, f[0])
+			}
+		}
+		if len(targets) == 0 {
+			if !in.Commit {
+				return "SIMULATION -- nothing changed. opkg would:\nupgrade nothing: no package has a newer version.", "opkg list-upgradable", nil
+			}
+			return "Nothing to upgrade.", "opkg list-upgradable", nil
+		}
+	}
+	argv := m.changeArgv(in.Action, in.Commit, targets)
 	summary := strings.Join(argv, " ")
 
 	if !in.Commit {

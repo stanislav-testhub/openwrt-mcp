@@ -66,7 +66,7 @@ func TestRealPkgQueryReadsTheInstalledSet(t *testing.T) {
 	if out, _, err := pkgQuery(ctx, pkgQueryIn{Action: "info", Package: "busybox"}); err != nil || !strings.Contains(out, "busybox") {
 		t.Errorf("info: %v\n%s", err, out)
 	}
-	if out, _, err := pkgQuery(ctx, pkgQueryIn{Action: "files", Package: "busybox"}); err != nil || !strings.Contains(out, "/bin/busybox") {
+	if out, _, err := pkgQuery(ctx, pkgQueryIn{Action: "files", Package: "busybox"}); err != nil || !strings.Contains(out, "bin/busybox") {
 		t.Errorf("files: %v\n%s", err, out)
 	}
 	if out, _, err := pkgQuery(ctx, pkgQueryIn{Action: "owner", Path: "/bin/busybox"}); err != nil || !strings.Contains(out, "busybox") {

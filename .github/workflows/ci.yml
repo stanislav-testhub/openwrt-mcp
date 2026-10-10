@@ -91,4 +91,4 @@ jobs:
       - name: run them in the ${{ matrix.tag }} rootfs
         run: |
           docker run --rm -v "$PWD:/w" -e REALTARGET_PKG=${{ matrix.pkg }} openwrt/rootfs:${{ matrix.tag }} \
-            sh -c 'mkdir -p /var/lock /var/run /var/state && exec /w/realtarget.test -test.v -test.timeout 10m'
+            sh -c 'mkdir -p /var/lock /var/run /var/state && exec /w/realtarget.test -test.v -test.run ^TestReal -test.timeout 10m'
