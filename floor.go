@@ -33,10 +33,14 @@ var floorUciWriteMethods = []string{"set", "add", "delete", "rename", "order", "
 
 // floorPaths are fragments of absolute paths (no leading slash) that exec never touches as an
 // argument: the two configs, the state and audit directory with its hooks, the binary, its rpcd
-// plugin and the request state in RAM.
+// plugin and the request state in RAM, plus what decides who may approve or runs the daemon: the
+// rpcd ACL files, the LuCI scripts the owner clicks, the init script and the SSH authorized keys.
 var floorPaths = []string{
 	"etc/config/openwrt-mcp", "etc/config/rpcd", "etc/openwrt-mcp",
 	"usr/bin/openwrt-mcp", "usr/libexec/rpcd/openwrt-mcp", "var/run/openwrt-mcp",
+	"usr/share/rpcd/acl.d", "www/luci-static/resources/view/openwrt-mcp",
+	"www/luci-static/resources/view/status/include/15_openwrt-mcp",
+	"etc/init.d/openwrt-mcp", "etc/dropbear",
 }
 
 // floorProgram is the program name exec never runs, by base name and after symlinks.

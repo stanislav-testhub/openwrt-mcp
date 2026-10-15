@@ -400,5 +400,9 @@ func runBridge(sock, client string) error {
 	case <-done:
 	case <-time.After(5 * time.Second):
 	}
+	if perr != nil {
+		// Stdin ended before the daemon's hang-up was seen: the command was still refused.
+		return fmt.Errorf("command refused: %w", perr)
+	}
 	return nil
 }

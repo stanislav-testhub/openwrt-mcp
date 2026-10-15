@@ -19,6 +19,8 @@ func floorClient(t *testing.T) (*Server, *fakeRouter, func(string, map[string]an
 	f.on("ubus call", "{}")
 	f.on("uci", "ok")
 	f.on("echo", "ok")
+	f.on("cat", "ok")
+	f.on("/etc/init.d/dnsmasq", "ok")
 	s := testServer(t, policyFor("c", allToolNames, "*"))
 	cs := connectClient(t, s, "c")
 	return s, f, func(tool string, args map[string]any) (string, bool) { return callText(t, cs, tool, args) }
@@ -83,6 +85,11 @@ func floorRefused() []floorCase {
 		execCase("dotted path to rpcd", "cp", "/tmp/p", "/etc/config/x/../rpcd"),
 		execCase("hook directory", "cp", "/tmp/h", "/etc/openwrt-mcp/hooks.d/x"),
 		execCase("request state", "rm", "/var/run/openwrt-mcp/requests.json"),
+		execCase("rpcd acl dir", "cp", "/tmp/a.json", "/usr/share/rpcd/acl.d/x.json"),
+		execCase("luci page script", "cp", "/tmp/s.js", "/www/luci-static/resources/view/openwrt-mcp/status.js"),
+		execCase("luci overview include", "sed", "-i", "s/a/b/", "/www/luci-static/resources/view/status/include/15_openwrt-mcp.js"),
+		execCase("init script", "sed", "-i", "s/a/b/", "/etc/init.d/openwrt-mcp"),
+		execCase("authorized keys", "sh", "-c", "echo k >> /etc/dropbear/authorized_keys"),
 	}
 }
 
@@ -95,6 +102,8 @@ func floorAllowed() []floorCase {
 		ubusCase("a lookalike object", "openwrt-mcp2", "x", nil),
 		execCase("uci show network", "uci", "show", "network"),
 		execCase("echo", "echo", "hello"),
+		execCase("other luci view", "cat", "/www/luci-static/resources/view/status/include/10_system.js"),
+		execCase("other init script", "/etc/init.d/dnsmasq", "restart"),
 	}
 }
 
@@ -202,7 +211,7 @@ func TestFloorEntriesArePinned(t *testing.T) {
 	if got := strings.Join(floorUciWriteMethods, ","); got != "set,add,delete,rename,order,commit,revert" {
 		t.Errorf("floorUciWriteMethods = %s", got)
 	}
-	if got := strings.Join(floorPaths, ","); got != "etc/config/openwrt-mcp,etc/config/rpcd,etc/openwrt-mcp,usr/bin/openwrt-mcp,usr/libexec/rpcd/openwrt-mcp,var/run/openwrt-mcp" {
+	if got := strings.Join(floorPaths, ","); got != "etc/config/openwrt-mcp,etc/config/rpcd,etc/openwrt-mcp,usr/bin/openwrt-mcp,usr/libexec/rpcd/openwrt-mcp,var/run/openwrt-mcp,usr/share/rpcd/acl.d,www/luci-static/resources/view/openwrt-mcp,www/luci-static/resources/view/status/include/15_openwrt-mcp,etc/init.d/openwrt-mcp,etc/dropbear" {
 		t.Errorf("floorPaths = %s", got)
 	}
 }
