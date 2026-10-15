@@ -37,6 +37,7 @@ let state, writable = true, decideReply = null, statusFails = false;
 const handlers = {
 	status: () => { if (statusFails) throw new Error('rpcd said no'); return state.st; },
 	tools: () => state.tools,
+	end_permit_all: p => { calls.push([ 'end', p ]); return { removed: 1 }; },
 	decide: p => { calls.push(p); return decideReply ? decideReply(p) : { id: p[0], state: 'allowed' }; },
 	access: () => writable,
 };
@@ -162,5 +163,31 @@ fresh();
 {
 	statusFails = true;
 	assert.equal(await draw(), null);
+}
+// 10. a running Permit all alone shows the include, loudly, with End now
+fresh();
+{
+	state.st.requests = [];
+	state.st.permit_all = [ { client: 'claude-code', expires: iso(3600e3) } ];
+	const root = await draw();
+	assert.match(text(root), /claude-code has full root access until/);
+	assert.equal(find(root, x => x.attrs['data-permit-all']).length, 1);
+	assert.match(find(root, x => x.attrs['data-permit-all'])[0].attrs.class, /danger/);
+	const end = byAct(root, 'end-permit-all')[0];
+	end.listeners.click({ target: end });
+	await flush();
+	assert.deepEqual(calls, [ [ 'end', [ 'claude-code' ] ] ]);
+	assert.match(text(root), /Ended/);
+}
+
+// 11. no end date is said as such, and a read-only account gets the banner without the button
+fresh();
+{
+	state.st.requests = [];
+	state.st.permit_all = [ { client: 'claude-code', expires: '' } ];
+	writable = false;
+	const root = await draw();
+	assert.match(text(root), /full root access with no end/);
+	assert.equal(byAct(root, 'end-permit-all').length, 0);
 }
 console.log('ok');

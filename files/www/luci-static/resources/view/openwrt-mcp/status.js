@@ -23,6 +23,14 @@ var callGrantPreset = rpc.declare({ object: 'openwrt-mcp', method: 'grant_preset
 	params: [ 'client', 'preset', 'duration' ], expect: { '': {} } });
 var callRevoke = rpc.declare({ object: 'openwrt-mcp', method: 'revoke',
 	params: [ 'client', 'index', 'all' ], expect: { '': {} } });
+var callPermitAll = rpc.declare({ object: 'openwrt-mcp', method: 'permit_all',
+	params: [ 'client', 'duration', 'confirm' ], expect: { '': {} } });
+var callEndPermitAll = rpc.declare({ object: 'openwrt-mcp', method: 'end_permit_all',
+	params: [ 'client' ], expect: { '': {} } });
+var callSetChannel = rpc.declare({ object: 'openwrt-mcp', method: 'set_channel',
+	params: [ 'channel', 'enabled' ], expect: { '': {} } });
+var callPair = rpc.declare({ object: 'openwrt-mcp', method: 'pair',
+	params: [ 'client', 'pubkey', 'preset', 'duration' ], expect: { '': {} } });
 var callSetSettings = rpc.declare({ object: 'openwrt-mcp', method: 'set_settings',
 	params: [ 'request_wait', 'request_ttl' ], expect: { '': {} } });
 var callAccess = rpc.declare({ object: 'session', method: 'access',
@@ -30,6 +38,7 @@ var callAccess = rpc.declare({ object: 'session', method: 'access',
 
 var DURATIONS = [ [ '15m', _('15 minutes') ], [ '1h', _('1 hour') ], [ '8h', _('8 hours') ],
 	[ '1d', _('1 day') ], [ '7d', _('7 days') ] ];
+var PERMIT_ALL_DURATIONS = [ [ '15m', _('15 minutes') ], [ '1h', _('1 hour') ], [ '4h', _('4 hours') ], [ '24h', _('24 hours') ] ];
 var AUDIT_LINES = 200;
 
 // The ubus reply is an object that carries `error` when the plugin refused. A refusal is shown to
@@ -159,21 +168,31 @@ return view.extend({
 			overview: E('div', { 'class': 'cbi-section' }),
 			permissions: E('div', { 'class': 'cbi-section' }),
 			activity: E('div', { 'class': 'cbi-section' }),
-			settings: E('div', { 'class': 'cbi-section' })
+			settings: E('div', { 'class': 'cbi-section' }),
+			clients: E('div', { 'class': 'cbi-section' })
 		};
-		var titles = [ [ 'overview', _('Overview') ], [ 'permissions', _('Permissions') ],
-			[ 'activity', _('Activity') ], [ 'settings', _('Settings') ] ];
+		var allTitles = [ [ 'overview', _('Overview') ], [ 'permissions', _('Permissions') ],
+			[ 'activity', _('Activity') ], [ 'settings', _('Settings') ], [ 'clients', _('Clients') ] ];
+		var titles = allTitles.slice();
 		var tabbar = E('ul', { 'class': 'cbi-tabmenu' });
 		var root = E('div', { 'id': 'openwrt-mcp-page' }, [ requestsBox, tabbar ]);
-		titles.forEach(function(t) { root.appendChild(panes[t[0]]); });
+		allTitles.forEach(function(t) { root.appendChild(panes[t[0]]); });
 
+		function channelOn(name) {
+			return ((data.settings.channels || []).filter(function(c) { return c.name === name; })[0] || {}).enabled === true;
+		}
+
+		// The Clients tab exists only while pairing from LuCI is switched on.
 		function showTab() {
+			titles = allTitles.filter(function(t) { return t[0] !== 'clients' || channelOn('pair'); });
+			if (!titles.some(function(t) { return t[0] === ui_.tab; }))
+				ui_.tab = 'overview';
 			tabbar.replaceChildren.apply(tabbar, titles.map(function(t) {
 				return E('li', { 'class': 'cbi-tab' + (t[0] === ui_.tab ? '' : '-disabled') }, [
 					E('a', { 'href': '#', 'click': function(ev) { ev.preventDefault(); ui_.tab = t[0]; showTab(); } }, t[1])
 				]);
 			}));
-			titles.forEach(function(t) { panes[t[0]].style.display = t[0] === ui_.tab ? '' : 'none'; });
+			allTitles.forEach(function(t) { panes[t[0]].style.display = t[0] === ui_.tab ? '' : 'none'; });
 		}
 
 		function refresh() {
@@ -245,13 +264,51 @@ return view.extend({
 			]);
 		}
 
+		function endPermitAll(client) {
+			return callEndPermitAll(client).then(check).then(refresh).catch(function(e) { fail(e); return refresh(); });
+		}
+
+		function permitAllBanner(a) {
+			return E('div', { 'class': 'alert-message danger', 'data-permit-all': a.client }, [
+				E('strong', {}, a.expires ? [ _('%s has full root access until %s').format(a.client, new Date(a.expires).toLocaleTimeString()),
+					' (', clock('until', a.expires), ')' ] : _('%s has full root access with no end').format(a.client)), ' ',
+				data.writable ? E('button', { 'class': 'btn cbi-button-negative', 'data-act': 'end-permit-all', 'click': function() {
+					endPermitAll(a.client);
+				} }, _('End now')) : ''
+			]);
+		}
+
+		// Last on the Permissions tab: a root shell with a time limit, behind a checkbox and the
+		// client's name typed out. The server asks for the confirmation too.
+		function permitAllSection(client) {
+			var dur = selectOf(PERMIT_ALL_DURATIONS, '1h');
+			var box = E('input', { 'type': 'checkbox', 'id': 'openwrt-mcp-pa-confirm' });
+			var typed = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'size': 20, 'id': 'openwrt-mcp-pa-name',
+				'placeholder': client });
+			var go = E('button', { 'class': 'btn cbi-button-negative', 'data-act': 'permit-all', 'disabled': '', 'click': function() {
+				callPermitAll(client, dur.value, true).then(check).then(refresh).catch(function(e) { fail(e); return refresh(); });
+			} }, _('Permit all'));
+			function ready() { go.disabled = !(box.checked && typed.value.trim() === client); }
+			box.addEventListener('change', ready);
+			typed.addEventListener('input', ready);
+			return E('div', { 'class': 'alert-message danger', 'data-section': 'permit-all' }, [
+				E('h4', {}, _('Permit all')),
+				E('p', {}, _('Not recommended. For the time you choose, the agent can do anything root can: change or break Wi-Fi, firewall and network settings (and lock you out), read every password and key on the router, install or remove software, and run any program. Mistakes are not always reversible: only uci_apply changes roll back. Prefer approving requests one by one.')),
+				E('p', {}, _('This is a root shell. The deny floor, the audit log, rollback, redaction and the rate limit stay on. There is no "never": 24 hours at most.')),
+				E('div', {}, [ _('For'), ' ', dur ]),
+				E('div', {}, E('label', {}, [ box, ' ', _('I understand this gives %s root access to this router').format(client) ])),
+				E('div', {}, [ _('Type the client name to confirm'), ' ', typed, ' ', go ])
+			]);
+		}
+
 		function drawRequests() {
 			var reqs = openRequests(data.st);
-			var sig = JSON.stringify([ reqs, data.writable, (data.st.pending || []) ]);
+			var permitAll = data.st.permit_all || [];
+			var sig = JSON.stringify([ reqs, data.writable, (data.st.pending || []), permitAll ]);
 			if (sig === ui_.sig.requests)
 				return;
 			ui_.sig.requests = sig;
-			var nodes = [];
+			var nodes = permitAll.map(permitAllBanner);
 			var byClient = {};
 			reqs.forEach(function(r) { (byClient[r.client] = byClient[r.client] || []).push(r); });
 			Object.keys(byClient).forEach(function(c) {
@@ -389,6 +446,8 @@ return view.extend({
 				});
 			else
 				nodes.push(E('p', {}, E('em', {}, _('Type a client name to manage its grants.'))));
+			if (data.writable && client)
+				nodes.push(permitAllSection(client));
 			panes.permissions.replaceChildren.apply(panes.permissions, nodes);
 		}
 
@@ -452,19 +511,60 @@ return view.extend({
 						return refresh();
 					}).catch(fail);
 				} }, _('Save')) : E('em', {}, _('Your LuCI account cannot change settings.')),
+				E('h3', {}, _('Optional channels')),
+				E('p', {}, _('Each is off until you switch it on. The notice says how it can harm you.')),
+				(s.channels || []).map(function(c) {
+					var box = E('input', { 'type': 'checkbox', 'data-channel': c.name, 'checked': c.enabled ? '' : null,
+						'disabled': data.writable ? null : '' });
+					box.checked = c.enabled;
+					box.addEventListener('change', function() {
+						callSetChannel(c.name, box.checked).then(check).then(refresh).catch(function(e) { fail(e); return refresh(); });
+					});
+					return E('div', { 'class': 'cbi-value', 'data-channel-row': c.name }, [
+						E('label', { 'class': 'cbi-value-title' }, [ box, ' ', _(c.title) ]),
+						E('div', { 'class': 'cbi-value-field' }, E('em', {}, _(c.harm)))
+					]);
+				}),
 				E('h3', {}, _('Second factor')),
 				E('p', {}, (s.mfa_clients || []).length ?
 					_('Enrolled for: %s. Enrolment stays on the command line (openwrt-mcp mfa).').format(s.mfa_clients.join(', ')) :
 					_('No client is enrolled. Enrolment is done on the command line (openwrt-mcp mfa).')));
 		}
 
+		// ---- clients (pairing, only while the channel is on)
+
+		function drawClients() {
+			var pair = (data.settings.channels || []).filter(function(c) { return c.name === 'pair'; })[0] || {};
+			var name = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'size': 24, 'id': 'openwrt-mcp-pair-name',
+				'placeholder': _('client name') });
+			var key = E('textarea', { 'class': 'cbi-input-textarea', 'rows': 3, 'cols': 60, 'id': 'openwrt-mcp-pair-key',
+				'placeholder': 'ssh-ed25519 AAAA...' });
+			var preset = selectOf([ [ 'readonly', _('Read-only') ], [ 'operator', _('Operator') ], [ 'none', _('nothing yet') ] ], 'readonly');
+			var dur = selectOf(DURATIONS.concat([ [ 'never', _('never') ] ]), '7d');
+			panes.clients.replaceChildren(
+				E('div', { 'class': 'alert-message warning' }, _(pair.harm || '')),
+				E('p', { 'class': 'cbi-section-descr' }, _('Paste the public key that "openwrt-mcp connect" prints. It is added to this router with the same locked-down line as "openwrt-mcp authorize-key": the key can run the MCP bridge and nothing else.')),
+				E('div', { 'class': 'cbi-value' }, [ E('label', { 'class': 'cbi-value-title' }, _('Client name')), E('div', { 'class': 'cbi-value-field' }, name) ]),
+				E('div', { 'class': 'cbi-value' }, [ E('label', { 'class': 'cbi-value-title' }, _('Public key')), E('div', { 'class': 'cbi-value-field' }, key) ]),
+				E('div', { 'class': 'cbi-value' }, [ E('label', { 'class': 'cbi-value-title' }, _('Starting access')),
+					E('div', { 'class': 'cbi-value-field' }, [ preset, ' ', _('for'), ' ', dur ]) ]),
+				data.writable ? E('button', { 'class': 'btn cbi-button-negative', 'data-act': 'pair', 'click': function() {
+					callPair(name.value.trim(), key.value.trim(), preset.value, dur.value).then(check).then(function() {
+						ui.addNotification(null, E('p', {}, _('Paired %s. Point its MCP client at ssh -T -i <that key> root@<router>.').format(name.value.trim())), 'info');
+						name.value = ''; key.value = '';
+						return refresh();
+					}).catch(fail);
+				} }, _('Pair')) : E('em', {}, _('Your LuCI account cannot pair clients.')));
+		}
+
 		function draw() {
 			drawRequests();
 			var key = function(k, v) { var s = JSON.stringify(v); if (ui_.sig[k] === s) return false; ui_.sig[k] = s; return true; };
 			if (key('overview', [ data.st.version, data.st.running, data.st.clients, data.st.policies, lastSeen(data.st) ])) drawOverview();
-			if (key('permissions', [ data.st.policies, data.st.clients, data.writable, ui_.client ])) drawPermissions();
+			if (key('permissions', [ data.st.policies, data.st.clients, data.writable, ui_.client, data.st.permit_all ])) drawPermissions();
 			if (key('activity', data.st.audit)) drawActivity();
-			if (key('settings', data.settings)) drawSettings();
+			if (key('settings', data.settings)) { drawSettings(); showTab(); }
+			if (channelOn('pair') && key('clients', [ data.settings.channels, data.writable ])) drawClients();
 			tick(root);
 		}
 

@@ -218,8 +218,9 @@ breadth, 1 hour), **Deny** and **Open** (the full page). Precedent for buttons t
 
 - **What it grants**: every tool, every scope, including `exec` and `ubus_call '*'`. That is a root shell, and the
   page says so in those words.
-- **What it does not lift**: the deny floor (8.1), the audit log, rollback on `uci_apply`, redaction, MFA on tools
-  that have it, the rate limit.
+- **What it does not lift**: the deny floor (8.1), the audit log, rollback on `uci_apply`, redaction, the rate
+  limit. Second factors are set per grant and the `@all` block carries none, so permit all is **refused for a client
+  that has one enrolled** (CLI and LuCI): grant that client its tools by hand with `mfa_tools`.
 - **Duration**: 15 min, **1 hour** (default), 4 hours, 24 hours at most. There is no "never".
 - **Confirmation**: a checkbox ("I understand this gives claude-code root access to this router") and typing the
   client name. The CLI equivalent needs `--shell-equivalent`.
@@ -230,9 +231,11 @@ breadth, 1 hour), **Deny** and **Open** (the full page). Precedent for buttons t
   > run any program. Mistakes are not always reversible: only `uci_apply` changes roll back. Prefer approving
   > requests one by one.
 
-- **While active**: the red banner on the MCP page and on Overview, with **End now**; `system_status` reports it; the
-  audit log marks every call made under it.
-- **Shape**: a preset `@all` in `presets.go`, so the CLI (`openwrt-mcp allow claude-code @all 1h --shell-equivalent`)
+- **While active**: the red banner on the MCP page and on Overview, with **End now**; `system_status` lists it under
+  *outstanding*; the audit log marks every call a permit-all grant authorised with `"via":"permit-all"`.
+  The banner follows the *shape* of a grant (every gated tool on `*`), not a label, so a hand-written grant of the
+  same shape shows it too, including one with no expiry (shown as "with no end").
+- **Shape**: `@all` in `permitall.go` (not in the `presets` map, so `grant_preset` cannot reach it), so the CLI (`openwrt-mcp allow claude-code @all 1h --shell-equivalent`)
   and LuCI write identical blocks, and *End now* removes exactly those.
 
 ### Optional channels (off by default)

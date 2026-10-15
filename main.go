@@ -123,6 +123,24 @@ func main() {
 	case "allow":
 		var shellOK bool
 		args, shellOK = takeFlag(args, "--shell-equivalent")
+		if len(args) == 4 && args[2] == "@all" {
+			if !shellOK {
+				die("refusing: @all lets %s run anything root can, for the duration given; add --shell-equivalent if that is what you mean", args[1])
+			}
+			if err := checkPermitAllDuration(args[3]); err != nil {
+				die("%v", err)
+			}
+			if err := permitAllMFA(*statePath, args[1]); err != nil {
+				die("%v", err)
+			}
+			fmt.Fprintf(os.Stderr, "warning: "+permitAllWarning+"\n", args[3])
+			blocks := permitAllBlocks()
+			replaced := replaceExpired(*configPath, args[1], blocks[0].tools, blocks[0].scopes)
+			must(appendPolicy(*configPath, args[1], strings.Join(blocks[0].tools, ","), "*", args[3]))
+			fmt.Printf("granted %s full access for %s; end it with: openwrt-mcp revoke %s\n", args[1], args[3], args[1])
+			printReplaced(replaced)
+			break
+		}
 		if len(args) == 4 && strings.HasPrefix(args[2], "@") {
 			blocks, err := expandPreset(args[2])
 			must(err)
@@ -415,6 +433,7 @@ func usage() {
   clients                                     list paired (HTTP) clients
   allow    <client> <tools> <scopes> <dur>    grant a standing policy (a shell-like exec needs --shell-equivalent)
   allow    <client> @readonly|@operator <dur> grant a preset
+  allow    <client> @all <dur<=24h> --shell-equivalent   permit everything, briefly (a root shell)
   revoke   <client>                           remove every policy for a client (config: %s)
   policies                                    show current grants
   prune    [--older-than <dur>]               delete expired grants (audited)

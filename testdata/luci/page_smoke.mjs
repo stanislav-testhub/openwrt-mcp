@@ -45,6 +45,10 @@ const handlers = {
 	grant: p => { calls.push(['grant', p]); return { blocks: 1 }; },
 	grant_preset: p => { calls.push(['grant_preset', p]); return { blocks: 3 }; },
 	revoke: p => { calls.push(['revoke', p]); return { removed: 1 }; },
+	permit_all: p => { calls.push(['permit_all', p]); return { client: p[0] }; },
+	end_permit_all: p => { calls.push(['end_permit_all', p]); return { removed: 1 }; },
+	set_channel: p => { calls.push(['set_channel', p]); return state.settings; },
+	pair: p => { calls.push(['pair', p]); return { client: p[0] }; },
 	set_settings: p => { calls.push(['set_settings', p]); return state.settings; },
 	access: () => writable,
 };
@@ -89,7 +93,9 @@ function fresh() {
 			{ id: 'raw', title: 'Raw access', tools: [ tool('exec', 'Run a command (no shell)', 'shell'),
 				tool('mfa_unlock', 'Unlock MFA-gated tools', 'write', { ungated: true, why: 'needs no grant' }) ] },
 		] },
-		settings: { request_wait: 60, request_ttl: 600, wait_max: 300, ttl_min: 60, ttl_max: 3600, mfa_clients: [ 'claude-code' ] },
+		settings: { request_wait: 60, request_ttl: 600, wait_max: 300, ttl_min: 60, ttl_max: 3600, mfa_clients: [ 'claude-code' ],
+			channels: [ { name: 'pair', title: 'Pair from LuCI', enabled: false,
+				harm: 'Anyone who can log in to LuCI with write access can add a key that reaches the router over SSH.' } ] },
 	};
 }
 const load = async () => { const d = await page.load(); return { d, root: page.render(d) }; };
@@ -252,5 +258,101 @@ fresh();
 	byAct(root, 'allow-all')[0].listeners.click();
 	await flush(); await flush(); await flush();
 	assert.deepEqual(calls.map(c => c[1].slice(1, 4).join('/')), [ 'allow/exact/1h', 'allow/exact/1h' ]);
+}
+// 14. Permit all: last on Permissions, inert until the box is ticked AND the name is typed, 24 h at most
+fresh();
+{
+	const { root } = await load();
+	const sec = find(root, x => x.attrs['data-section'] === 'permit-all')[0];
+	assert.ok(sec, 'the section is there');
+	assert.match(sec.attrs.class, /danger/);
+	assert.match(text(sec), /Not recommended/);
+	assert.match(text(sec), /root shell/);
+	const perms = find(root, x => x.attrs['data-section'] || x.attrs['data-act'] === 'preset-readonly');
+	assert.equal(perms[perms.length - 1], sec, 'it comes after the tool groups and presets');
+	const opts = find(sec, x => x.tag === 'option').map(o => o.attrs.value);
+	assert.deepEqual(opts, [ '15m', '1h', '4h', '24h' ]);
+	const [ box ] = find(sec, x => x.attrs.type === 'checkbox');
+	const [ typed ] = find(sec, x => x.attrs.type === 'text');
+	const go = byAct(sec, 'permit-all')[0];
+	assert.ok('disabled' in go.attrs, 'starts disabled');
+	const ready = () => { box.listeners.change(); typed.listeners.input(); return !go.disabled; };
+	box.checked = true; typed.value = 'claude';
+	assert.equal(ready(), false, 'a wrong name keeps it off');
+	box.checked = false; typed.value = 'claude-code';
+	assert.equal(ready(), false, 'an unticked box keeps it off');
+	box.checked = true;
+	assert.equal(ready(), true);
+	go.listeners.click();
+	await flush();
+	assert.deepEqual(calls, [ [ 'permit_all', [ 'claude-code', '1h', true ] ] ]);
+}
+
+// 15. a running Permit all: a red banner above the tabs on the page, with End now
+fresh();
+{
+	state.st.permit_all = [ { client: 'claude-code', expires: iso(3600e3) } ];
+	const { root } = await load();
+	const banner = find(root.children[0], x => x.attrs['data-permit-all'])[0];
+	assert.ok(banner, 'banner above the tabs');
+	assert.match(banner.attrs.class, /danger/);
+	assert.match(text(banner), /claude-code has full root access until/);
+	byAct(banner, 'end-permit-all')[0].listeners.click();
+	await flush();
+	assert.deepEqual(calls, [ [ 'end_permit_all', [ 'claude-code' ] ] ]);
+}
+
+// 16. a read-only LuCI account sees the banner and no way to start or end it
+fresh();
+{
+	writable = false;
+	state.st.permit_all = [ { client: 'claude-code', expires: iso(3600e3) } ];
+	const { root } = await load();
+	assert.match(text(root), /full root access/);
+	assert.equal(byAct(root, 'end-permit-all').length, 0);
+	assert.equal(find(root, x => x.attrs['data-section'] === 'permit-all').length, 0);
+}
+// 17. optional channels: off, with the harm notice beside the switch; the Clients tab is absent
+fresh();
+{
+	const { root } = await load();
+	const settings = root.children[5];
+	assert.match(text(settings), /Optional channels/);
+	assert.match(text(settings), /Pair from LuCI/);
+	assert.match(text(settings), /reaches the router over SSH/);
+	assert.ok(!text(root.children[1]).includes('Clients'), 'no Clients tab while the channel is off');
+	const [ sw ] = find(settings, x => x.attrs['data-channel'] === 'pair');
+	assert.equal(sw.checked, false);
+	sw.checked = true;
+	sw.listeners.change();
+	await flush();
+	assert.deepEqual(calls, [ [ 'set_channel', [ 'pair', true ] ] ]);
+}
+
+// 18. channel on: the Clients tab shows the notice and pairs with name, key, preset and duration
+fresh();
+{
+	state.settings.channels[0].enabled = true;
+	const { root } = await load();
+	assert.ok(text(root.children[1]).includes('Clients'));
+	const pane = root.children[6];
+	assert.match(text(pane), /reaches the router over SSH/);
+	const [ name ] = find(pane, x => x.attrs.id === 'openwrt-mcp-pair-name');
+	const [ key ] = find(pane, x => x.attrs.id === 'openwrt-mcp-pair-key');
+	name.value = 'laptop'; key.value = 'ssh-ed25519 AAAAexample laptop';
+	byAct(pane, 'pair')[0].listeners.click();
+	await flush();
+	assert.deepEqual(calls, [ [ 'pair', [ 'laptop', 'ssh-ed25519 AAAAexample laptop', 'readonly', '7d' ] ] ]);
+	assert.match(notes.concat(text(root)).join(' '), /Paired laptop/);
+}
+
+// 19. a read-only LuCI account cannot pair or switch channels
+fresh();
+{
+	writable = false;
+	state.settings.channels[0].enabled = true;
+	const { root } = await load();
+	assert.equal(byAct(root.children[6], 'pair').length, 0);
+	assert.ok('disabled' in find(root.children[5], x => x.attrs['data-channel'] === 'pair')[0].attrs);
 }
 console.log('ok');

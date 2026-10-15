@@ -22,6 +22,10 @@ config server
 	# uci_apply restore=<id>). This many versions per config; 0 turns history off, at most 20.
 	# The entries hold secrets like /etc/config does and are part of a sysupgrade backup.
 	# option history_keep '5'
+	# Optional channels, switched on from LuCI (Services -> MCP Server -> Settings). Each is off
+	# until you turn it on, and each switch is audited. 'pairing' adds a Clients tab where a
+	# public key can be bound to the MCP bridge from the browser.
+	# option pairing '0'
 
 # No policies by default: every gated tool is denied until you grant it.
 # ubus_list and mfa_unlock are the exceptions -- introspection and the second factor itself.

@@ -37,6 +37,7 @@ const rpcdDefaultDuration = "1h"
 
 type rpcdEnv struct {
 	configPath, statePath, requestsPath string
+	authKeysPath                        string // "" is /etc/dropbear/authorized_keys
 	now                                 func() time.Time
 }
 
@@ -65,6 +66,10 @@ var rpcdMethods = []rpcdMethod{
 		"duration": "String", "confirm": "Boolean"}, rpcdGrant},
 	{"revoke", true, map[string]string{"client": "String", "index": "Integer", "all": "Boolean"}, rpcdRevoke},
 	{"grant_preset", true, map[string]string{"client": "String", "preset": "String", "duration": "String"}, rpcdGrantPreset},
+	{"permit_all", true, map[string]string{"client": "String", "duration": "String", "confirm": "Boolean"}, rpcdPermitAll},
+	{"end_permit_all", true, map[string]string{"client": "String"}, rpcdEndPermitAll},
+	{"set_channel", true, map[string]string{"channel": "String", "enabled": "Boolean"}, rpcdSetChannel},
+	{"pair", true, map[string]string{"client": "String", "pubkey": "String", "preset": "String", "duration": "String"}, rpcdPair},
 	{"set_settings", true, map[string]string{"request_wait": "Integer", "request_ttl": "Integer"}, rpcdSetSettings},
 }
 
@@ -235,6 +240,7 @@ func rpcdSettings(env rpcdEnv, raw json.RawMessage) (any, error) {
 		"wait_max": int(maxRequestWait / time.Second),
 		"ttl_min":  int(minRequestTTL / time.Second), "ttl_max": int(maxRequestTTL / time.Second),
 		"mfa_clients": mfa, // read only here: enrolment stays on the command line
+		"channels":    channelReport(cfg),
 	}, nil
 }
 

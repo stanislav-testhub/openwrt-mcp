@@ -37,6 +37,8 @@ type statusReport struct {
 	Audit    []auditRow     `json:"audit"`
 	Counts   map[string]int `json:"counts"`
 
+	PermitAll []permitAllRow `json:"permit_all"`
+
 	LastDisconnect *disconnectRow `json:"last_disconnect,omitempty"`
 }
 
@@ -113,6 +115,7 @@ func buildStatus(configPath, statePath string, auditLines int) (statusReport, er
 
 	perClient := map[string]int{}
 	now := time.Now()
+	rep.PermitAll = activePermitAll(cfg, now)
 	for _, p := range cfg.Policies {
 		pr := policyReport{
 			Index:  perClient[p.Client],

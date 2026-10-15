@@ -92,6 +92,7 @@ type AuditEvent struct {
 	Args     any     `json:"args,omitempty"`
 	Outcome  Outcome `json:"outcome"`
 	Summary  string  `json:"summary,omitempty"`
+	Via      string  `json:"via,omitempty"` // "permit-all" when a permit-all grant authorised the call
 	Error    string  `json:"error,omitempty"`
 	Duration int64   `json:"duration_ms"`
 }

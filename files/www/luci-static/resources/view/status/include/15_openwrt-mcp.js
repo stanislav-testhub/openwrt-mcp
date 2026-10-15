@@ -4,7 +4,7 @@
 'require ui';
 
 // Status -> Overview (docs/luci-approvals.md, 8.5). Shown only while something needs the owner:
-// an open request or a rollback waiting for confirmation. render() returns null otherwise, and
+// an open request, a rollback waiting for confirmation, or a Permit all that is running. render() returns null otherwise, and
 // LuCI hides an include that renders nothing. It uses the same rpcd methods as Services -> MCP
 // Server; the buttons need the write ACL, which rpcd enforces. The page there has the full
 // controls (breadth and duration); here Allow is the narrowest breadth for one hour.
@@ -13,6 +13,8 @@ var callStatus = rpc.declare({ object: 'openwrt-mcp', method: 'status', params: 
 var callTools = rpc.declare({ object: 'openwrt-mcp', method: 'tools', expect: { '': {} } });
 var callDecide = rpc.declare({ object: 'openwrt-mcp', method: 'decide',
 	params: [ 'id', 'decision', 'breadth', 'duration', 'confirm' ], expect: { '': {} } });
+var callEndPermitAll = rpc.declare({ object: 'openwrt-mcp', method: 'end_permit_all',
+	params: [ 'client' ], expect: { '': {} } });
 var callAccess = rpc.declare({ object: 'session', method: 'access',
 	params: [ 'scope', 'object', 'function' ], expect: { 'access': true } });
 
@@ -51,10 +53,10 @@ return baseclass.extend({
 	load: function() {
 		return callStatus(0).then(check).then(function(st) {
 			var open = (st.requests || []).filter(function(r) { return r.state === 'open'; });
-			if (!open.length)
+			if (!open.length && !(st.permit_all || []).length)
 				return { st: st, open: open };
 			return Promise.all([
-				callTools().then(check).catch(function() { return {}; }),
+				open.length ? callTools().then(check).catch(function() { return {}; }) : {},
 				callAccess('ubus', 'openwrt-mcp', 'decide').catch(function() { return true; })
 			]).then(function(r) {
 				return { st: st, open: open, tools: toolIndex(r[0].groups), writable: r[1] !== false };
@@ -66,7 +68,8 @@ return baseclass.extend({
 		if (!data)
 			return null;
 		var pending = data.st.pending || [];
-		if (!data.open.length && !pending.length)
+		var permitAll = data.st.permit_all || [];
+		if (!data.open.length && !pending.length && !permitAll.length)
 			return null;
 
 		function confirmShell(message, retry) {
@@ -118,7 +121,23 @@ return baseclass.extend({
 			]);
 		}
 
-		var nodes = data.open.sort(function(a, b) { return Date.parse(b.created) - Date.parse(a.created); }).map(card);
+		function banner(a) {
+			var row = E('div', { 'class': 'alert-message danger', 'data-permit-all': a.client }, [
+				E('strong', {}, a.expires ?
+					_('%s has full root access until %s').format(a.client, new Date(a.expires).toLocaleTimeString()) :
+					_('%s has full root access with no end').format(a.client)), ' '
+			]);
+			if (data.writable)
+				row.appendChild(E('button', { 'class': 'btn cbi-button-negative', 'data-act': 'end-permit-all', 'click': function(ev) {
+					ev.target.disabled = true;
+					callEndPermitAll(a.client).then(check).then(function() {
+						row.replaceChildren(E('em', {}, _('Ended.')));
+					}).catch(function(e) { ev.target.disabled = false; fail(e); });
+				} }, _('End now')));
+			return row;
+		}
+
+		var nodes = permitAll.map(banner).concat(data.open.sort(function(a, b) { return Date.parse(b.created) - Date.parse(a.created); }).map(card));
 		pending.forEach(function(p) {
 			nodes.push(E('div', { 'class': 'alert-message warning' },
 				_('Change to %s by %s awaits confirmation; reverts automatically in %s').format(

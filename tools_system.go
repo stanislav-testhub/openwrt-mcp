@@ -199,6 +199,10 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 		fmt.Fprintf(&b, "  uci_apply awaiting confirmation: %s\n", p)
 		n++
 	}
+	for _, r := range activePermitAll(s.cfg(), time.Now()) {
+		fmt.Fprintf(&b, "  PERMIT ALL: %q has full root access until %s\n", r.Client, r.Expires)
+		n++
+	}
 	if files := findNewConfigs(); len(files) > 0 {
 		fmt.Fprintf(&b, "  %d %s config file(s) awaiting review (pkg_config_diff)\n", len(files), currentPkgManager().newConfigSuffix())
 		n++

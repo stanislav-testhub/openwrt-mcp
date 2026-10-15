@@ -328,6 +328,9 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 					approvedNote = fmt.Sprintf("approved after %d s (request %s)", int(a.waited.Seconds()), a.reqID)
 					now = time.Now()
 				}
+				if p.permitsAll() {
+					ev.Via = permitAllAuditVia
+				}
 				// Second factor, checked after authorisation so an unauthorised caller
 				// learns nothing about which tools are MFA-gated.
 				if r := s.mfaGate(p, client, name, now); r != "" {

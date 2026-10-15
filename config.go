@@ -150,6 +150,9 @@ type Config struct {
 	// held for an answer. 0 waits for nothing, which is the behaviour before requests existed.
 	RequestTTL  time.Duration
 	RequestWait time.Duration
+
+	// Optional channels (channels.go), each off until the owner switches it on.
+	Pairing bool
 }
 
 const (
@@ -223,6 +226,7 @@ func LoadConfig(configPath string) (*Config, error) {
 			if v, err := strconv.Atoi(s.Options["request_wait"]); err == nil && v > 0 {
 				c.RequestWait = min(time.Duration(v)*time.Second, maxRequestWait)
 			}
+			c.Pairing = s.Options["pairing"] == "1"
 			// Only a literal 0 turns redaction off: a typo must not.
 			if v, ok := s.Options["redact_output"]; ok {
 				c.RedactOutput = v != "0"
