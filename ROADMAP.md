@@ -551,13 +551,13 @@ Read-only value: the questions operators actually ask, answered in few tokens.
 
 ## Milestone 5: Reach and resilience (v1.5)
 
-**Status: shipped in 1.5.0** (see `CHANGELOG.md`), except 5.5 and 5.8, which move to 1.6, and 5.11, which is not part of the
+**Status: shipped in 1.5.0** (see `CHANGELOG.md`), except 5.5 and 5.8, which move to 1.7, and 5.11, which is not part of the
 code release. Where the build differs from the text below:
 
 - 5.1: opkg and fw4/fw3 behind one package-manager seam. The line for derived firmware is "OpenWrt 24.10+ userland, tested in
   CI in the `openwrt/rootfs` containers (package, uci, ubus-less paths); anything else is best effort". fw3 is read-only
   best effort (`firewall_show` `ruleset` and `rendered`).
-- 5.2: the framework and three adapters (tailscale, AdGuard Home, podkop), each run on a real router. The other six wait for 1.6.
+- 5.2: the framework and three adapters (tailscale, AdGuard Home, podkop), each run on a real router. The other six wait for 1.7.
 - 5.3, 5.4: `call`, `--read-only` and `--toolset`, through a fixed grammar of words after the forced command. A second
   parallel client entry with its own entry name is not built (`connect` writes the entry `openwrt`).
 - 5.6, 5.7: bridge retry, session lines in the audit, `status` last disconnect, deadlines per tool and a cap of 8 running
@@ -621,7 +621,7 @@ code release. Where the build differs from the text below:
 
 ### 5.5 Structured output
 
-*Moved to 1.6.*
+*Moved to 1.7.*
 
 *Replaces the `format=json` option.*
 
@@ -651,7 +651,7 @@ code release. Where the build differs from the text below:
 
 ### 5.8 Progress for long operations
 
-*Moved to 1.6.*
+*Moved to 1.7.*
 
 - **Ships.** MCP progress notifications for `pkg_change` commit, `sysupgrade` test and `traceroute`, and the Tasks
   extension where the client supports it.
@@ -688,18 +688,250 @@ code release. Where the build differs from the text below:
 
 ---
 
-## Milestone 5b: Carried over from 1.5 (v1.6)
+## Milestone 8: Approve from the router (v1.6)
+
+Today every grant, and every new client, needs a root shell on the router: `openwrt-mcp allow` and
+`openwrt-mcp authorize-key` over SSH. For router owners who don't use SSH, that is where adoption stops, and the
+agent stalls on each denial until someone pastes a command. This milestone moves the answer to where the owner already
+looks: a request shows in LuCI, one click answers it, and the waiting call continues. Every grant stays explicit,
+narrow by default, time-limited, audited and revocable. Design note: [`docs/luci-approvals.md`](docs/luci-approvals.md).
+
+It is numbered 8 so that existing references (`ROADMAP 6.1`, code comments, `CHANGELOG.md`) keep their meaning. It
+ships before Milestone 6 and the 1.5 carry-overs (5b).
+
+**One principle changes.** *Later* used to say that issuing grants stays on the command line, so that nothing reachable
+over the network can widen what an agent may do. A LuCI administrator is already root (Startup, Scheduled Tasks, SSH
+keys), so a grant button gives no human more power. What the rule protected against was **agents**, and that
+protection becomes an explicit, tested deny floor (8.1) instead of the absence of a write path.
+
+### 8.1 Self-approval deny floor
+
+- **Problem.** Three paths let an agent turn a narrow grant into a wider one once grants can be written from the
+  router:
+  - `ubus_call` runs `ubus` as root, which bypasses rpcd's session ACLs, so a broad scope reaches any object;
+  - `exec openwrt-mcp allow ...` is not treated as shell-equivalent;
+  - the policy-file guard covers only `/etc/config/openwrt-mcp`, so `@operator` could add an rpcd login through
+    `uci_apply` and then approve itself in LuCI.
+- **Ships.** A built-in floor that no grant lifts, `@all` included:
+  - `ubus_call` never reaches the objects `openwrt-mcp`, `session`, `file` and `rpc-sys`, nor `uci` writes to
+    `openwrt-mcp` or `rpcd`;
+  - `exec` refuses the `openwrt-mcp` binary and its rpcd plugin, by basename and by path;
+  - the guard in `uci_apply`, history `restore` and `pkg_config_resolve use_new` also covers `/etc/config/rpcd`.
+
+  This is the first piece of 6.2's deny floor, pulled forward.
+- **Done when.** A table test enumerates every write path and every floor entry, and each is refused under
+  `@operator` and `@all`. Removing any entry fails a mutation test. 8.3 and later do not ship without it.
+
+### 8.2 Requests and held calls
+
+- **Problem.** A denial is one line in the audit log, with no id. The agent can only print an `allow` line and stop.
+- **Ships.**
+  - A denied call becomes a **request**: client, tool, the exact scope the check failed on, redacted arguments and an
+    argument hash. Requests are deduplicated, capped (5 open per client, 50 in all), expire after `request_ttl`
+    (10 min), live in memory and `/var/run`, and are audited when created, decided and expired.
+  - A denied call is **held** for `request_wait` (default 60 s; `0` keeps today's behaviour) and re-checks the policy
+    once a second. When a grant appears, from LuCI or the CLI alike, the call runs and its result says it was
+    approved. On deny or timeout it returns `POLICY_DENIED` with the request id, where to approve it, and the CLI line
+    as a fallback.
+  - A decision is a one-shot claim on the request.
+  - The request card never shows agent-written text, only what the server derived.
+- **Done when.** Concurrent identical calls consume one decision exactly once. A hold ends on allow, deny, timeout
+  and cancellation. Held calls count against the in-flight cap (5.7).
+- **Precedent.** ha-mcp's approval queue: its held calls, and its fix for one approval consumed by two concurrent
+  calls.
+
+### 8.3 rpcd plugin and ACLs
+
+- **Ships.** `openwrt-mcp rpcd` implements the rpcd exec-plugin protocol behind a two-line wrapper in
+  `/usr/libexec/rpcd/`. The read methods are `status` and `requests`. The write methods are `decide`, `revoke`,
+  `grant_preset`, `permit_all` and `end_permit_all`, plus `pair` and `set_settings` for 8.7 to 8.9.
+  - The logic stays in Go, shared with the CLI.
+  - The ACL splits into read and write groups. A LuCI user with read access only sees requests but no buttons.
+  - The page stops using `fs.exec` for its status.
+- **Done when.** `list` matches the ACL file, every method has a golden test, and a call without the write ACL is
+  refused on a real router.
+
+### 8.4 The LuCI page
+
+- **Ships.** *Services → MCP Server*, rebuilt on LuCI's own tabs and widgets.
+  - **On top, above the tabs:** open requests, each with **Allow** (duration select, default 1 hour), a breadth
+    select (this exact scope by default, then the scope's family, the whole tool, `@operator`) and **Deny**, plus the
+    countdown of a held call. A *Permit all* banner and the rollback countdown appear there when active.
+  - **Overview:** daemon, transports, and clients (SSH keys, HTTP tokens, last seen).
+  - **Permissions:** per client, the preset buttons, then the tools in groups: Diagnostics, Configuration, Packages,
+    VPN, System, and Raw access. Each group shows "*n*/*m* granted", and each tool a badge (read, writes, root
+    shell), its scopes, its expiry and **Revoke**. *Permit all* comes last, in a red section.
+  - **Activity:** the audit log, filtered by client, tool and outcome.
+  - **Settings:** request wait and TTL, and the optional channels, each with its harm notice.
+  - Groups and badges are generated from the tool registry, so the page and the server cannot drift.
+- **Done when.** A test fails if a tool has no group. On hardware, a request appears and **Allow** releases the held
+  call.
+- **Precedent.** ha-mcp's settings page: grouped tools with counts, capability badges and lock notes, a pending list,
+  and a red section for dangerous options. Its complaints, a three-step enablement (#1990) and requests that expired
+  unseen (#2502), are why requests here are on by default and appear on Overview too.
+
+### 8.5 Overview widget
+
+- **Ships.** A LuCI status include on *Status → Overview*. It is hidden unless a request is open, *Permit all* is
+  active or a rollback is pending. Each request row has **Allow** (narrowest, 1 hour), **Deny** and **Open**.
+- **Done when.** It shows within one Overview poll of a new request, and is hidden when nothing is pending.
+
+### 8.6 Permit all
+
+- **Problem.** Some sessions are long and exploratory, and approving each request gets in the way.
+- **Ships.** A preset `@all` covering every tool and scope, `exec` and `ubus_call '*'` included. It is a root shell,
+  and the page says so.
+  - **Duration:** 15 min, 1 hour (default), 4 hours, at most 24 hours. There is no "never".
+  - **To enable it:** a warning listing what can go wrong (lock-out, Wi-Fi and firewall changes, every secret
+    readable, software installed, only `uci_apply` rolls back), a confirmation checkbox, and the client name typed in.
+  - **While active:** a red banner on the MCP page and on Overview with **End now**, a line in `system_status`, and a
+    marker on every audit entry.
+  - The deny floor, audit, rollback, redaction, MFA and rate limits all still apply.
+  - The CLI equivalent is `allow <client> @all <duration> --shell-equivalent`.
+- **Done when.** `@all` refuses "never" and anything over 24 hours, expiry removes it, and the floor still refuses
+  under it.
+
+### 8.7 to 8.9 Optional channels
+
+All three are off after install. Each has a switch on *Settings* and a notice beside it saying why it is off and how
+it can harm you.
+
+- **8.7 Pair from LuCI.** Paste the public key that `openwrt-mcp connect` prints, name the client and choose a
+  starting preset (Read-only by default). It writes the same forced-command line as `authorize-key`. *Harm:* anyone
+  who can log in to LuCI can add a key that reaches the router.
+- **8.8 Push hook.** Each new request fires the ubus event `openwrt-mcp.request` and runs the executables in
+  `/etc/openwrt-mcp/hooks.d/` with the redacted request on stdin, for Telegram, ntfy or Home Assistant. A notification
+  links to LuCI; it does not approve. *Harm:* request details leave the router, and a hook runs as root.
+- **8.9 Approve in chat.** Per client: clients that negotiate elicitation also show the request in their own prompt.
+  It is never offered for *Permit all* or root-shell tools, and it shares its request record with 6.1. *Harm:* a
+  client or agent that auto-answers prompts would grant itself.
+
+### 8.10 Documentation
+
+- **Ships.** A README section "Approve from LuCI" with screenshots. `SECURITY.md` gets the new trust boundary (a LuCI
+  administrator) and the deny floor. The *Later* bullet for the LuCI page is replaced by this milestone.
+
+---
+
+## Milestone 5b: Carried over from 1.5 (v1.7)
 
 - **5.5 structured output** and **5.8 progress for long operations**, as written above.
 - **Add-on adapters** for adblock, adblock-fast, https-dns-proxy, mwan3, pbr and ddns, on the 1.5 framework (`adapters.go`):
   one small file each, built from upstream source, run on a real router before release. Deferred from 1.5 because none is
-  installed on the verification router.
+  installed on the verification router. They are now the core of wave 1 in Milestone 9 (9.3).
+
+---
+
+## Milestone 9: Add-on coverage (v1.7 to v1.9)
+
+Most people run OpenWrt for its add-ons: an ad blocker, a second WAN, a VPN with policy routing, a NAS share, a
+travel-router uplink. That is also where their questions are ("why is this site blocked", "is my failover working",
+"which ports did UPnP open"). 1.5 built the adapter framework and three adapters. This milestone grows coverage to
+the add-ons most of the community uses, in waves, without adding a tool. Design note:
+[`docs/add-on-coverage.md`](docs/add-on-coverage.md).
+
+Waves ship with the minor releases: wave 1 with 5b in 1.7, wave 2 in 1.8, wave 3 in 1.9. Wave 4 is best effort.
+OpenWrt measures no installs, so the order comes from the one public count that exists, the Attended Sysupgrade
+server's most-requested packages, and from issue activity in `openwrt/packages` and GitHub stars where it is silent
+(see *Evidence* in the design note).
+
+### 9.1 Adapter contract, version 2
+
+- **Problem.** An adapter today is one status read. The common questions also need a lookup ("is this domain
+  blocked"), a few operations UCI cannot express ("refresh the lists", "force a DDNS update"), and the add-on's
+  config knowledge in the dry run and the audit.
+- **Ships.** Optional layers per adapter, each feeding an existing tool:
+  - **status**: `service_list detail=<svc>` (as in 1.5);
+  - **query**: `service_list detail=<svc> query=<value>`, the value validated by kind (domain, IP, MAC, interface)
+    before any argv is built;
+  - **verbs**: `service_control name=<svc> action=<verb> arg=<value>`, scope `<svc>.<verb>`. `routine` verbs join
+    `@operator`, `disruptive` ones need an explicit grant;
+  - **config knowledge**: reference fields for 5.10, add-on warnings for 5.9, and the UCI options that hold
+    credentials, so `uci_get` masks them;
+  - **findings**: entries in `system_status mode=doctor` and `mode=audit`.
+
+  Settings stay with `uci_apply`; an adapter adds no second write path to UCI. A parser that meets output it does not
+  recognise says so, with the add-on version, instead of guessing.
+- **Done when.** The three 1.5 adapters run on it unchanged, a registry test checks every declared layer, and the
+  catalog grows by the two parameters only (measured as in 3.11).
+
+### 9.2 Fixture capture and scrubbing
+
+- **Ships.** Adapters declare every command they run. `make capture SVC=<svc>` runs exactly those on a router and
+  saves the outputs; a scrubber rewrites addresses, host names, MACs and secrets, and a test rejects fixtures that
+  still hold a private address outside `192.168.1.0/24` or a known secret pattern.
+- **Done when.** Every adapter's states (not installed, disabled, running, crashed, partly failed, unrecognised
+  output) come from scrubbed real captures or are marked synthetic.
+
+### 9.3 Wave 1 (v1.7): DNS, filtering and exposure
+
+- **Ships.** adblock, adblock-fast, banIP, https-dns-proxy, mwan3, pbr, ddns, UPnP (miniupnpd), sqm-scripts and ttyd.
+  sqm and ttyd have the most measured installs of any service add-on. Examples:
+  "blocked by which list" for a domain, "banned by which feed" for an IP, registered IP versus WAN IP (and a finding
+  when the WAN is behind CGNAT), UPnP leases with their clients.
+- **Cross views.**
+  - `net_diag action=dns_path`: who answers DNS, hop by hop, with the blocker at each hop. It flags two blockers or
+    two daemons on port 53.
+  - **Exposure** in the security audit: fw4 redirects, UPnP leases and add-on listeners reachable from WAN, each
+    with whether it needs authentication.
+
+### 9.4 Wave 2 (v1.8): resolvers, QoS, VPN and remote access
+
+- **Ships.** unbound, stubby, smartdns, nextdns, qosify, watchcat, travelmate, OpenVPN, ZeroTier, NetBird,
+  strongSwan, cloudflared and frp; luci-app-statistics (collectd), which absorbs 7.5; an irqbalance doctor finding.
+- **Cross views.** `net_diag action=path src=<client> dest=<host>`: which way one client's traffic goes (pbr, mwan3,
+  a proxy, a Tailscale exit node, WireGuard, plain WAN). It comes with a **mark map**: the fwmark bits each routing
+  add-on uses. Overlapping masks are the usual reason two routing add-ons silently break each other.
+
+### 9.5 Wave 3 (v1.9): Wi-Fi, clients and the home server
+
+- **Ships.** usteer, DAWN, wifischedule, openNDS, nlbwmon (extending `net_diag action=usage`), vnStat, lldpd, Samba
+  and ksmbd, Transmission, MiniDLNA, aria2, hd-idle, NUT, acme, Mosquitto, keepalived and Tor.
+- **Prompts** (3.8) for the common setups, built only from existing tools: `block-ads`, `multi-wan`,
+  `vpn-policy-routing`, `expose-service-safely` and `remote-access`.
+
+### 9.6 Wave 4 (best effort): proxy and circumvention stacks
+
+- **Ships.** Status-only adapters, in order of GitHub stars: OpenClash, zapret, v2rayA (official feed), passwall and
+  passwall2, nikki, youtubeUnblock and homeproxy. They hold the most credentials and change the fastest: node links
+  never print, node names are untrusted text, and an adapter is dropped rather than kept broken. Each feeds the DNS
+  path and the mark map.
+
+### 9.7 Verified on a real router
+
+- **Ships.** Every official-feed add-on from waves 1 to 3 stays installed on the verification router (GL-MT6000, 1 GB
+  RAM, 25.12). Each has a rig class:
+  - **always on**: passive or self-contained add-ons;
+  - **test window**: add-ons that take over DNS, routing or a radio, enabled one at a time and restored by snapshot
+    and rollback;
+  - **extra hardware**: a second WAN, a second AP, a UPS, a USB disk or a cloud account. These say "fixture-tested",
+    not "verified", until the hardware is there.
+
+  CI's real-target job installs each wave's packages in the 24.10 and 25.12 rootfs containers and checks detection
+  and config parsing.
+- **Done when.** The README add-on table lists, per adapter, the add-on version checked and where it was verified.
+  `CONTRIBUTING.md` gains "Adding an adapter" with a template and this checklist.
+
+### 9.8 Diagnostic tools
+
+- **Problem.** iperf3 and tcpdump are in the measured top 100 of every branch that has room for add-ons, and owners
+  install them to answer "is it the Wi-Fi or the WAN" and "what is this device doing". Today the agent needs `exec`
+  for both.
+- **Ships.** `net_diag` modes offered only when the binary is installed: `throughput` (iperf3, at most 10 s,
+  open-world) and `capture` (tcpdump capped by time and packets, returned as a summary: top talkers, protocols, DNS
+  names, resets). The filter is checked against an allow-list of BPF primitives. A raw pcap never enters the
+  transcript. Each mode has its own grant scope; capture reads other people's traffic.
+- **Done when.** Mutation tests cover the filter allow-list and the caps, and an e2e test shows a capture ends at its
+  packet cap.
 
 ---
 
 ## Milestone 6: Operate (v2.0)
 
 Starts with a design note in `docs/`, because approval interacts with policies and the second factor.
+
+Milestone 8 builds the pieces that 6.1 and 6.2 start from: the request record, the LuCI approve button and the first
+part of the deny floor.
 
 ### 6.1 Per-call approval
 
@@ -832,6 +1064,8 @@ Starts with a design note in `docs/`, because approval interacts with policies a
 
 ### 7.5 Metrics history
 
+*Moved into 9.4: luci-app-statistics is among the most installed add-ons.*
+
 - **Ships.** `system_status history=24h` reads collectd RRD data when luci-app-statistics is installed: load,
   temperature, traffic.
 
@@ -851,16 +1085,9 @@ Starts with a design note in `docs/`, because approval interacts with policies a
 - **Update check.** `openwrt-mcp version --check` against GitHub releases, shown by `status`. Then
   `install.sh upgrade`.
 - **Packaging.** An `apk` package or feed for 25.12.
-- **LuCI control page.** The read-only status page (*Services -> MCP Server*: daemon, paired HTTP clients,
-  standing policies, recent activity, a pending `uci_apply` with its deadline) ships today. Next, in order
-  of risk:
-  - read-only additions: audit filters, rollback countdown;
-  - revoke a grant with a button (it only narrows rights);
-  - approve or deny a pending call (6.1), tied to the LuCI session through its own rpcd ACL, never a
-    shared token, with no path for an agent to reach it.
-
-  Issuing grants stays on the command line: the page is read-only by design, so nothing reachable over
-  the network can widen what an agent may do.
+- **LuCI control page.** Moved to Milestone 8. The read-only status page (*Services -> MCP Server*) ships
+  today. The old rule here, that issuing grants stays on the command line, is replaced: a LuCI administrator is
+  already root, and the protection against agents that the rule gave becomes the deny floor (8.1).
 - **PR template.** A checklist with a red-first regression test, a `goldenCalls` entry and a mutation run for
   security rules.
 
@@ -898,6 +1125,10 @@ These are deliberately not planned, with the reason for each.
   slower in CI.
 - 7.3: should the hub hold SSH sessions open, or connect per call? Open sessions are faster, but they hide router
   reboots (5.6).
+- 8.2: is a 60-second hold safe with every client's tool timeout, or should `connect` also write a matching client
+  timeout?
+- 8.3: does rpcd pass the LuCI user name to an exec plugin? If it does, the audit actor is `luci:<user>`, not
+  `luci`.
 
 Answered since the first version of this roadmap:
 
