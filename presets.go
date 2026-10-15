@@ -97,6 +97,50 @@ func sameSet(a, b []string) bool {
 
 // removePoliciesWhere deletes every `config policy` block that drop matches, in the same way.
 func removePoliciesWhere(configPath string, drop func(uciSection) bool) (int, error) {
+	return rewritePolicyBlocks(configPath, func(s uciSection, _ []string) ([]string, bool) {
+		return nil, drop(s)
+	})
+}
+
+// removeToolsFromPolicies takes the named tools out of every block of one client, keeping each
+// block's scopes, expiry and enabled flag, and drops a block that is left with no tool. It returns
+// how many tools were removed.
+func removeToolsFromPolicies(configPath, client string, tools []string) (int, error) {
+	removed := 0
+	_, err := rewritePolicyBlocks(configPath, func(s uciSection, lines []string) ([]string, bool) {
+		if s.Options["client"] != client {
+			return nil, false
+		}
+		var gone []string
+		for _, t := range s.Lists["tools"] {
+			if slices.Contains(tools, t) {
+				gone = append(gone, t)
+			}
+		}
+		if len(gone) == 0 {
+			return nil, false
+		}
+		removed += len(gone)
+		if len(gone) == len(s.Lists["tools"]) {
+			return nil, true
+		}
+		var kept []string
+		for _, l := range lines {
+			if f, ok := splitUCI(l); ok && len(f) > 2 && f[0] == "list" && f[1] == "tools" && slices.Contains(gone, f[2]) {
+				continue
+			}
+			kept = append(kept, l)
+		}
+		return kept, true
+	})
+	return removed, err
+}
+
+// rewritePolicyBlocks hands every `config policy` block to edit with its lines. edit returns the
+// lines to write in its place (none drops the block) and whether it changed anything. Everything
+// else, comments and other sections included, is copied through byte for byte, and the file is
+// replaced only when some block changed. It returns the number of blocks changed.
+func rewritePolicyBlocks(configPath string, edit func(uciSection, []string) ([]string, bool)) (int, error) {
 	f, err := os.Open(configPath)
 	if err != nil {
 		return 0, err
@@ -123,9 +167,12 @@ func removePoliciesWhere(configPath string, drop func(uciSection) bool) (int, er
 	n := 0
 	for _, b := range blocks {
 		secs := parseUCI(bufio.NewScanner(strings.NewReader(strings.Join(b, "\n"))))
-		if len(secs) == 1 && secs[0].Type == "policy" && drop(secs[0]) {
-			n++
-			continue
+		if len(secs) == 1 && secs[0].Type == "policy" {
+			if lines, changed := edit(secs[0], b); changed {
+				n++
+				out = append(out, lines...)
+				continue
+			}
 		}
 		out = append(out, b...)
 	}

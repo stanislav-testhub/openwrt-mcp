@@ -165,7 +165,7 @@ func TestListNamesEveryMethodAndMatchesTheACLFile(t *testing.T) {
 	if !sameSet(write, wantWrite) {
 		t.Errorf("ACL write methods %v, want %v", write, wantWrite)
 	}
-	for _, w := range []string{"decide", "revoke", "grant_preset", "set_settings"} {
+	for _, w := range []string{"decide", "revoke", "revoke_tools", "grant_preset", "set_settings"} {
 		if !slices.Contains(write, w) {
 			t.Errorf("%s is not behind the write ACL", w)
 		}
@@ -186,6 +186,19 @@ func TestAnUnknownMethodAndBadInputAreErrorsNotCrashes(t *testing.T) {
 	if code := runRpcd(r.env, []string{"frobnicate"}, strings.NewReader(""), &out); code == 0 {
 		t.Error("an unknown subcommand succeeded")
 	}
+}
+
+// rpcd puts the caller's session id into the arguments of every call to a plugin as
+// "ubus_rpc_session"; a method that rejects it as an unknown field fails every call from LuCI.
+func TestEveryMethodAcceptsTheSessionFieldRpcdAdds(t *testing.T) {
+	r := newRig(t)
+	for _, m := range rpcdMethods {
+		got := r.call(m.name, map[string]any{"ubus_rpc_session": "0123456789abcdef"})
+		if e, _ := got["error"].(string); strings.Contains(e, "unknown field") {
+			t.Errorf("%s refused the session field: %s", m.name, e)
+		}
+	}
+	r.fails("decide", map[string]any{"ubus_rpc_session": "x", "breath": "family"}, "unknown field")
 }
 
 // ---- reading
@@ -637,5 +650,64 @@ func TestADecisionTheStoreCannotSeeByStatIsStillKeptAtSaveTime(t *testing.T) {
 	r.open("claude", "uci_apply", "network.*")
 	if got := stateOf(t, r.ok("requests", nil), a.ID); got != "denied" {
 		t.Errorf("request %s is %s after the daemon saved, want denied", a.ID, got)
+	}
+}
+
+// ---- revoking single tools out of a block
+
+func TestRevokeToolsTakesNamedToolsOutOfAMixedBlockAndKeepsTheRest(t *testing.T) {
+	r := newRig(t)
+	// What a preset writes: one block that holds several abilities at once.
+	if err := appendPolicy(r.env.configPath, "claude", "uci_get,logread,uci_apply", "*", "8h"); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendPolicy(r.env.configPath, "claude", "ubus_call", "system.board system.info", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendPolicy(r.env.configPath, "other", "logread", "*", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	got := r.ok("revoke_tools", map[string]any{"client": "claude", "tools": []string{"logread", "ubus_call"}})
+	if got["removed"] != float64(2) {
+		t.Fatalf("removed %v, want the two named tools", got["removed"])
+	}
+	if r.allowed("claude", "logread", "x") || r.allowed("claude", "ubus_call", "system.board") {
+		t.Error("a named tool is still granted")
+	}
+	if !r.allowed("claude", "uci_get", "x") || !r.allowed("claude", "uci_apply", "x") {
+		t.Error("the tools that were not named lost their grant")
+	}
+	if !r.allowed("other", "logread", "x") {
+		t.Error("another client lost its grant")
+	}
+	ps := r.config().Policies
+	if len(ps) != 2 {
+		t.Fatalf("%d blocks left, want the mixed block (now two tools) and the other client's: the emptied block must go", len(ps))
+	}
+	var kept *Policy
+	for i := range ps {
+		if ps[i].Client == "claude" {
+			kept = ps[i]
+		}
+	}
+	if kept == nil || kept.Expires.IsZero() || !sameSet(kept.Scopes, []string{"*"}) || !kept.Enabled {
+		t.Errorf("the block kept is %+v: its scopes, expiry and enabled flag must survive the edit", kept)
+	}
+	if !strings.Contains(r.audit(), `"revoke_tools"`) {
+		t.Error("audit lacks the revoke")
+	}
+}
+
+func TestRevokeToolsRefusesWhatItCannotDoAndChangesNothing(t *testing.T) {
+	r := newRig(t)
+	if err := appendPolicy(r.env.configPath, "claude", "uci_get,logread", "*", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	r.fails("revoke_tools", map[string]any{"client": "claude", "tools": []string{}}, "tools")
+	r.fails("revoke_tools", map[string]any{"client": "claude", "tools": []string{"no_such_tool"}}, "no tool")
+	r.fails("revoke_tools", map[string]any{"client": "bad name", "tools": []string{"logread"}}, "client")
+	r.fails("revoke_tools", map[string]any{"client": "claude", "tools": []string{"firewall_show"}}, "no grant")
+	if !r.allowed("claude", "logread", "x") || !r.allowed("claude", "uci_get", "x") {
+		t.Error("a refused call changed the grants")
 	}
 }

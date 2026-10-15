@@ -270,3 +270,26 @@ func TestLuciOverviewSmoke(t *testing.T) {
 		t.Fatalf("the overview smoke test failed:\n%s", out)
 	}
 }
+
+// The Overview include is one file with no shared module, so the words a request is described in
+// are repeated from the page. They must not drift: a request reads the same on both.
+func TestOverviewIncludeSaysRequestsInTheWordsOfThePage(t *testing.T) {
+	page, err := os.ReadFile("files/www/luci-static/resources/view/openwrt-mcp/status.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inc, err := os.ReadFile(overviewInclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"VERBS", "READONLY_UBUS", "RISK", "RISK_OF_BADGE"} {
+		re := regexp.MustCompile(`(?s)var ` + name + ` = [\[{].*?[\]}];`)
+		a, b := re.Find(page), re.Find(inc)
+		if a == nil || b == nil {
+			t.Fatalf("%s is missing from the page or the include", name)
+		}
+		if string(a) != string(b) {
+			t.Errorf("%s differs between the page and the include:\n%s\n---\n%s", name, a, b)
+		}
+	}
+}

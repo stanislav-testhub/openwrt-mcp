@@ -148,6 +148,7 @@ Logic stays in Go, shared with the CLI and tested there.
 | `requests` | read | open and recently decided requests |
 | `decide` `{id, decision, breadth, duration}` | write | claims the request; on `allow` writes the grant |
 | `revoke` `{client, index \| all}` | write | removes grant blocks (narrows only) |
+| `revoke_tools` `{client, tools}` | write | takes single tools out of the client's blocks, keeping each block's scopes and expiry (a preset writes one block for many abilities; the page's per-ability switch needs this). Narrows only |
 | `grant_preset` `{client, preset, duration}` | write | `@readonly`, `@operator` |
 | `permit_all` `{client, duration, confirm}` | write | see 8.6 |
 | `end_permit_all` `{client}` | write | removes the `@all` blocks |

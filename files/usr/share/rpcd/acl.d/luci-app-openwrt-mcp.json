@@ -11,7 +11,7 @@
 		"description": "Approve requests, grant and revoke access, change openwrt-mcp settings",
 		"write": {
 			"ubus": {
-				"openwrt-mcp": [ "decide", "grant", "revoke", "grant_preset", "permit_all", "end_permit_all", "set_channel", "pair", "set_settings" ]
+				"openwrt-mcp": [ "decide", "grant", "revoke", "revoke_tools", "grant_preset", "permit_all", "end_permit_all", "set_channel", "pair", "set_settings" ]
 			}
 		}
 	}

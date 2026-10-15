@@ -65,6 +65,7 @@ var rpcdMethods = []rpcdMethod{
 	{"grant", true, map[string]string{"client": "String", "tool": "String", "scope": "String",
 		"duration": "String", "confirm": "Boolean"}, rpcdGrant},
 	{"revoke", true, map[string]string{"client": "String", "index": "Integer", "all": "Boolean"}, rpcdRevoke},
+	{"revoke_tools", true, map[string]string{"client": "String", "tools": "Array"}, rpcdRevokeTools},
 	{"grant_preset", true, map[string]string{"client": "String", "preset": "String", "duration": "String"}, rpcdGrantPreset},
 	{"permit_all", true, map[string]string{"client": "String", "duration": "String", "confirm": "Boolean"}, rpcdPermitAll},
 	{"end_permit_all", true, map[string]string{"client": "String"}, rpcdEndPermitAll},
@@ -130,10 +131,18 @@ func runRpcd(env rpcdEnv, args []string, stdin io.Reader, stdout io.Writer) int 
 }
 
 // decodeArgs reads the method's JSON object, refusing a field the method does not take: a typo
-// such as "breath" must not quietly fall back to a default.
+// such as "breath" must not quietly fall back to a default. rpcd adds the caller's session id as
+// "ubus_rpc_session" to every call; it is not an argument, so it is dropped first.
 func decodeArgs(raw json.RawMessage, v any) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
+	}
+	var fields map[string]json.RawMessage
+	if json.Unmarshal(raw, &fields) == nil {
+		if _, ok := fields["ubus_rpc_session"]; ok {
+			delete(fields, "ubus_rpc_session")
+			raw, _ = json.Marshal(fields)
+		}
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
@@ -419,6 +428,43 @@ func rpcdRevoke(env rpcdEnv, raw json.RawMessage) (any, error) {
 		what = "every grant"
 	}
 	rpcdAudit(cfg, env, "revoke", in.Client, "", fmt.Sprintf("removed %d policy block(s) for %q (%s)", removed, in.Client, what))
+	return map[string]any{"removed": removed}, nil
+}
+
+// rpcdRevokeTools is the Permissions tab's switch turned off: it takes single tools out of the
+// client's grants, which a preset writes as blocks that hold several abilities at once. Revoke by
+// index removes a whole block and so cannot do this.
+func rpcdRevokeTools(env rpcdEnv, raw json.RawMessage) (any, error) {
+	var in struct {
+		Client string   `json:"client"`
+		Tools  []string `json:"tools"`
+	}
+	if err := decodeArgs(raw, &in); err != nil {
+		return nil, err
+	}
+	if !reClientName.MatchString(in.Client) {
+		return nil, rpcdFail("bad client name %q", in.Client)
+	}
+	if len(in.Tools) == 0 {
+		return nil, rpcdFail("give the tools to revoke")
+	}
+	for _, t := range in.Tools {
+		if !slices.Contains(allToolNames, t) {
+			return nil, rpcdFail("no tool %q", t)
+		}
+	}
+	cfg, err := LoadConfig(env.configPath)
+	if err != nil {
+		return nil, err
+	}
+	removed, err := removeToolsFromPolicies(env.configPath, in.Client, in.Tools)
+	if err != nil {
+		return nil, rpcdFail("cannot revoke: %v", err)
+	}
+	if removed == 0 {
+		return nil, rpcdFail("no grant of %s for %q", strings.Join(in.Tools, ", "), in.Client)
+	}
+	rpcdAudit(cfg, env, "revoke_tools", in.Client, "", fmt.Sprintf("removed %s from the grants of %q", strings.Join(in.Tools, ", "), in.Client))
 	return map[string]any{"removed": removed}, nil
 }
 
