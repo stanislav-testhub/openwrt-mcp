@@ -101,6 +101,7 @@ case "${1:-}" in
 [ -x /etc/init.d/openwrt-mcp ] && { /etc/init.d/openwrt-mcp stop; /etc/init.d/openwrt-mcp disable; }
 rm -f /usr/bin/openwrt-mcp /etc/init.d/openwrt-mcp /lib/upgrade/keep.d/openwrt-mcp \
 	/usr/share/luci/menu.d/luci-app-openwrt-mcp.json /usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json /usr/libexec/rpcd/openwrt-mcp
+rm -f /www/luci-static/resources/view/status/include/15_openwrt-mcp.js
 rm -rf /www/luci-static/resources/view/openwrt-mcp /var/run/openwrt-mcp
 rm -f /tmp/luci-indexcache*; /etc/init.d/rpcd reload
 sed -i '/openwrt-mcp stdio --client/d' /etc/dropbear/authorized_keys 2>/dev/null || true

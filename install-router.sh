@@ -89,6 +89,7 @@ install_payload() {
 	put usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json /usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json 0644
 	put usr/libexec/rpcd/openwrt-mcp /usr/libexec/rpcd/openwrt-mcp 0755
 	put www/luci-static/resources/view/openwrt-mcp/status.js /www/luci-static/resources/view/openwrt-mcp/status.js 0644
+	put www/luci-static/resources/view/status/include/15_openwrt-mcp.js /www/luci-static/resources/view/status/include/15_openwrt-mcp.js 0644
 	mkdir -p /etc/openwrt-mcp && chmod 0700 /etc/openwrt-mcp
 	rm -rf "$S"
 

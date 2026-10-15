@@ -232,3 +232,41 @@ func TestTheACLGrantsNoFileExec(t *testing.T) {
 		t.Error("the ACL grants file access: the page no longer shells out to openwrt-mcp")
 	}
 }
+
+// ---- the Overview include (8.5)
+
+const overviewInclude = "files/www/luci-static/resources/view/status/include/15_openwrt-mcp.js"
+
+func TestOverviewIncludeCallsOnlyMethodsInTheACLAndIsInstalled(t *testing.T) {
+	b, err := os.ReadFile(overviewInclude)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acl, err := os.ReadFile("files/usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range jsDeclare.FindAllStringSubmatch(string(b), -1) {
+		if m[1] != "access" && !strings.Contains(string(acl), `"`+m[1]+`"`) {
+			t.Errorf("the include calls %q, which no ACL group grants", m[1])
+		}
+	}
+	// Every file the installer puts on the router must survive a sysupgrade and be removed by uninstall.
+	path := strings.TrimPrefix(overviewInclude, "files")
+	for _, f := range []string{"files/lib/upgrade/keep.d/openwrt-mcp", "install-router.sh", "install.sh", ".github/workflows/ci.yml"} {
+		if c, err := os.ReadFile(f); err != nil || !strings.Contains(string(c), path) {
+			t.Errorf("%s does not name %s", f, path)
+		}
+	}
+}
+
+func TestLuciOverviewSmoke(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	out, err := exec.Command(node, "testdata/luci/overview_smoke.mjs", overviewInclude).CombinedOutput()
+	if err != nil {
+		t.Fatalf("the overview smoke test failed:\n%s", out)
+	}
+}
