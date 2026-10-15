@@ -655,11 +655,20 @@ func indentOut(s string) string {
 
 // errPolicyFile: whatever a client has been granted, it cannot grant itself more. Without
 // this, uci_apply on scope '*' (the @operator preset) could add a policy with exec on '*'
-// and confirm it.
-var errPolicyFile = fmt.Errorf("the openwrt-mcp policy config cannot be changed through MCP, " +
-	"whatever the grant; change it on the router with openwrt-mcp allow / revoke")
+// and confirm it. The rpcd config is covered too: its logins decide who may approve in LuCI.
+var errPolicyFile = fmt.Errorf("the openwrt-mcp policy config and the rpcd config cannot be changed through MCP, " +
+	"whatever the grant; change the policy on the router with openwrt-mcp allow / revoke")
 
 func (s *Server) isPolicyFile(p string) bool {
 	p = filepath.ToSlash(filepath.Clean(p))
-	return p == filepath.ToSlash(filepath.Clean(s.configPath)) || p == defaultConfigPath
+	if p == filepath.ToSlash(filepath.Clean(s.configPath)) || p == defaultConfigPath {
+		return true
+	}
+	// The other floor configs (rpcd) are protected in uciConfDir and in /etc/config.
+	for _, c := range floorConfigs {
+		if p == filepath.ToSlash(filepath.Join(uciConfDir, c)) || p == "/etc/config/"+c {
+			return true
+		}
+	}
+	return false
 }

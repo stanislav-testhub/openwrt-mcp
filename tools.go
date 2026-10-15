@@ -308,6 +308,9 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 			if reason := profileFrom(ctx).refusal(name, scopes); reason != "" {
 				return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
 			}
+			if reason := floorRefusal(in); reason != "" {
+				return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
+			}
 			if !ungatedTools[name] {
 				now := time.Now()
 				p, reason := s.cfg().AuthorisePolicy(client, name, scopes, now)

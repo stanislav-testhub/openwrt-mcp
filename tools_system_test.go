@@ -1170,7 +1170,7 @@ func TestUbusListAndCallArgumentHandling(t *testing.T) {
 		t.Fatal("ubus_list with filter refused")
 	}
 	// Arguments reach ubus as ONE JSON argv element, keys sorted, shell characters inert.
-	if _, isErr := callText(t, cs, "ubus_call", map[string]any{"object": "file", "method": "read",
+	if _, isErr := callText(t, cs, "ubus_call", map[string]any{"object": "iwinfo", "method": "info",
 		"args": map[string]any{"path": "/etc/x; reboot", "b": 2, "a": []int{1}}}); isErr {
 		t.Fatal("ubus_call refused")
 	}
@@ -1180,7 +1180,7 @@ func TestUbusListAndCallArgumentHandling(t *testing.T) {
 	want := []string{
 		"ubus -v list",
 		"ubus -v list network.interface.lan",
-		`ubus call file read {"a":[1],"b":2,"path":"/etc/x; reboot"}`,
+		`ubus call iwinfo info {"a":[1],"b":2,"path":"/etc/x; reboot"}`,
 		"ubus call system board", // an empty args object adds no argument
 	}
 	if got := f.callList(); strings.Join(got, "\n") != strings.Join(want, "\n") {
