@@ -566,7 +566,7 @@ func TestSettingsRoundTripAndKeepTheRestOfTheFile(t *testing.T) {
 func TestSettingsRefuseOutOfRangeValuesWithoutWriting(t *testing.T) {
 	r := newRig(t)
 	before, _ := os.ReadFile(r.env.configPath)
-	r.fails("set_settings", map[string]any{"request_wait": 301}, "request_wait")
+	r.fails("set_settings", map[string]any{"request_wait": 601}, "request_wait")
 	r.fails("set_settings", map[string]any{"request_wait": -1}, "request_wait")
 	r.fails("set_settings", map[string]any{"request_ttl": 59}, "request_ttl")
 	r.fails("set_settings", map[string]any{"request_ttl": 86401}, "request_ttl")

@@ -181,7 +181,7 @@ func parseLockout(s string) (time.Duration, bool) {
 func LoadConfig(configPath string) (*Config, error) {
 	c := &Config{Listen: defaultListen, Socket: defaultSocket, AuditPath: defaultAuditPath, AuditMaxMB: defaultAuditMaxMB,
 		MFAMaxFailures: defaultMFAMaxFailures, MFALockout: defaultMFALockout, RedactOutput: true,
-		HistoryKeep: defaultHistoryKeep, RequestTTL: defaultRequestTTL}
+		HistoryKeep: defaultHistoryKeep, RequestTTL: defaultRequestTTL, RequestWait: defaultRequestWait}
 	f, err := os.Open(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -229,7 +229,7 @@ func LoadConfig(configPath string) (*Config, error) {
 			if d, ok := parseLockout(s.Options["request_ttl"]); ok {
 				c.RequestTTL = min(max(d, minRequestTTL), maxRequestTTL)
 			}
-			if v, err := strconv.Atoi(s.Options["request_wait"]); err == nil && v > 0 {
+			if v, err := strconv.Atoi(s.Options["request_wait"]); err == nil && v >= 0 {
 				c.RequestWait = min(time.Duration(v)*time.Second, maxRequestWait)
 			}
 			c.Pairing = s.Options["pairing"] == "1"

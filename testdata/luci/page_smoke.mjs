@@ -234,7 +234,7 @@ fresh();
 {
 	const { root } = await load();
 	const c = card(root, 'bbbb2222');
-	assert.match(c.attrs.class, /alert-message error/);
+	assert.match(c.attrs.class, /mcp-req-full/);
 	assert.match(text(c), /Claude Code wants to run a command as root/);
 	assert.match(text(c), /A root command has no limits/);
 	assert.match(text(c), /Full control/);
@@ -393,56 +393,94 @@ fresh();
 	assert.deepEqual(calls, [ [ 'revoke', [ 'claude-code', null, true ] ] ]);
 }
 
-// 14. A switch grants or revokes the whole ability, tool by tool
+// 14. A switch only edits a draft; Apply then revokes or grants just the abilities that differ, tool by tool
 fresh();
 {
 	const { root } = await load();
 	const sw = id => find(abilityRow(root, id), x => x.tag === 'input')[0];
+	const apply = () => byAct(pane(root, 'permissions'), 'apply')[0];
 	const logread = sw('logread');
 	assert.equal(logread.checked, true);
 	logread.checked = false; logread.listeners.change();
 	await flush();
-	assert.deepEqual(calls, [ [ 'revoke_tools', [ 'claude-code', [ 'logread' ] ] ] ], 'only that ability goes, though the preset wrote it in one block');
-	calls.length = 0;
-	const apply = sw('uci_apply');
-	assert.equal(apply.checked, false);
-	apply.checked = true; apply.listeners.change();
+	assert.deepEqual(calls, [], 'nothing is written by a tick');
+	assert.match(text(abilityRow(root, 'logread')), /Turns off when you press Apply/);
+	assert.match(text(pane(root, 'permissions')), /Nothing is saved until you press Apply/);
+	const ua = sw('uci_apply');
+	assert.equal(ua.checked, false);
+	ua.checked = true; ua.listeners.change();
+	assert.equal(sw('uci_apply').checked, true, 'the draft survives the redraw');
+	assert.equal(sw('logread').checked, false);
+	assert.deepEqual(find(pane(root, 'permissions'), x => x.attrs.type === 'radio').map(r => r.checked), [ false, false, false ], 'a hand edit is no preset');
+	apply().listeners.click();
 	await flush();
-	assert.deepEqual(calls.map(c => c[1].slice(1, 4).join('/')), [ 'uci_apply/*/1h', 'uci_confirm/*/1h', 'uci_rollback/*/1h' ]);
+	assert.deepEqual(calls.map(c => c[0] + ':' + (c[0] === 'grant' ? c[1][1] + '/' + c[1][2] + '/' + c[1][3] : c[1][1])),
+		[ 'revoke_tools:logread', 'grant:uci_apply/*/1h', 'grant:uci_confirm/*/1h', 'grant:uci_rollback/*/1h' ]);
 }
 
-// 15. Only some tools of an ability granted: Partly on, an indeterminate box, and the missing tools are filled in
+// 15. Only some tools of an ability granted: Partly on, an indeterminate box, and Apply fills in the missing tools
 fresh();
 {
 	state.st.policies = [ { index: 0, client: 'claude-code', tools: [ 'uci_apply' ], scopes: [ '*' ], expires: iso(3600e3), expired: false, enabled: true } ];
 	const { root } = await load();
-	const row = abilityRow(root, 'uci_apply');
-	assert.match(text(row), /Partly on/);
-	const [ box ] = find(row, x => x.tag === 'input');
+	const row = () => abilityRow(root, 'uci_apply');
+	assert.match(text(row()), /Partly on/);
+	const [ box ] = find(row(), x => x.tag === 'input');
 	assert.equal(box.indeterminate, true);
 	box.checked = true; box.listeners.change();
+	await flush();
+	assert.equal(calls.length, 0);
+	byAct(pane(root, 'permissions'), 'apply')[0].listeners.click();
 	await flush();
 	assert.deepEqual(calls.map(c => c[1][1]), [ 'uci_confirm', 'uci_rollback' ]);
 }
 
-// 16. The root-command switch needs a second confirmation before anything is written
+// 16. The root-command switch asks first; cancelling leaves it off, confirming only ticks it, Apply writes it
 fresh();
 {
 	const { root } = await load();
-	const [ box ] = find(abilityRow(root, 'exec'), x => x.tag === 'input');
-	box.checked = true; box.listeners.change();
+	const box = () => find(abilityRow(root, 'exec'), x => x.tag === 'input')[0];
+	box().checked = true; box().listeners.change();
 	await flush();
 	assert.equal(calls.length, 0);
 	assert.equal(modals.length, 1);
-	const m = { tag: 'x', attrs: {}, children: modals[0] };
+	assert.equal(box().checked, false, 'not ticked until confirmed');
+	let m = { tag: 'x', attrs: {}, children: modals[0] };
 	assert.match(text(m), /no limits/i);
+	find(m, x => x.attrs['data-act'] === 'cancel-shell')[0].listeners.click();
+	assert.equal(box().checked, false, 'cancel leaves it off');
+	assert.doesNotMatch(text(abilityRow(root, 'exec')), /Apply/);
+	modals.length = 0;
+	box().checked = true; box().listeners.change();
+	m = { tag: 'x', attrs: {}, children: modals[0] };
 	const [ ack ] = find(m, x => x.attrs.type === 'checkbox');
 	const go = find(m, x => x.attrs['data-act'] === 'confirm-shell')[0];
 	assert.ok(go.disabled);
 	ack.checked = true; ack.listeners.change();
 	go.listeners.click();
 	await flush();
+	assert.equal(calls.length, 0, 'confirming only ticks the switch');
+	assert.equal(box().checked, true);
+	byAct(pane(root, 'permissions'), 'apply')[0].listeners.click();
+	await flush();
 	assert.deepEqual(calls, [ [ 'grant', [ 'claude-code', 'exec', '*', '1h', true ] ] ]);
+}
+
+// 16b. Picking a preset shows its abilities in the switches before anything is saved
+fresh();
+{
+	const { root } = await load();
+	const sw = id => find(abilityRow(root, id), x => x.tag === 'input')[0];
+	const [ r ] = find(pane(root, 'permissions'), x => x.attrs['data-choice'] === 'nothing');
+	r.checked = true; r.listeners.change();
+	assert.equal(calls.length, 0);
+	assert.equal(sw('logread').checked, false);
+	assert.match(text(abilityRow(root, 'logread')), /Turns off when you press Apply/);
+	const [ r2 ] = find(pane(root, 'permissions'), x => x.attrs['data-choice'] === 'change');
+	r2.checked = true; r2.listeners.change();
+	assert.equal(sw('uci_apply').checked, true);
+	assert.equal(sw('exec').checked, false);
+	assert.equal(calls.length, 0);
 }
 
 // 17. Duplicate grants are one line; a never-ending grant beats a dated one; Advanced says how many were merged

@@ -94,7 +94,7 @@ A denial today is a line in `audit.jsonl` with no id. v1.6 turns it into a **req
   is refused ("already allowed"). This is the precedent from ha-mcp's double-consumption fix.
 - **Audit**: `request` (created), `decide` (actor, decision, grant written) and `expire` events.
 
-**Held calls.** With `option request_wait '60'` (seconds, 0 to 300, 0 = today's behaviour) a denied call does not
+**Held calls.** With `option request_wait '300'` (seconds, 0 to 600, default 300, 0 = today's behaviour) a denied call does not
 return at once. It waits, re-checking the policy once a second, until:
 
 - a grant now covers it → the call runs normally, and its result notes `approved in LuCI after 23 s`;
@@ -293,7 +293,7 @@ Each item ships with its policy scope, audit record and mutation tests for its s
 
 ## Open questions
 
-- Default `request_wait`: 60 s is below the tool timeouts of the clients we know, but some clients cut off sooner.
+- Default `request_wait`: 300 s (max 600 s) is longer than some clients wait for a tool; those show an error while the request is still open.
   Should `connect` write a matching client timeout?
 - Does rpcd hand the LuCI user name to an exec plugin? It decides the audit actor.
 - Should the request card offer "Allow and remember for this tool" (widen breadth 3) as a one-click option, or keep

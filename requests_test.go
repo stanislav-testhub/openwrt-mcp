@@ -725,11 +725,12 @@ func TestRequestOptionsAreReadAndClamped(t *testing.T) {
 		wait time.Duration
 		ttl  time.Duration
 	}{
-		{"", 0, defaultRequestTTL},
+		{"", defaultRequestWait, defaultRequestTTL},
 		{"\toption request_wait '60'\n\toption request_ttl '30m'\n", 60 * time.Second, 30 * time.Minute},
 		{"\toption request_wait '9999'\n\toption request_ttl '90d'\n", maxRequestWait, maxRequestTTL},
-		{"\toption request_wait '-5'\n\toption request_ttl '1s'\n", 0, minRequestTTL},
-		{"\toption request_wait 'soon'\n\toption request_ttl 'later'\n", 0, defaultRequestTTL},
+		{"\toption request_wait '0'\n", 0, defaultRequestTTL},
+		{"\toption request_wait '-5'\n\toption request_ttl '1s'\n", defaultRequestWait, minRequestTTL},
+		{"\toption request_wait 'soon'\n\toption request_ttl 'later'\n", defaultRequestWait, defaultRequestTTL},
 	} {
 		got := load(c.opts)
 		if got.RequestWait != c.wait || got.RequestTTL != c.ttl {

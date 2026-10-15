@@ -33,10 +33,11 @@ const (
 	// the operator's page both see the outcome.
 	requestKeepClosed = 10 * time.Minute
 
-	defaultRequestTTL = 10 * time.Minute
-	minRequestTTL     = time.Minute
-	maxRequestTTL     = 24 * time.Hour
-	maxRequestWait    = 300 * time.Second
+	defaultRequestTTL  = 10 * time.Minute
+	minRequestTTL      = time.Minute
+	maxRequestTTL      = 24 * time.Hour
+	defaultRequestWait = 300 * time.Second
+	maxRequestWait     = 600 * time.Second
 )
 
 // requestsPath is RAM on the router: a reboot clears every request, which is the right outcome.

@@ -50,7 +50,7 @@ var PERMIT_ALL_DURATIONS = [ [ '1h', _('1 hour') ], [ '8h', _('8 hours') ], [ '2
 var DURATION_WORDS = { '15m': _('15 minutes'), '1h': _('1 hour'), '8h': _('8 hours'), '1d': _('1 day'), '7d': _('7 days'), 'never': _('until you remove it') };
 
 var CSS = [
-	'.mcp-risk{display:inline-block;padding:1px 8px;border-radius:3px;font-size:85%;font-weight:600;white-space:nowrap}',
+	'.mcp-risk{display:inline-block;box-sizing:border-box;height:auto;min-height:0;margin:2px 0;padding:2px 8px;border-radius:3px;font-size:75%;line-height:1.4;font-weight:600;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle;white-space:nowrap}',
 	'.mcp-risk-look{background:#1d6b38;color:#fff}',
 	'.mcp-risk-change{background:#f0c23b;color:#2b2000}',
 	'.mcp-risk-full{background:#b3261e;color:#fff}',
@@ -61,6 +61,8 @@ var CSS = [
 	'.mcp-sticky{position:sticky;top:0;z-index:50}',
 	'.mcp-card{margin:8px 0;padding:8px 16px}',
 	'.mcp-card.cbi-section-node{border:1px solid rgba(128,128,128,.35);border-radius:4px}',
+	'.mcp-card.mcp-req{border-left:4px solid #f0c23b}',
+	'.mcp-card.mcp-req-full{border-left-color:#b3261e}',
 	'.mcp-card p,.mcp-card .mcp-line{margin:4px 0;max-width:70ch}',
 	'.mcp-card .mcp-actions{margin-top:8px}',
 	'.mcp-card code,.mcp code{word-break:break-all;white-space:normal}',
@@ -81,11 +83,20 @@ var CSS = [
 	'.mcp-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}',
 	'.mcp-raw code{display:block}',
 	'.mcp-dim{opacity:.8}',
+	'.mcp-pending{font-style:italic}',
 	'@media (max-width:600px){',
 	'.mcp-choices{grid-template-columns:1fr}',
 	'.mcp-card .mcp-actions button,.mcp-card .mcp-actions .mcp-sep{flex:1 1 100%;margin-left:0}',
 	'.mcp-row button,.mcp-row select,.mcp-row input[type=text]{min-height:40px}',
 	'.mcp-table .mcp-status,.mcp-table .mcp-allowed,.mcp-table .mcp-actions-col{width:auto;text-align:left}',
+	'.mcp .mcp-table,.mcp .mcp-table tbody{display:block;width:100%;border:0}',
+	'.mcp .mcp-table tr.table-titles{display:none}',
+	'.mcp .mcp-table tr.tr{display:block;margin:8px 0;padding:4px 12px;border:1px solid rgba(128,128,128,.35);border-radius:6px}',
+	'.mcp .mcp-table td.td{display:block;width:auto;min-height:0;padding:6px 0;border:0;text-align:left}',
+	'.mcp .mcp-table td.td::before{display:block;content:attr(data-title);margin-bottom:2px;font-size:75%;letter-spacing:.05em;text-transform:uppercase;opacity:.7}',
+	'.mcp .mcp-table td.td:empty{display:none}',
+	'.mcp .mcp-table tr.mcp-group{margin:16px 0 0;padding:0;border:0}',
+	'.mcp .mcp-table tr.mcp-group th.th{display:block;padding:4px 0;border:0;font-size:105%}',
 	'}'
 ].join('\n');
 
@@ -346,7 +357,7 @@ function fail(err) {
 function badge(risk) {
 	if (!RISK[risk])
 		return '';
-	return E('span', { 'class': 'label mcp-risk mcp-risk-' + risk }, RISK[risk]);
+	return E('span', { 'class': 'mcp-risk mcp-risk-' + risk }, RISK[risk]);
 }
 
 function btn(kind, act, label, click, extra) {
@@ -454,11 +465,11 @@ return view.extend({
 	render: function(data) {
 		var ui_ = { tab: 'overview', client: null, req: {}, answered: [], adv: false, editing: null, choice: null, duration: '1h',
 			pa: { box: false, name: '', duration: '1h' }, filter: { client: '', kind: '', text: '' }, shown: ACTIVITY_PAGE,
-			raw: {}, sig: {} };
+			raw: {}, sig: {}, draft: null };
 		if (!data.tools) {
 			data.st = { clients: [], policies: [], requests: [], audit: [], pending: [], permit_all: [] };
 			data.tools = { groups: [] };
-			data.settings = { channels: [], request_wait: 0, request_ttl: 0, wait_max: 300, ttl_min: 60, ttl_max: 86400 };
+			data.settings = { channels: [], request_wait: 0, request_ttl: 0, wait_max: 600, ttl_min: 60, ttl_max: 86400 };
 			ui_.error = data.error;
 		}
 		var panes = {
@@ -740,7 +751,7 @@ return view.extend({
 					r.args ? E('code', {}, [ _('Arguments'), ' ', r.args ].join(' ')) : '',
 					E('code', {}, [ _('Request'), ' ', r.id ].join(' '))
 				]));
-			return E('div', { 'class': 'alert-message ' + (full ? 'error' : 'warning') + ' mcp-card', 'data-request': r.id }, kids);
+			return E('div', { 'class': 'cbi-section-node mcp-card mcp-req ' + (full ? 'mcp-req-full' : 'mcp-req-change'), 'data-request': r.id }, kids);
 		}
 
 		function answeredLine(rec) {
@@ -907,7 +918,19 @@ return view.extend({
 
 		// Redrawn when the facts change or the owner opens a menu on a card; a poll that finds nothing new
 		// leaves the cards alone, so a half-made choice is not lost.
+		// A redraw swaps whole panes; put the page back where the owner was, so a tap does not jump to the top.
+		function keepScroll(fn) {
+			var y = window.pageYOffset;
+			fn();
+			if (typeof window.scrollTo === 'function' && window.pageYOffset !== y)
+				window.scrollTo(0, y);
+		}
+
 		function drawOverview(force) {
+			keepScroll(function() { drawOverviewNow(force); });
+		}
+
+		function drawOverviewNow(force) {
 			var st = data.st, seen = lastSeen(), tokens = {};
 			ui_.answered = ui_.answered.filter(function(x) { return Date.now() - x.at < 10 * 60e3; }).slice(-5);
 			var open = openRequests(st), pend = st.pending || [], recent = expiredRecently();
@@ -951,17 +974,96 @@ return view.extend({
 		}
 
 		// Which of the three big choices the current grants amount to, by the set of tools alone.
+		function presetTools(choice) {
+			var look = Object.keys(byName).filter(function(t) { return byName[t].readonly && !isUngated(t); });
+			if (choice === 'look')
+				return look;
+			return choice === 'change' ? look.concat(OPERATOR_EXTRA.filter(function(t) { return byName[t]; })) : [];
+		}
+
 		function currentChoice(client) {
 			var g = Object.keys(granted(client)).filter(function(t) { return !isUngated(t); }).sort().join(',');
 			if (!g)
 				return 'nothing';
-			var look = Object.keys(byName).filter(function(t) { return byName[t].readonly && !isUngated(t); });
-			var change = look.concat(OPERATOR_EXTRA.filter(function(t) { return byName[t]; }));
-			if (g === look.slice().sort().join(','))
+			if (g === presetTools('look').sort().join(','))
 				return 'look';
-			if (g === change.slice().sort().join(','))
+			if (g === presetTools('change').sort().join(','))
 				return 'change';
 			return null;
+		}
+
+		// The switches are a draft until Apply: a preset fills them in so the owner sees what it means,
+		// a hand edit changes one and the preset no longer describes the page.
+		function gatedTools(a) {
+			return a.tools.filter(function(t) { return !isUngated(t); });
+		}
+
+		function presetDraft(client, choice) {
+			var set = presetTools(choice), on = {};
+			groups.forEach(function(g) {
+				g.items.forEach(function(a) {
+					var need = gatedTools(a);
+					if (need.length)
+						on[a.id] = need.every(function(t) { return set.indexOf(t) >= 0; });
+				});
+			});
+			return { client: client, preset: choice, on: on, manual: false, confirmed: false };
+		}
+
+		function handDraft(client) {
+			if (ui_.draft && ui_.draft.client === client)
+				return ui_.draft;
+			var on = {};
+			groups.forEach(function(g) {
+				g.items.forEach(function(a) {
+					if (gatedTools(a).length)
+						on[a.id] = abilityState(client, a).state === 'on';
+				});
+			});
+			return { client: client, preset: null, on: on, manual: true, confirmed: false };
+		}
+
+		function setSwitch(client, a, on, confirmed) {
+			var d = handDraft(client);
+			if (confirmed)
+				d.confirmed = true;
+			d.on[a.id] = on;
+			d.manual = true;
+			ui_.draft = d;
+			ui_.choice = null;
+			drawPermissions();
+		}
+
+		// Writes what the draft says: only the abilities that differ from what the assistant has now.
+		function applyDraft(client, d, confirm) {
+			if (!d.manual && d.preset)
+				return applyChoice(client, d.preset, ui_.duration);
+			var steps = [];
+			groups.forEach(function(g) {
+				g.items.forEach(function(a) {
+					var need = gatedTools(a), want = d.on[a.id], state = abilityState(client, a).state;
+					if (!need.length || want === undefined)
+						return;
+					if (!want && state !== 'off')
+						steps.push(function() { return callRevokeTools(client, need); });
+					else if (want && state !== 'on')
+						need.filter(function(t) { return !mergedGrant(client, t); }).forEach(function(t) {
+							steps.push(function() { return callGrant(client, t, '*', ui_.duration, confirm || d.confirmed); });
+						});
+				});
+			});
+			return steps.reduce(function(p, f) {
+				return p.then(function() { return f().then(check); });
+			}, Promise.resolve()).then(function() {
+				ui_.draft = null;
+				ui_.choice = null;
+				return refresh();
+			}).catch(function(e) {
+				if (e.code === 'needs_confirm')
+					return refresh().then(function() { confirmShell(e.message, function() { applyDraft(client, d, true); }); });
+				fail(e);
+				return refresh();
+			});
 		}
 
 		// "Look only" and "Look and change" replace what the assistant had, so a smaller choice really
@@ -974,27 +1076,17 @@ return view.extend({
 				steps.push(function() { return callGrantPreset(client, choice === 'look' ? 'readonly' : 'operator', duration); });
 			return run(steps.reduce(function(p, f) {
 				return p.then(function() { return f().then(check); });
-			}, Promise.resolve()));
+			}, Promise.resolve()), function() { ui_.draft = null; ui_.choice = null; });
 		}
 
-		function switchAbility(client, a, on) {
-			var tools = a.tools.filter(function(t) { return !isUngated(t); });
-			if (!on)
-				return run(callRevokeTools(client, tools));
-			var todo = tools.filter(function(t) { return !mergedGrant(client, t); });
-			var again = function(confirm) {
-				return todo.reduce(function(p, t) {
-					return p.then(function() { return callGrant(client, t, '*', ui_.duration, confirm).then(check); });
-				}, Promise.resolve()).then(refresh).catch(function(e) {
-					if (e.code === 'needs_confirm')
-						return confirmShell(e.message, function() { again(true); });
-					fail(e);
-					return refresh();
-				});
-			};
-			if (a.risk === 'full' && a.tools.indexOf('exec') >= 0)
-				return confirmShell(_('Turning this on gives %s no limits at all.').format(displayName(client)), function() { again(true); });
-			return again(false);
+		// Ticking a switch only changes the draft; the root command asks first, and a cancel leaves the box unticked.
+		function switchAbility(client, a, box) {
+			var on = box.checked;
+			if (on && a.risk === 'full' && a.tools.indexOf('exec') >= 0) {
+				box.checked = false;
+				return confirmShell(_('Turning this on gives %s no limits at all.').format(displayName(client)), function() { setSwitch(client, a, true, true); });
+			}
+			setSwitch(client, a, on);
 		}
 
 		function abilityRow(client, a) {
@@ -1008,7 +1100,11 @@ return view.extend({
 				status = _('Partly on');
 			else
 				status = s.expires ? clock('onfor', s.expires) : _('On until you remove it');
+			var d = ui_.draft && ui_.draft.client === client ? ui_.draft : null;
+			var drafted = d && d.on[a.id] !== undefined, wants = drafted ? d.on[a.id] : s.state === 'on';
 			var statusKids = [ status ];
+			if (drafted && wants !== (s.state === 'on'))
+				statusKids.push(E('div', { 'class': 'mcp-line mcp-pending' }, wants ? _('Turns on when you press Apply') : _('Turns off when you press Apply')));
 			if (s.state === 'on' && !(s.scopes.length === 1 && s.scopes[0] === '*')) {
 				var tool = a.tools.filter(function(t) { return !isUngated(t); })[0];
 				statusKids.push(E('div', { 'class': 'mcp-line mcp-dim' }, [ _('Limited to: ') ].concat(limitNodes(tool, s.scopes))));
@@ -1016,9 +1112,9 @@ return view.extend({
 			var control = '';
 			if (data.writable && s.state !== 'always') {
 				var box = E('input', { 'type': 'checkbox', 'class': 'cbi-input-checkbox', 'data-ability': a.id, 'id': 'mcp-ab-' + a.id });
-				box.checked = s.state === 'on';
-				box.indeterminate = s.state === 'partly';
-				box.addEventListener('change', function() { switchAbility(client, a, box.checked); });
+				box.checked = wants;
+				box.indeterminate = !drafted && s.state === 'partly';
+				box.addEventListener('change', function() { switchAbility(client, a, box); });
 				control = E('label', {}, [ box, ' ', _('Allowed') ]);
 			}
 			return E('tr', { 'class': 'tr', 'data-ability-row': a.id }, [
@@ -1142,6 +1238,10 @@ return view.extend({
 		}
 
 		function drawPermissions() {
+			keepScroll(drawPermissionsNow);
+		}
+
+		function drawPermissionsNow() {
 			var clients = knownClients(data.st);
 			if (!ui_.client || clients.indexOf(ui_.client) < 0)
 				ui_.client = clients[0] || '';
@@ -1154,7 +1254,7 @@ return view.extend({
 			}
 			var seen = lastSeen()[client];
 			var picker = selectOf(clients.map(function(c) { return [ c, displayName(c) ]; }), client, function(v) {
-				ui_.client = v; ui_.choice = null; ui_.editing = null; ui_.sig.permissions = null; drawPermissions();
+				ui_.client = v; ui_.choice = null; ui_.draft = null; ui_.editing = null; ui_.sig.permissions = null; drawPermissions();
 			}, { 'id': 'openwrt-mcp-client' });
 			var name = displayName(client);
 			var nodes = [];
@@ -1163,7 +1263,9 @@ return view.extend({
 			nodes.push(row(_('Assistant'), picker, [ E('code', {}, client), ' · ', _('last seen '), seen ? clock('ago', seen) : _('never') ], 'openwrt-mcp-client'));
 
 			var cur = currentChoice(client);
-			if (ui_.choice === null)
+			if (ui_.draft && ui_.draft.client !== client)
+				ui_.draft = null;
+			if (ui_.choice === null && !ui_.draft)
 				ui_.choice = cur;
 			var pa = permitAllOf(client);
 			var choices = [
@@ -1173,12 +1275,15 @@ return view.extend({
 			];
 			var dur = selectOf(DURATIONS, ui_.duration, function(v) { ui_.duration = v; showConsequence(); }, { 'id': 'mcp-duration' });
 			var conseq = E('p', { 'class': 'mcp-line', 'role': 'status' }, '');
-			var apply = btn('action', 'apply', _('Apply'), function() { applyChoice(client, ui_.choice, ui_.duration); });
+			var apply = btn('action', 'apply', _('Apply'), function() { return ui_.draft ? applyDraft(client, ui_.draft) : applyChoice(client, ui_.choice, ui_.duration); });
 			function showConsequence() {
 				var word = { look: _('look'), change: _('look and change') }[ui_.choice];
-				dur.disabled = ui_.choice === 'nothing' || !ui_.choice;
-				apply.disabled = !ui_.choice || !!pa;
-				if (!ui_.choice)
+				var hand = ui_.draft && ui_.draft.manual;
+				dur.disabled = ui_.choice === 'nothing' || (!ui_.choice && !hand);
+				apply.disabled = (!ui_.draft && !ui_.choice) || !!pa;
+				if (hand)
+					conseq.textContent = _('You changed single abilities below. Nothing is saved until you press Apply.');
+				else if (!ui_.choice)
 					conseq.textContent = cur === null ? _('Custom: set below') : '';
 				else if (ui_.choice === 'nothing')
 					conseq.textContent = _('%s will have no permissions.').format(name);
@@ -1194,7 +1299,7 @@ return view.extend({
 					radio.disabled = true;
 				var lab = E('label', { 'class': 'mcp-choice' + (ui_.choice === c[0] ? ' mcp-choice-on' : '') }, [
 					radio, ' ', E('strong', {}, c[1]), E('p', {}, c[2]) ]);
-				radio.addEventListener('change', function() { ui_.choice = c[0]; drawPermissions(); });
+				radio.addEventListener('change', function() { ui_.choice = c[0]; ui_.draft = presetDraft(client, c[0]); drawPermissions(); });
 				return lab;
 			});
 			nodes.push(E('div', { 'class': 'cbi-section' }, [

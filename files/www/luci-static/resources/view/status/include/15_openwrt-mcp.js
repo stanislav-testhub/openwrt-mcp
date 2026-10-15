@@ -23,7 +23,7 @@ var callAccess = rpc.declare({ object: 'session', method: 'access',
 	params: [ 'scope', 'object', 'function' ], expect: { 'access': true } });
 
 var CSS = [
-	'.mcp-risk{display:inline-block;padding:1px 8px;border-radius:3px;font-size:85%;font-weight:600;white-space:nowrap}',
+	'.mcp-risk{display:inline-block;box-sizing:border-box;height:auto;min-height:0;margin:2px 0;padding:2px 8px;border-radius:3px;font-size:75%;line-height:1.4;font-weight:600;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle;white-space:nowrap}',
 	'.mcp-risk-look{background:#1d6b38;color:#fff}',
 	'.mcp-risk-change{background:#f0c23b;color:#2b2000}',
 	'.mcp-risk-full{background:#b3261e;color:#fff}',
@@ -134,16 +134,67 @@ function toolIndex(groups) {
 	return by;
 }
 
+// What each assistant may do right now, one entry per risk: abilities, and the latest end of them.
+// An assistant with Permit all running is skipped: its banner already says everything.
+function grantLines(st, tools, skip) {
+	var per = {}, out = [];
+	(st.policies || []).forEach(function(p) {
+		if (!p.enabled || p.expired || skip[p.client])
+			return;
+		(p.tools.indexOf('*') >= 0 ? Object.keys(tools) : p.tools).forEach(function(t) {
+			if (!tools[t] || tools[t].ungated)
+				return;
+			var c = per[p.client] = per[p.client] || {};
+			var g = c[t] = c[t] || { never: false, latest: '', scopes: [] };
+			g.never = g.never || !p.expires;
+			if (p.expires && (!g.latest || Date.parse(p.expires) > Date.parse(g.latest)))
+				g.latest = p.expires;
+			(p.scopes && p.scopes.length ? p.scopes : [ '*' ]).forEach(function(s) { if (g.scopes.indexOf(s) < 0) g.scopes.push(s); });
+		});
+	});
+	function riskOf(t, g) {
+		var all = function(f) { return g.scopes.every(f); };
+		if (t === 'exec')
+			return 'full';
+		if (t === 'ubus_call')
+			return all(function(s) { return READONLY_UBUS.indexOf(s) >= 0; }) ? 'look' : 'full';
+		if (t === 'sysupgrade' && all(function(s) { return [ 'list', 'test', 'check' ].indexOf(s) >= 0; }))
+			return 'look';
+		return RISK_OF_BADGE[tools[t].badge] || 'change';
+	}
+	Object.keys(per).sort().forEach(function(client) {
+		[ 'look', 'change', 'full' ].forEach(function(risk) {
+			var names = [], never = false, latest = '', any = false;
+			Object.keys(per[client]).forEach(function(t) {
+				var g = per[client][t];
+				if (riskOf(t, g) !== risk)
+					return;
+				any = true;
+				var v = VERBS[t] || t;
+				if (names.indexOf(v) < 0)
+					names.push(v);
+				never = never || g.never;
+				if (g.latest && (!latest || Date.parse(g.latest) > Date.parse(latest)))
+					latest = g.latest;
+			});
+			if (any)
+				out.push({ client: client, risk: risk, names: names, end: never || !latest ? '' : latest });
+		});
+	});
+	return out;
+}
+
 return baseclass.extend({
 	title: _('MCP Server'),
 
 	load: function() {
 		return callStatus(0).then(check).then(function(st) {
 			var open = (st.requests || []).filter(function(r) { return r.state === 'open'; });
-			if (!open.length && !(st.pending || []).length && !(st.permit_all || []).length)
-				return { st: st, open: open };
+			var live = (st.policies || []).some(function(p) { return p.enabled && !p.expired; });
+			if (!open.length && !(st.pending || []).length && !(st.permit_all || []).length && !live)
+				return { st: st, open: open, tools: {} };
 			return Promise.all([
-				open.length ? callTools().then(check).catch(function() { return {}; }) : {},
+				open.length || live ? callTools().then(check).catch(function() { return {}; }) : {},
 				callAccess('ubus', 'openwrt-mcp', 'decide').catch(function() { return true; })
 			]).then(function(r) {
 				return { st: st, open: open, tools: toolIndex(r[0].groups), writable: r[1] !== false };
@@ -156,7 +207,11 @@ return baseclass.extend({
 			return null;
 		var pending = data.st.pending || [];
 		var permitAll = data.st.permit_all || [];
-		if (!data.open.length && !pending.length && !permitAll.length)
+		var skip = {};
+		permitAll.forEach(function(a) { skip[a.client] = true; });
+		var grants = Object.keys(data.tools || {}).length ? grantLines(data.st, data.tools, skip) : [];
+		// Look-only grants are the quiet default: they never bring the include up by themselves.
+		if (!data.open.length && !pending.length && !permitAll.length && !grants.some(function(g) { return g.risk !== 'look'; }))
 			return null;
 
 		function confirmShell(message, retry) {
@@ -193,7 +248,7 @@ return baseclass.extend({
 			var line = E('div', { 'class': 'mcp-wrow', 'data-request': r.id });
 			line.appendChild(E('span', { 'class': 'mcp-wtext' }, [
 				E('strong', {}, _('%s wants to %s').format(displayName(r.client), requestAction(r))), ' ',
-				E('span', { 'class': 'label mcp-risk mcp-risk-' + risk }, RISK[risk]) ]));
+				E('span', { 'class': 'mcp-risk mcp-risk-' + risk }, RISK[risk]) ]));
 			if (data.writable) {
 				if (!full)
 					line.appendChild(E('button', { 'class': 'cbi-button cbi-button-action', 'type': 'button', 'data-act': 'allow',
@@ -235,6 +290,16 @@ return baseclass.extend({
 				_('A change to %s by %s is waiting for confirmation. It undoes itself in %s.').format(
 					p.configs.join(', '), displayName(p.client), span(Math.round((Date.parse(p.deadline) - Date.now()) / 1000)))));
 		});
+		if (grants.length) {
+			nodes.push(E('h4', {}, _('Currently allowed')));
+			grants.forEach(function(g) {
+				nodes.push(E('div', { 'class': 'mcp-wrow', 'data-grant': g.client + ':' + g.risk }, E('span', { 'class': 'mcp-wtext' }, [
+					E('strong', {}, displayName(g.client)), ' ',
+					E('span', { 'class': 'mcp-risk mcp-risk-' + g.risk }, RISK[g.risk]), ' ',
+					g.names.slice(0, 3).join(', ') + (g.names.length > 3 ? ' ' + _('and %d more').format(g.names.length - 3) : ''),
+					' · ', g.end ? left(g.end) : _('until you remove it') ])));
+			});
+		}
 		nodes.push(E('div', { 'class': 'mcp-wrow' }, E('a', { 'class': 'cbi-button', 'data-act': 'open',
 			'href': L.url('admin/services/openwrt-mcp') }, _('Open MCP Server'))));
 		return E('div', { 'class': 'cbi-section', 'id': 'openwrt-mcp-overview' }, nodes);

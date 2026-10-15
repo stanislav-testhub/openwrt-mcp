@@ -225,7 +225,7 @@ open a shell to paste an `allow` line.
 3. **Allow** writes a grant, **Deny** refuses it. The default grant is the narrowest one (this tool on this
    exact scope, 1 hour). A select widens it (the scope's family, every scope, the `@operator` preset) and
    sets 15 minutes to 7 days. A request for a root-shell tool shows a warning and needs a second confirmation.
-4. With `option request_wait '60'` (seconds, 0 to 300, default 0) the denied call is held and continues by
+4. With `option request_wait '300'` (seconds, 0 to 600, default 300; 0 refuses at once) the denied call is held and continues by
    itself when a grant covers it, so the agent does not retry. Without it, or when the wait runs out, the
    agent gets `POLICY_DENIED` with the request id, and a retry after approval works. The `allow` line is
    still printed, and the CLI releases a held call the same way the button does.

@@ -95,7 +95,7 @@ func TestReadonlyPresetAllowsReadsAndRefusesWrites(t *testing.T) {
 
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "cfg")
-	if err := os.WriteFile(cfg, []byte("config server\n\toption socket ''\n"), 0o600); err != nil {
+	if err := os.WriteFile(cfg, []byte("config server\n\toption socket ''\n\toption request_wait '0'\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	blocks, _ := expandPreset("@readonly")

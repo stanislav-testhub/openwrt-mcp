@@ -126,7 +126,7 @@ func testServer(t *testing.T, policies string) *Server {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := filepath.Join(dir, "openwrt-mcp")
-	if err := os.WriteFile(cfg, []byte("config server\n\toption socket ''\n\toption audit '"+
+	if err := os.WriteFile(cfg, []byte("config server\n\toption socket ''\n\toption request_wait '0'\n\toption audit '"+
 		filepath.ToSlash(filepath.Join(dir, "audit.jsonl"))+"'\n"+policies), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -729,7 +729,7 @@ protection becomes an explicit, tested deny floor (8.1) instead of the absence o
   - A denied call becomes a **request**: client, tool, the exact scope the check failed on, redacted arguments and an
     argument hash. Requests are deduplicated, capped (5 open per client, 50 in all), expire after `request_ttl`
     (10 min), live in memory and `/var/run`, and are audited when created, decided and expired.
-  - A denied call is **held** for `request_wait` (default 60 s; `0` keeps today's behaviour) and re-checks the policy
+  - A denied call is **held** for `request_wait` (default 300 s, up to 600 s; `0` keeps today's behaviour) and re-checks the policy
     once a second. When a grant appears, from LuCI or the CLI alike, the call runs and its result says it was
     approved. On deny or timeout it returns `POLICY_DENIED` with the request id, where to approve it, and the CLI line
     as a fallback.

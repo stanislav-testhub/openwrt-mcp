@@ -227,4 +227,33 @@ fresh();
 	assert.match(text(root), /MCP Server · 6 requests waiting/);
 	assert.match(text(root), /and 3 more/);
 }
+// 14. live grants are listed with their time left; look-only alone keeps the include hidden
+fresh();
+{
+	state.st.requests = [];
+	state.tools.groups.push({ id: 'status', title: 'Status', tools: [ { name: 'logread', title: 'Read log', badge: 'read' }, { name: 'system_status', title: 'Status', badge: 'read' } ] });
+	state.st.policies = [ { client: 'claude-code', tools: [ 'logread', 'system_status' ], scopes: [], expires: '', enabled: true, expired: false } ];
+	assert.equal(await draw(), null, 'look-only grants stay quiet');
+	state.st.policies.push({ client: 'claude-code', tools: [ 'uci_apply' ], scopes: [ 'wireless' ], expires: iso(2 * 3600e3), enabled: true, expired: false });
+	state.st.policies.push({ client: 'claude-code', tools: [ 'uci_apply' ], scopes: [ 'firewall' ], expires: iso(30 * 60e3), enabled: true, expired: false });
+	state.st.policies.push({ client: 'claude-code', tools: [ 'exec' ], scopes: [ '*' ], expires: iso(60e3), enabled: true, expired: true });
+	const root = await draw();
+	const t = text(root);
+	assert.match(t, /Currently allowed/);
+	assert.match(t, /Claude Code Looks only read the system log, look at the router status · until you remove it/);
+	assert.match(t, /Claude Code Changes things change router settings · (1 h 59 min|2 h) left/);
+	assert.doesNotMatch(t, /Full control|run a command|uci_apply|\[object/, 'an expired grant is not listed');
+	assert.equal(find(root, x => x.attrs['data-grant']).length, 2);
+}
+
+// 15. Permit all covers the assistant: its grants are not repeated under the banner
+fresh();
+{
+	state.st.requests = [];
+	state.st.permit_all = [ { client: 'claude-code', expires: iso(23 * 60e3) } ];
+	state.st.policies = [ { client: 'claude-code', tools: [ 'uci_apply' ], scopes: [ '*' ], expires: iso(23 * 60e3), enabled: true, expired: false } ];
+	const root = await draw();
+	assert.equal(find(root, x => x.attrs['data-grant']).length, 0);
+	assert.doesNotMatch(text(root), /Currently allowed/);
+}
 console.log('ok');
