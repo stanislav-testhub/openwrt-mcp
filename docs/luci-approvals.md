@@ -1,6 +1,6 @@
 # Design note: approve from the router (v1.6)
 
-Status: proposal. Roadmap entry: [Milestone 8](../ROADMAP.md#milestone-8-approve-from-the-router-v16).
+Status: implemented on branch `v1.6` (8.1 to 8.10), not yet run on a real router. Roadmap entry: [Milestone 8](../ROADMAP.md#milestone-8-approve-from-the-router-v16).
 
 ## Why
 
@@ -247,7 +247,7 @@ and how it can harm you.
 |---|---|---|
 | **Push hook** (8.8) | Each new request fires the ubus event `openwrt-mcp.request` and runs executables in `/etc/openwrt-mcp/hooks.d/` with the request as JSON on stdin (fields from the table above, already redacted). Users wire Telegram, ntfy or Home Assistant. | Request details (client, tool, scope, redacted arguments) leave the router for a third-party service. A hook runs as root: a broken or hostile hook script is a root process. Approving from a notification is not part of this; the notification links to LuCI. |
 | **Pair from LuCI** (8.7) | *Clients* tab: paste the public key that `openwrt-mcp connect` prints, name the client, pick a starting preset (default Read-only). Writes the same forced-command line as `authorize-key`. | Anyone who can log in to LuCI can add a key that reaches the router over SSH. The key is limited to the MCP bridge, but its grants are whatever you give it. |
-| **Approve in chat** (8.9) | Per client. For clients that negotiate elicitation, the request is also shown in the client's own prompt ("Allow uci_apply on wireless.* for 1 hour?"). | The client relays your answer. A client, an extension or an agent that auto-answers prompts would grant itself. Use it only with clients you trust to show the prompt to you. Never offered for *Permit all* or for root-shell tools. Shares the request record with per-call approval (6.1). |
+| **Approve in chat** (8.9) | Optional per-client list (`chat_approve_client`); empty means every client that negotiates elicitation. The held call is answered in the client's own prompt ("Allow uci_apply on wireless.default_radio1.disabled for 1 hour?"): exact scope only, 15 minutes, 1 hour or 8 hours, never a root-shell tool. | The client relays your answer. A client, an extension or an agent that auto-answers prompts would grant itself. Use it only with clients you trust to show the prompt to you. Never offered for *Permit all* or for root-shell tools. Shares the request record with per-call approval (6.1). |
 
 ## Build order and done-when
 
@@ -262,7 +262,7 @@ Each item ships with its policy scope, audit record and mutation tests for its s
 | 8.5 Overview widget | Hidden with nothing pending; shown within one poll of a request; buttons work. |
 | 8.6 Permit all | `@all` refuses "never" and anything over 24 h; expiry removes it; the floor still refuses under it; banner present on both pages. |
 | 8.7–8.9 Optional channels | Off after install; each switch audited; each harm notice present (test on the settings schema). |
-| 8.10 Docs | README "Approve from LuCI" section with screenshots; `SECURITY.md` trust boundary and floor; ROADMAP *Later* bullet and the old "grants stay on the CLI" sentence revised. |
+| 8.10 Docs | (screenshots pending a hardware run) README "Approve from LuCI" section with screenshots; `SECURITY.md` trust boundary and floor; ROADMAP *Later* bullet and the old "grants stay on the CLI" sentence revised. |
 
 ## Files touched (expected)
 

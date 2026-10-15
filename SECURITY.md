@@ -29,7 +29,8 @@ current release; the CHANGELOG says when each control arrived.
 
 | Party | Trust |
 |---|---|
-| The operator: root on the router, running `openwrt-mcp allow`, `pair`, `mfa enrol` | Fully. Policy changes happen only there. |
+| The operator: root on the router, running `openwrt-mcp allow`, `pair`, `mfa enrol` | Fully. |
+| A LuCI administrator with the write ACL (`luci-app-openwrt-mcp-write`) | Fully, as the operator. LuCI already lets them run anything as root (Startup, Scheduled Tasks, SSH keys), so approving a request gives them no new power. Read-only LuCI users see requests and cannot answer them. |
 | An MCP client holding a grant | To the extent of its grant, and no further. Identity is the SSH key bound to the stdio bridge, or the bearer token. |
 | The model behind the client | **Not trusted.** It reads text that others write, and it can be steered by it. The policy is written for a model that has been talked into something. |
 | Devices on the network, remote hosts, whoever sends packets | **Untrusted sources of text:** host names, SSIDs, log lines, DNS answers. |
@@ -51,11 +52,43 @@ current release; the CHANGELOG says when each control arrived.
 ### Authorisation
 
 Deny by default. A policy names a client, tools, scope globs, a calls-per-minute ceiling and an
-expiry. `uci_apply` and `pkg_config_resolve` refuse the policy file whatever the grant, so a
-client cannot write itself a wider policy. Every committing tool refuses to run on top of someone
+expiry. Grants are written by the operator, on the command line or from LuCI (below); no tool an agent
+calls writes one. Every committing tool refuses to run on top of someone
 else's uncommitted edit, and `uci_apply` arms a rollback timer whose snapshot is on flash.
 
+**The deny floor.** Approval from LuCI means a grant can be written without a shell, so the rule is stated
+as: nothing a client can reach may widen what a client may do. Built in, and lifted by no grant (`@operator`
+and `@all` included), these are refused:
+
+- `ubus_call` to the objects `openwrt-mcp` (the approval methods), `session` (LuCI session ids), `file`
+  (root file access) and `rpc-sys` (passwords, upgrade), and `uci` writes to the `openwrt-mcp` and `rpcd`
+  configs. `ubus_call` runs `ubus` as root, so rpcd's ACLs would not stop these.
+- `exec` of the `openwrt-mcp` binary, by base name and after symlinks, and `exec` with an argument naming the
+  policy, the rpcd config, `/etc/openwrt-mcp`, the binary, its rpcd plugin or the request state. The `exec`
+  checks work on arguments and are best effort; the `ubus` and `uci` checks are exact.
+- `uci_apply`, history `restore` and `pkg_config_resolve` on `/etc/config/openwrt-mcp` and
+  `/etc/config/rpcd`, because an rpcd login decides who may approve in LuCI.
+
+The floor guarantees that no grant short of a root shell becomes a wider grant. It does not protect against a
+client that already holds one (`exec` on `sh`, or *Permit all*): that client can edit any file the floor names.
+The LuCI page itself is not on the floor yet, so the same caveat covers rewriting what the owner clicks.
+
+**Requests and the approver.** A request carries only what the daemon derived (tool, exact scope, redacted
+arguments), never agent text, so the agent cannot word what the owner reads. Requests are deduplicated, capped
+(5 open per client, 50 in all) and expire, which limits prompt fatigue. A decision is claimed once under a lock.
+Grants from the page are narrow and time-limited by default, go through the same code as the CLI, and a
+root-shell grant needs a second confirmation. *Permit all* is capped at 24 hours, refused for a client with a
+second factor, shown as a banner while active and marked `"via":"permit-all"` in the audit log. The audit log
+records `request`, `decide` and `expire`; the actor of a LuCI decision is `luci`, because rpcd does not pass the
+user name to the plugin.
+
+**Optional channels** (off by default, each switch audited): *Pair from LuCI* lets any LuCI write user bind an
+SSH key to the bridge. *Push hook* sends redacted request details to scripts that run as root, so a hook
+you do not control sees them. *Approve in chat* relays the answer through the client, so a client or agent that
+auto-answers prompts would grant itself; it never covers root-shell tools or *Permit all*.
+
 Limits you must accept:
+
 
 - **`exec` is a root shell by design,** and so is `ubus_call` on a broad object. Grant them for a
   working session, not for good. `@operator` includes writes to `dropbear`, `rpcd` and `uhttpd`.

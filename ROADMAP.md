@@ -810,6 +810,8 @@ it can harm you.
 
 - **Ships.** A README section "Approve from LuCI" with screenshots. `SECURITY.md` gets the new trust boundary (a LuCI
   administrator) and the deny floor. The *Later* bullet for the LuCI page is replaced by this milestone.
+- **Done.** README "Approve from LuCI" section, `SECURITY.md` trust boundary, deny floor, requests and channels, and
+  the *Later* bullet are written. The screenshots wait for a hardware run (nothing here has run on a real router).
 
 ---
 

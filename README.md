@@ -79,7 +79,7 @@ are welcome.
 | | upstream 0.5 (21.02 / GL.iNet) | this port (25.12) |
 |---|---|---|
 | Packaging | `.ipk` for `opkg` | `install.sh` file install + `keep.d` (25.12's apk has no `mkpkg`; see below) |
-| Web UI | GL.iNet oui-httpd page | LuCI page, *Services -> MCP Server* (read-only) |
+| Web UI | GL.iNet oui-httpd page | LuCI page, *Services -> MCP Server*: status, and approve or deny requests |
 | Transport | HTTP over an `ssh -L` tunnel | same, **plus stdio over SSH** via a key-bound forced command -- no tunnel to keep alive |
 | Rollback snapshot | `/tmp` (lost on reboot) | **on flash**; an unconfirmed change is rolled back at the next start, including after a power cycle |
 | `uci_apply` | set / create / delete | **+ `add_list`, `del_list`, `set_list`, `dry_run`**, shows the staged `uci changes`, strict name validation. A dry run ends with advice, `warnings from this change`. |
@@ -210,12 +210,58 @@ Either way the same installer runs on the router.
 
 `./install.sh uninstall [--purge]` reverses it.
 
-### LuCI status page
+### Approve from LuCI
 
 After install, *Services -> MCP Server* in LuCI shows the daemon (running or stopped, version, HTTP
 listener, stdio socket), a pending `uci_apply` with its automatic-rollback deadline, the paired HTTP
-clients, the standing policies and the recent audit entries. It is read-only by design: pairing and
-grants stay on the command line, so nothing reachable over the network can widen what an agent may do.
+clients, the standing policies and the audit log. It is also where you answer an agent, so nobody has to
+open a shell to paste an `allow` line.
+
+1. The agent calls a tool it has no grant for. The call is refused and a **request** is recorded: client,
+   tool, the exact scope that failed and the redacted arguments, all derived by the daemon, with no text
+   from the agent.
+2. The request shows at the top of the MCP page and in a widget on *Status -> Overview*, which appears only
+   while something is pending.
+3. **Allow** writes a grant, **Deny** refuses it. The default grant is the narrowest one (this tool on this
+   exact scope, 1 hour). A select widens it (the scope's family, every scope, the `@operator` preset) and
+   sets 15 minutes to 7 days. A request for a root-shell tool shows a warning and needs a second confirmation.
+4. With `option request_wait '60'` (seconds, 0 to 300, default 0) the denied call is held and continues by
+   itself when a grant covers it, so the agent does not retry. Without it, or when the wait runs out, the
+   agent gets `POLICY_DENIED` with the request id, and a retry after approval works. The `allow` line is
+   still printed, and the CLI releases a held call the same way the button does.
+
+Requests are deduplicated, capped (5 open per client, 50 in all) and expire after `request_ttl` (10 minutes
+by default). They live in RAM, so a reboot clears them. A LuCI user with only the read ACL sees requests
+but no buttons; writes need `luci-app-openwrt-mcp-write`.
+
+Other tabs: *Permissions* (presets, tools in groups with a risk badge, **Revoke**), *Activity* (the audit log
+with filters), *Settings* (request wait and TTL, the optional channels, second-factor state).
+
+**Permit all.** The *Permissions* tab ends with a red section that grants a client every tool on every scope,
+`exec` included: a root shell. It is capped at 24 hours (no "never"), needs a checkbox and the client's name
+typed in, is refused for a client with a second factor enrolled, and shows a red banner on both pages with
+**End now** while it lasts. Calls it authorises are marked `"via":"permit-all"` in the audit log. The CLI
+equivalent is `openwrt-mcp allow <client> @all 1h --shell-equivalent`. Prefer approving requests one by one.
+
+**Optional channels** are off after install; each is a switch on *Settings*, with a notice beside it saying how
+it can harm you, and each switch is audited.
+
+| Channel | Option | What it does | How it can harm you |
+|---|---|---|---|
+| Pair from LuCI | `pairing` | A *Clients* tab: paste the key that `openwrt-mcp connect` prints, name the client, pick a starting preset (Read-only by default). Writes the same forced-command line as `authorize-key`. | Anyone with LuCI write access can add a key that reaches the router over SSH. |
+| Push hook | `push_hook` | Each new request fires the ubus event `openwrt-mcp.request` and runs the executables in `/etc/openwrt-mcp/hooks.d/` with the redacted request as JSON on stdin (10 s limit; group- or world-writable, non-executable and dot files are skipped). For Telegram, ntfy or Home Assistant. A notification does not approve; it points at LuCI. | Request details leave the router, and a hook runs as root. |
+| Approve in chat | `chat_approve`, `list chat_approve_client` | A client that negotiates elicitation also shows the request in its own prompt. Exact scope only, 15 minutes, 1 hour or 8 hours, never for a root-shell tool or *Permit all*. | The client relays your answer. A client or agent that auto-answers prompts would grant itself. |
+
+**What an agent cannot do.** A LuCI administrator is already root, so a button gives no person more power. What
+must not happen is an agent widening its own grant, so a built-in **deny floor** refuses, whatever the grant
+(`@operator` and `@all` included): `ubus_call` to the objects `openwrt-mcp`, `session`, `file` and `rpc-sys`
+and `uci` writes to the `openwrt-mcp` and `rpcd` configs; `exec` of the binary and its rpcd plugin, or on the
+policy, the rpcd config, `/etc/openwrt-mcp` and the request state; and `uci_apply`, history `restore` and
+`pkg_config_resolve` on those two configs. A client that already holds a root shell is outside what the floor
+can claim: see [SECURITY.md](SECURITY.md#authorisation). Design note: [`docs/luci-approvals.md`](docs/luci-approvals.md).
+
+Not verified on a real router yet: the LuCI rendering, rpcd refusing a write call without the write ACL, and the
+Overview widget hiding itself. Screenshots will be added once a hardware run is done.
 
 **Why not an `.apk`:** 25.12 packages are apk-tools v3 ADB archives. Building one needs the
 OpenWrt SDK or a host apk-tools with `mkpkg` (the router's apk has no `mkpkg`), and an
