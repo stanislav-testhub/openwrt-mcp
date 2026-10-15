@@ -145,6 +145,11 @@ type Config struct {
 
 	// How many confirmed past versions of each UCI config are kept (see history.go); 0 is off.
 	HistoryKeep int
+
+	// Approval requests (requests.go): how long one stays open, and how long a refused call is
+	// held for an answer. 0 waits for nothing, which is the behaviour before requests existed.
+	RequestTTL  time.Duration
+	RequestWait time.Duration
 }
 
 const (
@@ -167,7 +172,7 @@ func parseLockout(s string) (time.Duration, bool) {
 func LoadConfig(configPath string) (*Config, error) {
 	c := &Config{Listen: defaultListen, Socket: defaultSocket, AuditPath: defaultAuditPath, AuditMaxMB: defaultAuditMaxMB,
 		MFAMaxFailures: defaultMFAMaxFailures, MFALockout: defaultMFALockout, RedactOutput: true,
-		HistoryKeep: defaultHistoryKeep}
+		HistoryKeep: defaultHistoryKeep, RequestTTL: defaultRequestTTL}
 	f, err := os.Open(configPath)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -211,6 +216,12 @@ func LoadConfig(configPath string) (*Config, error) {
 			// 0 is a real setting here (history off), so only junk and negatives keep the default.
 			if v, err := strconv.Atoi(s.Options["history_keep"]); err == nil && v >= 0 {
 				c.HistoryKeep = min(v, maxHistoryKeep)
+			}
+			if d, ok := parseLockout(s.Options["request_ttl"]); ok {
+				c.RequestTTL = min(max(d, minRequestTTL), maxRequestTTL)
+			}
+			if v, err := strconv.Atoi(s.Options["request_wait"]); err == nil && v > 0 {
+				c.RequestWait = min(time.Duration(v)*time.Second, maxRequestWait)
 			}
 			// Only a literal 0 turns redaction off: a typo must not.
 			if v, ok := s.Options["redact_output"]; ok {
@@ -311,6 +322,13 @@ func (c *Config) Authorise(client, tool string, scopes []string, now time.Time) 
 // to know whether that grant additionally demands a second factor. Authorise remains as the
 // boolean form because most callers only ask "may I".
 func (c *Config) AuthorisePolicy(client, tool string, scopes []string, now time.Time) (*Policy, string) {
+	p, reason, _ := c.authorise(client, tool, scopes, now)
+	return p, reason
+}
+
+// authorise is AuthorisePolicy plus the scope the check failed on, which a request records. It
+// is empty for a grant and for a rate limit, the one refusal that more access would not cure.
+func (c *Config) authorise(client, tool string, scopes []string, now time.Time) (*Policy, string, string) {
 	var sawClientTool bool
 	var uncovered string
 	for _, p := range c.Policies {
@@ -326,16 +344,17 @@ func (c *Config) AuthorisePolicy(client, tool string, scopes []string, now time.
 			continue
 		}
 		if !p.takeToken(now) {
-			return nil, fmt.Sprintf("rate limit: policy for %q allows %d calls/min to %s", client, p.MaxPerMin, tool)
+			return nil, fmt.Sprintf("rate limit: policy for %q allows %d calls/min to %s", client, p.MaxPerMin, tool), ""
 		}
-		return p, ""
+		return p, "", ""
 	}
 	if sawClientTool && uncovered != "" {
 		return nil, fmt.Sprintf("denied: %s is granted to %q but no policy scope covers %q\n"+
-			"  grant it: openwrt-mcp allow %s %s '%s' 60m", tool, client, uncovered, client, tool, uncovered)
+			"  grant it: openwrt-mcp allow %s %s '%s' 60m", tool, client, uncovered, client, tool, uncovered), uncovered
 	}
+	all := orStar(strings.Join(scopes, " "))
 	return nil, fmt.Sprintf("denied: no policy grants %s to %q\n"+
-		"  grant it: openwrt-mcp allow %s %s '%s' 60m", tool, client, client, tool, orStar(strings.Join(scopes, " ")))
+		"  grant it: openwrt-mcp allow %s %s '%s' 60m", tool, client, client, tool, all), all
 }
 
 // firstUncovered returns the first scope not matched by any glob. ok is true only when

@@ -783,9 +783,9 @@ func TestEveryCallIsAuditedExactlyOnceWithItsOutcome(t *testing.T) {
 		{"ungated", func() { callText(t, cs, "ubus_list", map[string]any{}) }, "ubus_list", "c", OutcomeOK},
 	}
 	for _, st := range steps {
-		before := len(auditEvents(t, s))
+		before := len(callEvents(t, s))
 		st.do()
-		evs := auditEvents(t, s)
+		evs := callEvents(t, s)
 		if len(evs) != before+1 {
 			t.Errorf("%s: %d audit events written, want exactly 1", st.name, len(evs)-before)
 			continue

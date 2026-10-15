@@ -28,6 +28,7 @@ type Server struct {
 	audit      *Auditor
 	mfa        *MFAStore
 	tokens     *TokenStore
+	requests   *RequestStore
 
 	applyMu sync.Mutex // serialises uci staging: /tmp/.uci is shared by every uci user
 	histMu  sync.Mutex // serialises writes to the config history
@@ -101,6 +102,7 @@ func NewServer(configPath, statePath string) (*Server, error) {
 		pending:    map[string]*pendingApply{},
 		slots:      make(chan struct{}, inflightLimit),
 	}
+	s.requests = NewRequestStore(sysPath(requestsPath), s.audit.Record)
 	if !cfg.RedactOutput {
 		s.noteRedaction(false, "option redact_output '0' at startup")
 	}

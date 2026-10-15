@@ -311,11 +311,22 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 			if reason := floorRefusal(in); reason != "" {
 				return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
 			}
+			var heldSlot func()
+			var approvedNote string
 			if !ungatedTools[name] {
 				now := time.Now()
-				p, reason := s.cfg().AuthorisePolicy(client, name, scopes, now)
+				p, reason, missing := s.cfg().authorise(client, name, scopes, now)
 				if p == nil {
-					return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
+					a := s.awaitApproval(ctx, client, name, scopes, reason, missing, ev.Args)
+					if a.p == nil {
+						return finish(errResultCoded(a.denial, codeLine(a.code)), OutcomeDenied, "", a.denial)
+					}
+					p, heldSlot = a.p, a.release
+					if heldSlot != nil {
+						defer heldSlot()
+					}
+					approvedNote = fmt.Sprintf("approved after %d s (request %s)", int(a.waited.Seconds()), a.reqID)
+					now = time.Now()
 				}
 				// Second factor, checked after authorisation so an unauthorised caller
 				// learns nothing about which tools are MFA-gated.
@@ -324,7 +335,7 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				}
 			}
 
-			if !slotExempt[name] {
+			if !slotExempt[name] && heldSlot == nil {
 				release, refusal := s.acquireSlot(ctx)
 				if release == nil {
 					return finish(errResultCoded(refusal, codeLine(codeTimeout)), OutcomeDenied, "", refusal)
@@ -358,7 +369,11 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				}
 				return finish(errResultCoded(msg, codeLine(errCode(err))), outcome, summary, errMsg)
 			}
-			return finish(textResult(s.presentOutput(name, in, out)), OutcomeOK, summary, "")
+			res := textResult(s.presentOutput(name, in, out))
+			if approvedNote != "" {
+				res.Content = append(res.Content, &mcp.TextContent{Text: approvedNote})
+			}
+			return finish(res, OutcomeOK, summary, "")
 		})
 }
 
