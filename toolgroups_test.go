@@ -130,8 +130,8 @@ func TestGrantRefusesWhatItCannotWriteAndChangesNothing(t *testing.T) {
 	for in, want := range map[string]string{
 		`{"client":"bad name","tool":"logread"}`:        "bad client name",
 		`{"client":"c","tool":"no_such_tool"}`:          "no tool",
-		`{"client":"c","tool":"logread","scope":"a b"}`: "space or a quote",
-		`{"client":"c","tool":"logread","scope":"a'b"}`: "space or a quote",
+		`{"client":"c","tool":"logread","scope":"a b"}`: "one name",
+		`{"client":"c","tool":"logread","scope":"a'b"}`: "one name",
 		`{"client":"c","tool":"logread","breadth":"x"}`: "bad arguments",
 	} {
 		var m map[string]any
@@ -290,6 +290,72 @@ func TestOverviewIncludeSaysRequestsInTheWordsOfThePage(t *testing.T) {
 		}
 		if string(a) != string(b) {
 			t.Errorf("%s differs between the page and the include:\n%s\n---\n%s", name, a, b)
+		}
+	}
+}
+
+// ---- editing a grant (replace)
+
+func TestARefusedReplacementKeepsTheOldGrant(t *testing.T) {
+	r := newRig(t)
+	if err := appendPolicy(r.env.configPath, "c", "wg_list_clients", "wireguard.wgua", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	for _, scope := range []string{"wgua, tailscale", "wgua,tailscale,wg0", "a b"} {
+		r.fails("grant", map[string]any{"client": "c", "tool": "wg_list_clients", "scope": scope, "replace": true}, "one name")
+		if !r.allowed("c", "wg_list_clients", "wireguard.wgua") {
+			t.Fatalf("scope %q: the refused edit removed the old grant", scope)
+		}
+	}
+}
+
+func TestAReplacementAskingForConfirmationKeepsTheOldGrant(t *testing.T) {
+	r := newRig(t)
+	if err := appendPolicy(r.env.configPath, "c", "exec", "ls", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	m := r.call("grant", map[string]any{"client": "c", "tool": "exec", "scope": "sh", "replace": true})
+	if m["code"] != "needs_confirm" {
+		t.Fatalf("want needs_confirm, got %v", m)
+	}
+	if !r.allowed("c", "exec", "ls") {
+		t.Error("asking for confirmation removed the old grant")
+	}
+}
+
+func TestAReplacementSwapsTheToolsGrantAndLeavesOtherToolsAlone(t *testing.T) {
+	r := newRig(t)
+	if err := appendPolicy(r.env.configPath, "c", "uci_get,wg_list_clients", "*", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	r.ok("grant", map[string]any{"client": "c", "tool": "wg_list_clients", "scope": "wireguard.wgua", "duration": "8h", "replace": true})
+	if r.allowed("c", "wg_list_clients", "wireguard.wg0") {
+		t.Error("the old unlimited grant survived the replacement")
+	}
+	if !r.allowed("c", "wg_list_clients", "wireguard.wgua") {
+		t.Error("the new limit was not written")
+	}
+	if !r.allowed("c", "uci_get", "network.lan") {
+		t.Error("replacing one tool took another tool's grant with it")
+	}
+}
+
+func TestAToolWithNothingToLimitByCannotBeGivenALimit(t *testing.T) {
+	r := newRig(t)
+	r.fails("grant", map[string]any{"client": "c", "tool": "logread", "scope": "network.*"}, "cannot be limited")
+	r.ok("grant", map[string]any{"client": "c", "tool": "logread", "scope": "*"})
+	sawUnscoped := map[string]bool{}
+	for _, g := range r.ok("tools", nil)["groups"].([]any) {
+		for _, tl := range g.(map[string]any)["tools"].([]any) {
+			row := tl.(map[string]any)
+			if row["unscoped"] == true {
+				sawUnscoped[row["name"].(string)] = true
+			}
+		}
+	}
+	for name := range unscopedTools {
+		if !sawUnscoped[name] {
+			t.Errorf("%s is in unscopedTools but the Permissions tab is not told", name)
 		}
 	}
 }

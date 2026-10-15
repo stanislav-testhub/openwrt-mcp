@@ -895,3 +895,36 @@ func TestAuditNeverRecordsASecretValueNamedByItsOption(t *testing.T) {
 		t.Error("the audit log no longer says which option was changed")
 	}
 }
+
+// A grant limited to a scope nothing matches must hold every golden call that names a scope. The
+// calls left through are the ones that name none, and those are by design: a plain system_status
+// or service_list, and the tools in unscopedTools, which a limit cannot apply to.
+func TestALimitedGrantHoldsEveryCallThatNamesAScope(t *testing.T) {
+	for _, g := range goldenCalls {
+		if ungatedTools[g.tool] {
+			continue
+		}
+		t.Run(g.tool, func(t *testing.T) {
+			everythingFake(t)
+			s := testServer(t, policyFor("c", []string{g.tool}, "zz.nothing-matches")+"\toption max_per_min '1000000'\n")
+			cs := connectClient(t, s, "c")
+			out, isErr := callText(t, cs, g.tool, g.args)
+			evs := auditEvents(t, s)
+			var scope string
+			for _, ev := range evs {
+				if ev.Tool == g.tool {
+					scope = ev.Scope
+				}
+			}
+			if isErr && strings.Contains(out, "denied") {
+				return
+			}
+			if scope != "" {
+				t.Errorf("%s %v named the scope %q and was not held by a grant limited to zz.nothing-matches: %s", g.tool, g.args, scope, out)
+			}
+			if scope == "" && !unscopedTools[g.tool] && g.tool != "system_status" && g.tool != "service_list" {
+				t.Errorf("%s %v names no scope and is not in unscopedTools: a limited grant lets it through", g.tool, g.args)
+			}
+		})
+	}
+}

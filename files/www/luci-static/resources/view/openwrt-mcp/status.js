@@ -15,13 +15,15 @@
 // Colours, fonts and control heights come from the theme; the CSS below is layout and the three
 // risk badges.
 
+// The open tab is remembered per browser tab, so a reload stays on the same page.
+var TAB_KEY = 'openwrt-mcp.tab';
 var callStatus = rpc.declare({ object: 'openwrt-mcp', method: 'status', params: [ 'audit' ], expect: { '': {} } });
 var callTools = rpc.declare({ object: 'openwrt-mcp', method: 'tools', expect: { '': {} } });
 var callSettings = rpc.declare({ object: 'openwrt-mcp', method: 'settings', expect: { '': {} } });
 var callDecide = rpc.declare({ object: 'openwrt-mcp', method: 'decide',
 	params: [ 'id', 'decision', 'breadth', 'duration', 'confirm' ], expect: { '': {} } });
 var callGrant = rpc.declare({ object: 'openwrt-mcp', method: 'grant',
-	params: [ 'client', 'tool', 'scope', 'duration', 'confirm' ], expect: { '': {} } });
+	params: [ 'client', 'tool', 'scope', 'duration', 'confirm', 'replace' ], expect: { '': {} } });
 var callGrantPreset = rpc.declare({ object: 'openwrt-mcp', method: 'grant_preset',
 	params: [ 'client', 'preset', 'duration' ], expect: { '': {} } });
 var callRevoke = rpc.declare({ object: 'openwrt-mcp', method: 'revoke',
@@ -350,8 +352,16 @@ function check(res) {
 	return res;
 }
 
+// One banner at a time: a new message replaces the last one this page showed.
+var lastNote = null;
+function notify(message, kind) {
+	if (lastNote && lastNote.parentNode)
+		lastNote.parentNode.removeChild(lastNote);
+	lastNote = ui.addNotification(null, E('p', {}, message), kind);
+}
+
 function fail(err) {
-	ui.addNotification(null, E('p', {}, _('Couldn’t save: %s. Nothing was changed.').format(String((err && err.message) || err))), 'danger');
+	notify(_('Couldn’t save: %s. Nothing was changed.').format(String((err && err.message) || err)), 'danger');
 }
 
 function badge(risk) {
@@ -463,9 +473,9 @@ return view.extend({
 	},
 
 	render: function(data) {
-		var ui_ = { tab: 'overview', client: null, req: {}, answered: [], adv: false, editing: null, choice: null, duration: '1h',
+		var ui_ = { tab: savedTab() || 'overview', client: null, req: {}, answered: [], adv: false, editing: null, choice: null, duration: '1h',
 			pa: { box: false, name: '', duration: '1h' }, filter: { client: '', kind: '', text: '' }, shown: ACTIVITY_PAGE,
-			raw: {}, sig: {}, draft: null };
+			raw: {}, sig: {}, draft: null, settingsDraft: null };
 		if (!data.tools) {
 			data.st = { clients: [], policies: [], requests: [], audit: [], pending: [], permit_all: [] };
 			data.tools = { groups: [] };
@@ -519,8 +529,13 @@ return view.extend({
 			return ((data.settings.channels || []).filter(function(c) { return c.name === name; })[0] || {}).enabled === true;
 		}
 
+		function savedTab() {
+			try { return window.sessionStorage.getItem(TAB_KEY); } catch (e) { return null; }
+		}
+
 		function goTab(name) {
 			ui_.tab = name;
+			try { window.sessionStorage.setItem(TAB_KEY, name); } catch (e) { /* storage blocked: the tab is just not remembered */ }
 			showTab();
 		}
 
@@ -1159,11 +1174,14 @@ return view.extend({
 
 		function editRow(client, tool, m) {
 			var uci = [ 'uci_get', 'uci_apply' ].indexOf(tool) >= 0;
+			// A tool with nothing to limit by is on or off: a limit on it would never match.
+			var unscoped = !!(byName[tool] && byName[tool].unscoped);
 			var opts = [ [ '*', _('Everything this tool can touch') ] ];
 			if (uci)
 				Object.keys(AREAS).forEach(function(k) { opts.push([ k + '.*', AREAS[k].name ]); });
-			opts.push([ '__custom', _('Custom…') ]);
-			var cur = m && m.scopes.length === 1 && opts.some(function(o) { return o[0] === m.scopes[0]; }) ? m.scopes[0] : (m ? '__custom' : '*');
+			if (!unscoped)
+				opts.push([ '__custom', _('Custom…') ]);
+			var cur = unscoped ? '*' : (m && m.scopes.length === 1 && opts.some(function(o) { return o[0] === m.scopes[0]; }) ? m.scopes[0] : (m ? '__custom' : '*'));
 			var custom = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'id': 'mcp-edit-custom', 'data-edit': 'custom',
 				'value': m && cur === '__custom' ? m.scopes.join(' ') : '', 'aria-label': _('Technical scope') });
 			custom.style.display = cur === '__custom' ? '' : 'none';
@@ -1171,9 +1189,16 @@ return view.extend({
 			var dur = selectOf(DURATIONS, ui_.duration, null, { 'id': 'mcp-edit-dur' });
 			var save = btn('action', 'adv-save', _('Save'), function() {
 				var s = scope.value === '__custom' ? custom.value.trim() : scope.value;
+				if (scope.value === '__custom') {
+					if (!s)
+						return notify(_('Type the limit, or choose “Everything this tool can touch”. Nothing was changed.'), 'danger');
+					if (/[\s,']/.test(s))
+						return notify(_('A limit is one name, with no spaces, commas or quotes. Nothing was changed.'), 'danger');
+				}
 				var go = function(confirm) {
-					var first = m ? callRevokeTools(client, [ tool ]).then(check) : Promise.resolve();
-					return first.then(function() { return callGrant(client, tool, s || '*', dur.value, confirm).then(check); }).then(function() {
+					// One call replaces the old grant after the new one passed every check, so a
+					// refused edit leaves the old grant as it was.
+					return callGrant(client, tool, s, dur.value, confirm, !!m).then(check).then(function() {
 						ui_.editing = null;
 						return refresh();
 					}).catch(function(e) {
@@ -1354,6 +1379,10 @@ return view.extend({
 			var verb = VERBS[a.tool] || (a.tool ? _('use “%s”').format(a.tool) : '');
 			switch (auditKind(a)) {
 			case 'mine':
+				if (a.tool === 'set_channel' && CHANNEL_COPY[a.scope]) {
+					var turnedOn = /=1$/.test(a.summary || '');
+					return (turnedOn ? _('You turned on “%s”') : _('You turned off “%s”')).format(CHANNEL_COPY[a.scope][0]);
+				}
 				return MINE[a.tool] || _('You made a change');
 			case 'service':
 				return a.summary || a.error || _('The MCP service recorded an event');
@@ -1444,13 +1473,17 @@ return view.extend({
 
 		function drawSettings() {
 			var s = data.settings;
-			var wait = E('input', { 'class': 'cbi-input-text', 'type': 'number', 'min': 0, 'max': s.wait_max, 'value': s.request_wait, 'id': 'mcp-wait',
+			// What was typed and not yet saved survives a redraw (ticking a switch redraws the page).
+			var sd = ui_.settingsDraft || {};
+			var wait = E('input', { 'class': 'cbi-input-text', 'type': 'number', 'min': 0, 'max': s.wait_max, 'value': sd.wait != null ? sd.wait : s.request_wait, 'id': 'mcp-wait',
 				'style': 'width:6em' });
+			wait.addEventListener('input', function() { ui_.settingsDraft = Object.assign({}, ui_.settingsDraft, { wait: wait.value }); });
 			var opts = TTL_CHOICES.filter(function(c) { return c[0] >= s.ttl_min && c[0] <= s.ttl_max; });
 			if (!opts.some(function(c) { return c[0] === s.request_ttl; }))
 				opts.push([ s.request_ttl, span(s.request_ttl) ]);
 			opts.sort(function(a, b) { return a[0] - b[0]; });
-			var ttl = selectOf(opts.map(function(c) { return [ String(c[0]), c[1] ]; }), String(s.request_ttl), null, { 'id': 'mcp-ttl' });
+			var ttl = selectOf(opts.map(function(c) { return [ String(c[0]), c[1] ]; }), sd.ttl != null ? sd.ttl : String(s.request_ttl),
+				function(v) { ui_.settingsDraft = Object.assign({}, ui_.settingsDraft, { ttl: v }); }, { 'id': 'mcp-ttl' });
 			var channels = (s.channels || []).map(function(c) {
 				var copy = CHANNEL_COPY[c.name] || [ _(c.title), '' ];
 				var box = E('input', { 'type': 'checkbox', 'data-channel': c.name, 'id': 'mcp-ch-' + c.name, 'disabled': data.writable ? null : '' });
@@ -1460,20 +1493,21 @@ return view.extend({
 			});
 			var mfa = s.mfa_clients || [];
 			var actions = data.writable ? E('div', { 'class': 'cbi-page-actions' }, [
-				btn('', 'reset-settings', _('Reset'), function() { drawSettings(); }), ' ',
+				btn('', 'reset-settings', _('Reset'), function() { ui_.settingsDraft = null; drawSettings(); }), ' ',
 				btn('save', 'save-settings', _('Save'), function() {
 					run(callSetSettings(parseInt(wait.value, 10), parseInt(ttl.value, 10)), function() {
-						ui.addNotification(null, E('p', {}, _('Saved. The daemon applies it to the next request.')), 'info');
+						ui_.settingsDraft = null;
+						notify(_('Saved. The daemon applies it to the next request.'), 'info');
 					});
 				}, { 'class': 'cbi-button cbi-button-save cbi-button-apply' })
 			]) : E('p', { 'class': 'mcp-dim' }, _('You can see this page but not change anything. Ask the router’s administrator if you need to change permissions.'));
 			panes.settings.replaceChildren(
-				section(_('Requests'), '', [
+				section(_('Requests'), _('These two settings apply when you press Save.'), [
 					row(_('Ask me before refusing'), [ wait, ' ', _('seconds') ],
 						_('When an assistant tries something it isn’t allowed to do, keep it waiting this long while you get a request. 0 refuses at once and sends no request. From 0 to %d.').format(s.wait_max), 'mcp-wait'),
 					row(_('Keep a request open for'), ttl, _('A request nobody answers in time is refused.'), 'mcp-ttl')
 				]),
-				section(_('How requests reach you'), _('Each extra way is off until you turn it on. The line under it says how it could be misused.'), [
+				section(_('How requests reach you'), _('Each extra way is off until you turn it on, and ticking a box applies at once. The line under it says how it could be misused.'), [
 					row(_('This page'), _('Always on'), _('Only people who can log in to this router see and answer requests here.')),
 					row(_('Status overview'), _('Always on'), [ _('Waiting requests also show on Status › Overview. '), E('strong', {}, _('Risk:')), ' ',
 						_('anyone logged in to the router can answer from there.') ])
@@ -1503,7 +1537,7 @@ return view.extend({
 				row(_('Starting access'), [ preset, ' ', _('for'), ' ', dur ], '', 'mcp-pair-preset'),
 				data.writable ? E('div', { 'class': 'mcp-row' }, [ btn('negative', 'pair', _('Pair'), function() {
 					callPair(name.value.trim(), key.value.trim(), preset.value, dur.value).then(check).then(function() {
-						ui.addNotification(null, E('p', {}, _('Paired %s. Point its MCP client at ssh -T -i <that key> root@<router>.').format(name.value.trim())), 'info');
+						notify(_('Paired %s. Point its MCP client at ssh -T -i <that key> root@<router>.').format(name.value.trim()), 'info');
 						name.value = ''; key.value = '';
 						return refresh();
 					}).catch(fail);

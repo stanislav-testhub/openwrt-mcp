@@ -409,6 +409,11 @@ func clampInt(v, def, lo, hi int) int {
 // noScope is the scope function for tools whose policy check is tool-level only.
 func noScope[In any](In) []string { return nil }
 
+// unscopedTools are the tools registered with noScope: a call names nothing a limit could match,
+// so a grant is on or off and a limited one would never apply. Keep it in step with registry.go.
+var unscopedTools = map[string]bool{"ubus_list": true, "logread": true, "network_clients": true, "firewall_show": true,
+	"uci_confirm": true, "uci_rollback": true, "pkg_query": true, "pkg_config_diff": true, "mfa_unlock": true}
+
 // Tool annotations: hints to the client, never a security boundary (the policy is). They let
 // a client auto-approve reads and ask before writes.
 var (

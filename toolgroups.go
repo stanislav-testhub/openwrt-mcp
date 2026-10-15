@@ -42,6 +42,7 @@ type toolRow struct {
 	Badge    string   `json:"badge"`
 	Notes    []string `json:"notes,omitempty"` // "rollback", "keys"
 	Ungated  bool     `json:"ungated,omitempty"`
+	Unscoped bool     `json:"unscoped,omitempty"` // a grant is on or off: there is nothing to limit it by
 	Why      string   `json:"why,omitempty"` // why the row cannot be granted
 	Readonly bool     `json:"readonly"`      // in the @readonly preset
 }
@@ -109,7 +110,7 @@ func buildToolGroups(tools []*mcp.Tool) ([]toolGroupRow, error) {
 }
 
 func rowFor(t *mcp.Tool) toolRow {
-	r := toolRow{Name: t.Name, Title: t.Title, Badge: badgeWrite, Ungated: ungatedTools[t.Name], Readonly: readOnlyListed(t.Name)}
+	r := toolRow{Name: t.Name, Title: t.Title, Badge: badgeWrite, Ungated: ungatedTools[t.Name], Unscoped: unscopedTools[t.Name], Readonly: readOnlyListed(t.Name)}
 	if t.Annotations != nil {
 		if t.Annotations.ReadOnlyHint {
 			r.Badge = badgeRead

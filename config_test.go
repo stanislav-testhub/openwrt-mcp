@@ -273,3 +273,34 @@ func TestScopeGlobsTreatBracketsLiterally(t *testing.T) {
 		}
 	}
 }
+
+// A grant limited to one interface must hold a wg_list_clients call for another interface and
+// one that names none: the scope comes from the iface argument, not from nothing.
+func TestWgListGrantLimitedToOneInterfaceHoldsTheRest(t *testing.T) {
+	limited := parse(t, "config policy\n\toption client 'c'\n\tlist tools 'wg_list_clients'\n\tlist scopes 'wireguard.wgua'\n")
+	for name, in := range map[string]wgListIn{"other interface": {Iface: "wg0"}, "no interface": {}} {
+		if ok, _ := limited.Authorise("c", "wg_list_clients", wgListScope(in), time.Now()); ok {
+			t.Errorf("%s passed a grant limited to wireguard.wgua", name)
+		}
+	}
+	if ok, r := limited.Authorise("c", "wg_list_clients", wgListScope(wgListIn{Iface: "wgua"}), time.Now()); !ok {
+		t.Errorf("the granted interface must pass: %s", r)
+	}
+	open := parse(t, "config policy\n\toption client 'c'\n\tlist tools 'wg_list_clients'\n\tlist scopes '*'\n")
+	if ok, r := open.Authorise("c", "wg_list_clients", wgListScope(wgListIn{}), time.Now()); !ok {
+		t.Errorf("an unlimited grant must cover it: %s", r)
+	}
+}
+
+func TestWgListScopeFollowsIface(t *testing.T) {
+	if got := wgListScope(wgListIn{Iface: "wg0"}); len(got) != 1 || got[0] != "wireguard.wg0" {
+		t.Errorf("iface wg0 gave %v", got)
+	}
+	if got := wgListScope(wgListIn{}); len(got) != 1 || got[0] != "wireguard._" {
+		t.Errorf("no iface gave %v", got)
+	}
+	cfg := parse(t, "config policy\n\toption client 'c'\n\tlist tools 'wg_list_clients'\n\tlist scopes 'wireguard.*'\n")
+	if ok, _ := cfg.Authorise("c", "wg_list_clients", wgListScope(wgListIn{}), time.Now()); !ok {
+		t.Error("wireguard.* must cover the default-interface call")
+	}
+}

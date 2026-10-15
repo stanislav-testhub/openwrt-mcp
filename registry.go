@@ -189,7 +189,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 	addTool(s, srv, client, "wg_list_clients",
 		"List WireGuard peers: name, allowed IPs, last handshake, endpoint, traffic, and whether config and "+
 			"kernel agree.",
-		annRead, noScope[wgListIn], wgListClients)
+		annRead, wgListScope, wgListClients)
 
 	addTool(s, srv, client, "wg_new_client",
 		"Issue a WireGuard client: keypair, next free tunnel address, peer saved; uci_confirm keeps it. "+

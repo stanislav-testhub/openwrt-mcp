@@ -63,7 +63,7 @@ var rpcdMethods = []rpcdMethod{
 	{"decide", true, map[string]string{"id": "String", "decision": "String", "breadth": "String",
 		"duration": "String", "confirm": "Boolean"}, rpcdDecide},
 	{"grant", true, map[string]string{"client": "String", "tool": "String", "scope": "String",
-		"duration": "String", "confirm": "Boolean"}, rpcdGrant},
+		"duration": "String", "confirm": "Boolean", "replace": "Boolean"}, rpcdGrant},
 	{"revoke", true, map[string]string{"client": "String", "index": "Integer", "all": "Boolean"}, rpcdRevoke},
 	{"revoke_tools", true, map[string]string{"client": "String", "tools": "Array"}, rpcdRevokeTools},
 	{"grant_preset", true, map[string]string{"client": "String", "preset": "String", "duration": "String"}, rpcdGrantPreset},
@@ -485,6 +485,7 @@ func rpcdGrant(env rpcdEnv, raw json.RawMessage) (any, error) {
 		Scope    string `json:"scope"`
 		Duration string `json:"duration"`
 		Confirm  bool   `json:"confirm"`
+		Replace  bool   `json:"replace"`
 	}
 	if err := decodeArgs(raw, &in); err != nil {
 		return nil, err
@@ -501,8 +502,11 @@ func rpcdGrant(env rpcdEnv, raw json.RawMessage) (any, error) {
 	if in.Scope == "" {
 		in.Scope = "*"
 	}
-	if strings.ContainsAny(in.Scope, " \t\r\n'") {
-		return nil, rpcdFail("the scope %q contains a space or a quote, so a grant cannot name it: use the command line", in.Scope)
+	if strings.ContainsAny(in.Scope, " \t\r\n',") {
+		return nil, rpcdFail("a limit is one name: %q has a space, comma or quote in it. Use one name, or give the tool a separate grant for each", in.Scope)
+	}
+	if unscopedTools[in.Tool] && in.Scope != "*" {
+		return nil, rpcdFail("%s cannot be limited: it has nothing to limit by, so a limit would never match", in.Tool)
 	}
 	if in.Duration == "" {
 		in.Duration = rpcdDefaultDuration
@@ -520,7 +524,21 @@ func rpcdGrant(env rpcdEnv, raw json.RawMessage) (any, error) {
 			"this grant lets %s run %s, and each of those can run any other program: it is a root shell whatever the other scopes say",
 			in.Client, describeShellEquivalent(hit))}
 	}
+	// Replacing happens only after every check above, and puts the old grant back if the write
+	// fails, so an edit that is refused never leaves the tool without its grant.
+	var before []byte
+	if in.Replace {
+		if before, err = os.ReadFile(env.configPath); err != nil {
+			return nil, rpcdFail("cannot read the config: %v", err)
+		}
+		if _, err := removeToolsFromPolicies(env.configPath, in.Client, []string{in.Tool}); err != nil {
+			return nil, rpcdFail("cannot replace the grant: %v", err)
+		}
+	}
 	if err := writeGrants(env.configPath, in.Client, blocks, in.Duration); err != nil {
+		if before != nil {
+			_ = os.WriteFile(env.configPath, before, 0o600)
+		}
 		return nil, rpcdFail("cannot write the grant: %v", err)
 	}
 	rpcdAudit(cfg, env, "grant", in.Client, in.Scope, fmt.Sprintf("%s on %s for %s", in.Tool, in.Scope, in.Duration))

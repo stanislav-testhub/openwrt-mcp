@@ -738,3 +738,37 @@ func TestRequestOptionsAreReadAndClamped(t *testing.T) {
 		}
 	}
 }
+
+// Two sessions waiting at once get a request each, and answering one does not settle the other.
+func TestTwoHeldCallsFromTwoClientsAreAnsweredSeparately(t *testing.T) {
+	s, _ := heldServer(t)
+	a := callAsync(t, connectClient(t, s, "alice"), context.Background(), "uci_get", uciGetCall)
+	b := callAsync(t, connectClient(t, s, "bob"), context.Background(), "uci_get", uciGetCall)
+	deadline := time.Now().Add(5 * time.Second)
+	for len(s.openRequests(t)) < 2 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	var alice, bob Request
+	for _, r := range s.openRequests(t) {
+		switch r.Client {
+		case "alice":
+			alice = r
+		case "bob":
+			bob = r
+		}
+	}
+	if alice.ID == "" || bob.ID == "" || alice.ID == bob.ID {
+		t.Fatalf("want one open request each, got %+v", s.openRequests(t))
+	}
+	if _, err := s.requests.Decide(bob.ID, false, "luci", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if r := expectResult(t, b, "bob after his denial"); !r.isErr || !strings.Contains(r.text, "denied by the operator") {
+		t.Errorf("bob: %+v, want a denial", r)
+	}
+	expectPending(t, a, "alice must keep waiting while bob is answered")
+	grant(t, s, policyFor("alice", []string{"uci_get"}, "wireless"))
+	if r := expectResult(t, a, "alice after her grant"); r.isErr {
+		t.Errorf("alice: %+v, want her call to run", r)
+	}
+}

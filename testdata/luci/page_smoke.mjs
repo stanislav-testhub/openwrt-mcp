@@ -72,7 +72,12 @@ const handlers = {
 const rpc = { declare: o => (...args) => { try { return Promise.resolve(handlers[o.method](args)); } catch (e) { return Promise.reject(e); } } };
 const notes = [], modals = [];
 const ui = {
-	addNotification: (t, n) => notes.push(text(n)),
+	// Like LuCI, hands back the banner so the page can take it down again.
+	addNotification: (t, n) => {
+		const msg = text(n);
+		notes.push(msg);
+		return { parentNode: { removeChild: () => { notes.splice(notes.indexOf(msg), 1); } } };
+	},
 	showModal: (t, c) => modals.push(c),
 	hideModal: () => { modals.length = 0; },
 };
@@ -88,9 +93,10 @@ const READ = [ 'system_status', 'logread', 'network_clients', 'firewall_show', '
 	'wg_list_clients', 'uci_get', 'ubus_call', 'sysupgrade', 'ubus_list' ];
 const WRITE = [ 'uci_apply', 'uci_confirm', 'uci_rollback', 'pkg_change', 'pkg_config_resolve', 'wg_new_client', 'wg_remove_client',
 	'service_control', 'mfa_unlock', 'exec' ];
+const UNSCOPED = [ 'logread', 'network_clients', 'firewall_show', 'pkg_query', 'pkg_config_diff', 'uci_confirm', 'uci_rollback', 'ubus_list', 'mfa_unlock' ];
 function registry() {
 	const t = n => tool(n, 'Registry title of ' + n, n === 'exec' || n === 'ubus_call' ? 'shell' : (READ.includes(n) ? 'read' : 'write'), {
-		readonly: READ.includes(n), ungated: n === 'ubus_list' || n === 'mfa_unlock', notes: n === 'uci_apply' ? [ 'rollback' ] : [] });
+		readonly: READ.includes(n), ungated: n === 'ubus_list' || n === 'mfa_unlock', unscoped: UNSCOPED.includes(n), notes: n === 'uci_apply' ? [ 'rollback' ] : [] });
 	return { groups: [ { id: 'all', title: 'All', tools: READ.concat(WRITE).map(t) } ] };
 }
 // What `allow claude-code @readonly 1h` writes.
@@ -520,7 +526,7 @@ fresh();
 	dur.value = '8h';
 	byAct(edit, 'adv-save')[0].listeners.click();
 	await flush();
-	assert.deepEqual(calls, [ [ 'grant', [ 'claude-code', 'uci_apply', 'wireless.*', '8h', false ] ] ]);
+	assert.deepEqual(calls, [ [ 'grant', [ 'claude-code', 'uci_apply', 'wireless.*', '8h', false, false ] ] ]);
 }
 
 // 19. Editing an existing limit replaces it
@@ -534,8 +540,39 @@ fresh();
 	find(edit, x => x.attrs['data-edit'] === 'custom')[0].value = 'ping';
 	byAct(edit, 'adv-save')[0].listeners.click();
 	await flush();
-	assert.deepEqual(calls.map(c => c[0]), [ 'revoke_tools', 'grant' ]);
-	assert.deepEqual(calls[1][1].slice(0, 3), [ 'claude-code', 'net_diag', 'ping' ]);
+	assert.deepEqual(calls.map(c => c[0]), [ 'grant' ], 'one call, so a refused edit cannot leave the tool without its grant');
+	assert.deepEqual(calls[0][1], [ 'claude-code', 'net_diag', 'ping', '1h', false, true ]);
+}
+
+// 19b. A blank or multi-name custom limit is refused before anything is sent
+fresh();
+{
+	const { root } = await load();
+	const [ adv ] = find(pane(root, 'permissions'), x => x.tag === 'details');
+	byAct(find(adv, x => x.attrs['data-tool-row'] === 'net_diag')[0], 'adv-edit')[0].listeners.click();
+	const edit = find(pane(root, 'permissions'), x => x.attrs['data-edit-row'] === 'net_diag')[0];
+	const sel = find(edit, x => x.tag === 'select')[0];
+	sel.value = '__custom'; sel.listeners.change();
+	const custom = find(edit, x => x.attrs['data-edit'] === 'custom')[0];
+	for (const [ v, want ] of [ [ '', /Type the limit/ ], [ '   ', /Type the limit/ ], [ 'wgua, tailscale', /one name/ ], [ 'wgua,tailscale,wg0', /one name/ ] ]) {
+		custom.value = v;
+		byAct(edit, 'adv-save')[0].listeners.click();
+		await flush();
+		assert.deepEqual(calls, [], 'nothing is sent for ' + JSON.stringify(v));
+		assert.equal(notes.length, 1, 'one banner, not a pile');
+		assert.match(notes[0], want);
+	}
+}
+
+// 19c. A tool with nothing to limit by offers no custom limit
+fresh();
+{
+	const { root } = await load();
+	const [ adv ] = find(pane(root, 'permissions'), x => x.tag === 'details');
+	byAct(find(adv, x => x.attrs['data-tool-row'] === 'logread')[0], 'adv-edit')[0].listeners.click();
+	const edit = find(pane(root, 'permissions'), x => x.attrs['data-edit-row'] === 'logread')[0];
+	assert.deepEqual(find(find(edit, x => x.tag === 'select')[0], x => x.tag === 'option').map(o => o.attrs.value).slice(0, 1), [ '*' ]);
+	assert.ok(!find(edit, x => x.tag === 'option').some(o => o.attrs.value === '__custom'), 'no Custom for an unscoped tool');
 }
 
 // 20. A scope with no plain name is shown as a custom limit with its raw text beside it
@@ -691,6 +728,58 @@ fresh();
 	await flush();
 	assert.deepEqual(calls, [ [ 'set_settings', [ 30, 300 ] ] ]);
 	assert.match(notes.join(' '), /Saved/);
+}
+
+// 27b. Ticking a switch keeps the unsaved number and select; banners replace each other
+fresh();
+{
+	const { root } = await load();
+	let s = pane(root, 'settings');
+	find(s, x => x.attrs.id === 'mcp-wait')[0].value = '45';
+	find(s, x => x.attrs.id === 'mcp-wait')[0].listeners.input();
+	find(s, x => x.attrs.id === 'mcp-ttl')[0].value = '300';
+	find(s, x => x.attrs.id === 'mcp-ttl')[0].listeners.change();
+	state.settings.channels[0].enabled = true;
+	find(s, x => x.attrs['data-channel'] === 'pair')[0].checked = true;
+	find(s, x => x.attrs['data-channel'] === 'pair')[0].listeners.change();
+	await flush();
+	s = pane(root, 'settings');
+	assert.equal(find(s, x => x.attrs.id === 'mcp-wait')[0].value, '45', 'the typed number survives the redraw');
+	assert.equal(find(s, x => x.attrs.id === 'mcp-ttl')[0].value, '300', 'the chosen time survives the redraw');
+	assert.match(text(s), /apply when you press Save/);
+	byAct(s, 'save-settings')[0].listeners.click();
+	await flush();
+	byAct(pane(root, 'settings'), 'save-settings')[0].listeners.click();
+	await flush();
+	assert.equal(notes.filter(n => /Saved/.test(n)).length, 1, 'old Saved banners are taken down');
+}
+
+// 27c. The Activity line names the switch and its new state
+fresh();
+{
+	state.st.audit.push({ time: iso(-60e3), client: '<luci>', tool: 'set_channel', scope: 'push', outcome: 'OK', summary: 'push_hook=1' },
+		{ time: iso(-30e3), client: '<luci>', tool: 'set_channel', scope: 'chat', outcome: 'OK', summary: 'chat_approve=0' });
+	const { root } = await load();
+	const t = text(pane(root, 'activity'));
+	assert.match(t, /You turned on “Run my own script when a request arrives”/);
+	assert.match(t, /You turned off “Answer in the assistant’s chat”/);
+}
+
+// 27d. The open tab survives a reload; a stored tab that no longer exists falls back to Overview
+fresh();
+{
+	const store = {};
+	win.sessionStorage = { getItem: k => store[k] ?? null, setItem: (k, v) => { store[k] = v; } };
+	try {
+		let { root } = await load();
+		find(root, x => x.tag === 'a' && /Settings/.test(text(x)))[0].listeners.click({ preventDefault() {} });
+		assert.equal(store['openwrt-mcp.tab'], 'settings');
+		({ root } = await load());
+		assert.match(text(find(root, x => /cbi-tab(?!-)/.test(x.attrs.class || ''))[0]), /Settings/, 'Settings is the open tab after the reload');
+		store['openwrt-mcp.tab'] = 'clients'; // pairing is off, so there is no such tab
+		({ root } = await load());
+		assert.match(text(find(root, x => /cbi-tab(?!-)/.test(x.attrs.class || ''))[0]), /Overview/);
+	} finally { delete win.sessionStorage; }
 }
 
 // 28. The pairing channel is off: no Clients tab; switching it on is one call. On: the tab shows the key form.

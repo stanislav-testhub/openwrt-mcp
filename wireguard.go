@@ -174,6 +174,12 @@ type wgListIn struct {
 	Iface string `json:"iface,omitempty" jsonschema:"wireguard interface, e.g. 'wg0'; defaults to the only one"`
 }
 
+// wgListScope names the interface, so a grant limited to one interface covers only it. The
+// default interface is "_", which `wireguard.*` and `*` cover and a named one does not.
+func wgListScope(in wgListIn) []string {
+	return []string{"wireguard." + orDefault(in.Iface, "_")}
+}
+
 func wgListClients(ctx context.Context, in wgListIn) (string, string, error) {
 	_, srv, peers, err := loadWG(ctx, in.Iface)
 	if err != nil {
