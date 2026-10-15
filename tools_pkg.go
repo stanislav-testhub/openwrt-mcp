@@ -165,6 +165,15 @@ type pkgChangeIn struct {
 // pkgChangeScope: one scope per package ("add.tcpdump"), or the bare "upgrade" for a full
 // upgrade -- deliberately not "upgrade.*", which a policy granting individual upgrades by
 // glob would otherwise match.
+// validate rejects an action the tool does not have before any scope is derived from it.
+func (in pkgChangeIn) validate() error {
+	switch in.Action {
+	case "add", "del", "upgrade":
+		return nil
+	}
+	return invalid("unknown action %q (add | del | upgrade)", in.Action)
+}
+
 func pkgChangeScope(in pkgChangeIn) []string {
 	if len(in.Packages) == 0 {
 		return []string{in.Action}

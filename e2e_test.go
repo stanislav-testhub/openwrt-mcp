@@ -190,3 +190,14 @@ func TestBridgeRejectsABadHandshake(t *testing.T) {
 		cliSide.Close()
 	}
 }
+
+// A malformed pkg_change action is a plain validation error, not a policy question: no scope
+// is derived from it, so nothing is denied and no approval request is created.
+func TestPkgChangeUnknownActionIsRejectedBeforePolicy(t *testing.T) {
+	s := testServer(t, "")
+	cs := connectClient(t, s, "claude-code")
+	out, isErr := callText(t, cs, "pkg_change", map[string]any{"action": "remove", "packages": []string{"x"}})
+	if !isErr || strings.Contains(out, "denied") || !strings.Contains(out, "unknown action") {
+		t.Errorf("want a validation error for action=remove, got isErr=%v: %s", isErr, out)
+	}
+}

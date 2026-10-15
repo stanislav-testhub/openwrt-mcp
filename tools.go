@@ -305,6 +305,14 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				return res, nil, nil
 			}
 
+			// A malformed call is a validation error, not a policy question: it must not reach the
+			// gate, where it would be denied or open an approval request.
+			if v, ok := any(in).(interface{ validate() error }); ok {
+				if err := v.validate(); err != nil {
+					return finish(errResultCoded(err.Error(), codeLine(errCode(err))), OutcomeError, "", err.Error())
+				}
+			}
+
 			if reason := profileFrom(ctx).refusal(name, scopes); reason != "" {
 				return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
 			}

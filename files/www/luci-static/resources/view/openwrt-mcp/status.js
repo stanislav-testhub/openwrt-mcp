@@ -569,6 +569,8 @@ return view.extend({
 
 		// An owner action and what follows it: the page re-reads and shows what is now true.
 		function run(promise, done) {
+			if (lastNote && lastNote.parentNode)
+				lastNote.parentNode.removeChild(lastNote);
 			return promise.then(check).then(function(res) {
 				if (done)
 					done(res);
@@ -1366,7 +1368,7 @@ return view.extend({
 				return 'mine';
 			if (!a.tool)
 				return 'service';
-			return a.outcome === 'OK' ? 'allowed' : 'refused';
+			return a.outcome === 'OK' ? 'allowed' : (a.outcome === 'DENIED' ? 'refused' : 'failed');
 		}
 
 		var MINE = { decide: _('You answered a request'), grant: _('You gave an assistant access to one ability'), grant_preset: _('You gave an assistant a set of abilities'),
@@ -1392,8 +1394,8 @@ return view.extend({
 			return a.outcome === 'DENIED' ? _('%s tried to %s · not allowed').format(who, verb) : _('%s tried to %s · it failed').format(who, verb);
 		}
 
-		var OUTCOME = { allowed: _('Allowed'), refused: _('Refused'), mine: _('Your change'), service: _('Service'), waiting: _('Waiting') };
-		var OUTCOME_ICON = { allowed: '✓', refused: '✕', mine: '●', service: '○', waiting: '…' };
+		var OUTCOME = { allowed: _('Allowed'), refused: _('Refused'), failed: _('Failed'), mine: _('Your change'), service: _('Service'), waiting: _('Waiting') };
+		var OUTCOME_ICON = { allowed: '✓', refused: '✕', failed: '!', mine: '●', service: '○', waiting: '…' };
 
 		function activityRows() {
 			var rows = (data.st.audit || []).map(function(a) {
@@ -1412,7 +1414,7 @@ return view.extend({
 			var seen = {};
 			all.forEach(function(a) { if (a.client.charAt(0) !== '<') seen[a.client] = true; });
 			var clientOpts = [ [ '', _('All assistants') ] ].concat(Object.keys(seen).sort().map(function(c) { return [ c, displayName(c) ]; }));
-			var kindOpts = [ [ '', _('Everything') ], [ 'allowed', _('Allowed') ], [ 'refused', _('Refused') ], [ 'waiting', _('Waiting for you') ],
+			var kindOpts = [ [ '', _('Everything') ], [ 'allowed', _('Allowed') ], [ 'refused', _('Refused') ], [ 'failed', _('Failed') ], [ 'waiting', _('Waiting for you') ],
 				[ 'mine', _('Your changes') ], [ 'service', _('Connections and service') ] ];
 			var body = E('div', { 'id': 'openwrt-mcp-activity-rows' });
 			function fill() {
@@ -1537,7 +1539,7 @@ return view.extend({
 				row(_('Starting access'), [ preset, ' ', _('for'), ' ', dur ], '', 'mcp-pair-preset'),
 				data.writable ? E('div', { 'class': 'mcp-row' }, [ btn('negative', 'pair', _('Pair'), function() {
 					callPair(name.value.trim(), key.value.trim(), preset.value, dur.value).then(check).then(function() {
-						notify(_('Paired %s. Point its MCP client at ssh -T -i <that key> root@<router>.').format(name.value.trim()), 'info');
+						notify(_('Paired %s. Point its MCP client at: ssh -T -i &lt;that key&gt; root@&lt;router&gt;').format(name.value.trim()), 'info');
 						name.value = ''; key.value = '';
 						return refresh();
 					}).catch(fail);
