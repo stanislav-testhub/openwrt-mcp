@@ -1,0 +1,234 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"os"
+	"os/exec"
+	"regexp"
+	"slices"
+	"strings"
+	"testing"
+)
+
+func groupRows(t *testing.T, r *rpcdRig) map[string]toolRow {
+	t.Helper()
+	m := r.ok("tools", map[string]any{})
+	out := map[string]toolRow{}
+	for _, g := range m["groups"].([]any) {
+		for _, x := range g.(map[string]any)["tools"].([]any) {
+			row := x.(map[string]any)
+			tr := toolRow{Name: row["name"].(string), Title: row["title"].(string), Badge: row["badge"].(string)}
+			notes, _ := row["notes"].([]any)
+			for _, n := range notes {
+				tr.Notes = append(tr.Notes, n.(string))
+			}
+			out[tr.Name] = tr
+		}
+	}
+	return out
+}
+
+func TestEveryToolHasExactlyOneGroup(t *testing.T) {
+	var placed []string
+	for _, g := range toolGroups {
+		placed = append(placed, g.Tools...)
+	}
+	if !sameSet(placed, allToolNames) || len(placed) != len(allToolNames) {
+		t.Errorf("the group table places %v, the registry has %v", placed, allToolNames)
+	}
+}
+
+func TestAToolWithNoGroupIsAnErrorNotAMissingRow(t *testing.T) {
+	tools, err := registryTools(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := buildToolGroups(tools); err != nil {
+		t.Fatalf("the real registry must build: %v", err)
+	}
+	if _, err := buildToolGroups(tools[1:]); err == nil || !strings.Contains(err.Error(), "not registered") {
+		t.Errorf("a group entry with no registered tool gave %v", err)
+	}
+	saved := toolGroups
+	defer func() { toolGroups = saved }()
+	toolGroups = toolGroups[1:] // the Diagnostics group is gone: its tools have no place
+	if _, err := buildToolGroups(tools); err == nil || !strings.Contains(err.Error(), "no group") {
+		t.Errorf("tools with no group gave %v", err)
+	}
+}
+
+func TestBadgesAndNotesComeFromTheRegistry(t *testing.T) {
+	rows := groupRows(t, newRig(t))
+	want := map[string]struct {
+		badge string
+		notes []string
+	}{
+		"system_status": {badgeRead, nil}, "uci_get": {badgeRead, nil}, "pkg_query": {badgeRead, nil},
+		"uci_apply": {badgeWrite, []string{"rollback"}}, "pkg_change": {badgeWrite, nil},
+		"wg_new_client": {badgeWrite, []string{"keys"}}, "service_control": {badgeWrite, nil},
+		"exec": {badgeShell, nil}, "ubus_call": {badgeShell, nil},
+	}
+	for name, w := range want {
+		got, ok := rows[name]
+		if !ok {
+			t.Errorf("%s is not on the page", name)
+			continue
+		}
+		if got.Badge != w.badge || !slices.Equal(got.Notes, w.notes) {
+			t.Errorf("%s: badge %q notes %v, want %q %v", name, got.Badge, got.Notes, w.badge, w.notes)
+		}
+		if got.Title != toolTitles[name] {
+			t.Errorf("%s: title %q, the registry says %q", name, got.Title, toolTitles[name])
+		}
+	}
+	if len(rows) != len(allToolNames) {
+		t.Errorf("%d rows for %d tools", len(rows), len(allToolNames))
+	}
+}
+
+func TestUngatedToolsCannotBeGranted(t *testing.T) {
+	r := newRig(t)
+	for _, tool := range []string{"ubus_list", "mfa_unlock"} {
+		r.fails("grant", map[string]any{"client": "c", "tool": tool}, "needs no grant")
+	}
+}
+
+// ---- grant
+
+func TestGrantWritesOneToolOnTheNamedScopeAndAudits(t *testing.T) {
+	r := newRig(t)
+	r.ok("grant", map[string]any{"client": "claude-code", "tool": "uci_apply", "scope": "wireless.*", "duration": "8h"})
+	if !r.allowed("claude-code", "uci_apply", "wireless.radio0.disabled") {
+		t.Error("the grant does not cover its scope")
+	}
+	if r.allowed("claude-code", "uci_apply", "network.lan.ipaddr") {
+		t.Error("the grant covers a scope it did not name")
+	}
+	if r.allowed("claude-code", "pkg_change", "wireless.radio0.disabled") {
+		t.Error("the grant covers another tool")
+	}
+	if !strings.Contains(r.audit(), `"tool":"grant"`) {
+		t.Errorf("no audit record: %s", r.audit())
+	}
+}
+
+func TestGrantDefaultsToEveryScopeForOneHourAndAllowsNeverOnlyHere(t *testing.T) {
+	r := newRig(t)
+	r.ok("grant", map[string]any{"client": "c1", "tool": "logread"})
+	if !r.allowed("c1", "logread", "anything") {
+		t.Error("an omitted scope should mean every scope")
+	}
+	r.ok("grant", map[string]any{"client": "c2", "tool": "logread", "duration": "never"})
+	r.fails("grant", map[string]any{"client": "c3", "tool": "logread", "duration": "forever"}, "not offered")
+	r.fails("grant", map[string]any{"client": "c3", "tool": "logread", "duration": "30d"}, "not offered")
+}
+
+func TestGrantRefusesWhatItCannotWriteAndChangesNothing(t *testing.T) {
+	r := newRig(t)
+	before, _ := os.ReadFile(r.env.configPath)
+	for in, want := range map[string]string{
+		`{"client":"bad name","tool":"logread"}`:        "bad client name",
+		`{"client":"c","tool":"no_such_tool"}`:          "no tool",
+		`{"client":"c","tool":"logread","scope":"a b"}`: "space or a quote",
+		`{"client":"c","tool":"logread","scope":"a'b"}`: "space or a quote",
+		`{"client":"c","tool":"logread","breadth":"x"}`: "bad arguments",
+	} {
+		var m map[string]any
+		_ = m
+		r.fails("grant", jsonAny(t, in), want)
+	}
+	after, _ := os.ReadFile(r.env.configPath)
+	if string(before) != string(after) {
+		t.Errorf("a refused grant changed the config:\n%s", after)
+	}
+}
+
+func TestGrantOfARootShellNeedsConfirmation(t *testing.T) {
+	r := newRig(t)
+	for _, c := range []map[string]any{
+		{"client": "c", "tool": "exec", "scope": "sh"},
+		{"client": "c", "tool": "exec", "scope": "*"},
+		{"client": "c", "tool": "ubus_call", "scope": "file.exec"},
+	} {
+		m := r.call("grant", c)
+		if m["code"] != "needs_confirm" {
+			t.Fatalf("%v gave %v, want needs_confirm", c, m)
+		}
+	}
+	if r.allowed("c", "exec", "sh") {
+		t.Error("an unconfirmed root-shell grant was written")
+	}
+	r.ok("grant", map[string]any{"client": "c", "tool": "exec", "scope": "sh", "confirm": true})
+	if !r.allowed("c", "exec", "sh") {
+		t.Error("the confirmed grant is missing")
+	}
+	// A harmless exec grant is not a shell and needs no confirmation.
+	r.ok("grant", map[string]any{"client": "c", "tool": "exec", "scope": "uptime"})
+}
+
+// ---- the page and the server agree
+
+var jsDeclare = regexp.MustCompile(`method:\s*'([a-z_]+)'`)
+
+func TestThePageCallsOnlyMethodsThePluginHasAndTheACLGrants(t *testing.T) {
+	b, err := os.ReadFile("files/www/luci-static/resources/view/openwrt-mcp/status.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if !strings.Contains(src, "object: 'openwrt-mcp'") {
+		t.Error("the page does not declare the ubus object")
+	}
+	if strings.Contains(src, "'require fs'") || strings.Contains(src, "fs.exec") {
+		t.Error("the page still shells out: the exec ACL line is meant to go")
+	}
+	var known []string
+	for _, m := range rpcdMethods {
+		known = append(known, m.name)
+	}
+	used := map[string]bool{}
+	for _, m := range jsDeclare.FindAllStringSubmatch(src, -1) {
+		used[m[1]] = true
+		if m[1] != "access" && !slices.Contains(known, m[1]) {
+			t.Errorf("the page calls %q, which the plugin does not have", m[1])
+		}
+	}
+	for _, m := range rpcdMethods {
+		if !used[m.name] && m.name != "requests" { // status carries the requests
+			t.Errorf("the plugin method %q is never called by the page", m.name)
+		}
+	}
+}
+
+func jsonAny(t *testing.T, s string) map[string]any {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(s), &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+// TestLuciPageSmoke runs the page against a stub of LuCI and a fake rpcd (testdata/luci). It needs
+// node, which CI has; without it the page is only covered by the checks above.
+func TestLuciPageSmoke(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node is not installed")
+	}
+	out, err := exec.Command(node, "testdata/luci/page_smoke.mjs", "files/www/luci-static/resources/view/openwrt-mcp/status.js").CombinedOutput()
+	if err != nil {
+		t.Fatalf("the page smoke test failed:\n%s", out)
+	}
+}
+
+func TestTheACLGrantsNoFileExec(t *testing.T) {
+	b, err := os.ReadFile("files/usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), `"file"`) || strings.Contains(string(b), `"exec"`) {
+		t.Error("the ACL grants file access: the page no longer shells out to openwrt-mcp")
+	}
+}

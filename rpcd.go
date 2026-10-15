@@ -58,8 +58,11 @@ var rpcdMethods = []rpcdMethod{
 	{"status", false, map[string]string{"audit": "Integer"}, rpcdStatus},
 	{"requests", false, map[string]string{}, rpcdRequests},
 	{"settings", false, map[string]string{}, rpcdSettings},
+	{"tools", false, map[string]string{}, rpcdTools},
 	{"decide", true, map[string]string{"id": "String", "decision": "String", "breadth": "String",
 		"duration": "String", "confirm": "Boolean"}, rpcdDecide},
+	{"grant", true, map[string]string{"client": "String", "tool": "String", "scope": "String",
+		"duration": "String", "confirm": "Boolean"}, rpcdGrant},
 	{"revoke", true, map[string]string{"client": "String", "index": "Integer", "all": "Boolean"}, rpcdRevoke},
 	{"grant_preset", true, map[string]string{"client": "String", "preset": "String", "duration": "String"}, rpcdGrantPreset},
 	{"set_settings", true, map[string]string{"request_wait": "Integer", "request_ttl": "Integer"}, rpcdSetSettings},
@@ -223,10 +226,15 @@ func rpcdSettings(env rpcdEnv, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	var mfa []string
+	if m, err := LoadMFA(mfaPath(env.statePath)); err == nil {
+		mfa = m.Clients()
+	}
 	return map[string]any{
 		"request_wait": int(cfg.RequestWait / time.Second), "request_ttl": int(cfg.RequestTTL / time.Second),
 		"wait_max": int(maxRequestWait / time.Second),
 		"ttl_min":  int(minRequestTTL / time.Second), "ttl_max": int(maxRequestTTL / time.Second),
+		"mfa_clients": mfa, // read only here: enrolment stays on the command line
 	}, nil
 }
 
@@ -413,6 +421,58 @@ func orZero(p *int) int {
 		return 0
 	}
 	return *p
+}
+
+// rpcdGrant is the Permissions tab's single-tool grant: the owner acting, not answering an agent,
+// so "never" is allowed here and not on a request card. A grant that amounts to a root shell
+// needs the same second confirmation as a request for one.
+func rpcdGrant(env rpcdEnv, raw json.RawMessage) (any, error) {
+	var in struct {
+		Client   string `json:"client"`
+		Tool     string `json:"tool"`
+		Scope    string `json:"scope"`
+		Duration string `json:"duration"`
+		Confirm  bool   `json:"confirm"`
+	}
+	if err := decodeArgs(raw, &in); err != nil {
+		return nil, err
+	}
+	if !reClientName.MatchString(in.Client) {
+		return nil, rpcdFail("bad client name %q", in.Client)
+	}
+	if !slices.Contains(allToolNames, in.Tool) {
+		return nil, rpcdFail("no tool %q", in.Tool)
+	}
+	if ungatedTools[in.Tool] {
+		return nil, rpcdFail("%s needs no grant", in.Tool)
+	}
+	if in.Scope == "" {
+		in.Scope = "*"
+	}
+	if strings.ContainsAny(in.Scope, " \t\r\n'") {
+		return nil, rpcdFail("the scope %q contains a space or a quote, so a grant cannot name it: use the command line", in.Scope)
+	}
+	if in.Duration == "" {
+		in.Duration = rpcdDefaultDuration
+	}
+	if in.Duration != "never" && !slices.Contains(rpcdDurations, in.Duration) {
+		return nil, rpcdFail("duration %q is not offered (%s, never)", in.Duration, strings.Join(rpcdDurations, ", "))
+	}
+	cfg, err := LoadConfig(env.configPath)
+	if err != nil {
+		return nil, err
+	}
+	blocks := []presetPolicy{{tools: []string{in.Tool}, scopes: []string{in.Scope}}}
+	if hit := shellEquivalentNames(blocks[0].tools, blocks[0].scopes); len(hit) > 0 && !in.Confirm {
+		return nil, rpcdError{Code: "needs_confirm", Msg: fmt.Sprintf(
+			"this grant lets %s run %s, and each of those can run any other program: it is a root shell whatever the other scopes say",
+			in.Client, describeShellEquivalent(hit))}
+	}
+	if err := writeGrants(env.configPath, in.Client, blocks, in.Duration); err != nil {
+		return nil, rpcdFail("cannot write the grant: %v", err)
+	}
+	rpcdAudit(cfg, env, "grant", in.Client, in.Scope, fmt.Sprintf("%s on %s for %s", in.Tool, in.Scope, in.Duration))
+	return map[string]any{"blocks": 1}, nil
 }
 
 func rpcdGrantPreset(env rpcdEnv, raw json.RawMessage) (any, error) {

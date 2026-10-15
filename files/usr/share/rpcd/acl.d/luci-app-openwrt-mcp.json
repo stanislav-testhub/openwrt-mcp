@@ -2,11 +2,8 @@
 	"luci-app-openwrt-mcp": {
 		"description": "See openwrt-mcp status, requests and settings",
 		"read": {
-			"file": {
-				"/usr/bin/openwrt-mcp status --json --audit 40": [ "exec" ]
-			},
 			"ubus": {
-				"openwrt-mcp": [ "status", "requests", "settings" ]
+				"openwrt-mcp": [ "status", "requests", "settings", "tools" ]
 			}
 		}
 	},
@@ -14,7 +11,7 @@
 		"description": "Approve requests, grant and revoke access, change openwrt-mcp settings",
 		"write": {
 			"ubus": {
-				"openwrt-mcp": [ "decide", "revoke", "grant_preset", "set_settings" ]
+				"openwrt-mcp": [ "decide", "grant", "revoke", "grant_preset", "set_settings" ]
 			}
 		}
 	}
