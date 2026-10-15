@@ -926,6 +926,93 @@ server's most-requested packages, and from issue activity in `openwrt/packages` 
 
 ---
 
+## Milestone 10: Small routers (v2.0 prep)
+
+openwrt-mcp was verified on a 1 GB arm64 router. Most OpenWrt routers have 128 MB of RAM and 16 MB of NOR flash. Measured
+at 1.5.0: the mipsle binary is 11.9 MB (2.8 MB compressed), the resident daemon uses 14.7 MB and each SSH session's bridge
+3 MB of its own memory, and the audit log may take 32 MB of flash. The MCP SDK sets most of the binary (8.8 MB of 11.9);
+unused tools cost flash, not RAM. So this milestone gives small routers a **runtime profile**, one binary for all, rather
+than build-time editions, and puts a budget on every resource, like the catalogue budget of 3.5. It ships after
+Milestone 9, so 10.1 measures the post-M9 binary. Design note: [`docs/resource-footprint.md`](docs/resource-footprint.md).
+
+It is numbered 10 so that existing references keep their meaning; it ships before Milestone 6.
+
+### 10.1 Footprint budget
+
+- **Problem.** Nothing measures binary size, RAM or start-up cost, so growth is never a decision.
+- **Ships.** Tests that fail above the measured stripped mipsle-softfloat size plus slack and above a start-up heap
+  budget (`GODEBUG=inittrace=1`). The real-target CI job records VmRSS and VmHWM of the idle daemon, after the golden
+  calls and of one bridge, and logs result bytes per golden call (as in 3.11). `system_status` shows daemon RSS and
+  free overlay.
+- **Done when.** Raising a limit needs a reason in the commit, and the README table is regenerated from CI output.
+
+### 10.2 Lazy start-up
+
+- **Problem.** Every bridge and `call` runs 105 package inits and allocates 1.3 MB, 1.08 MB of it ours: 48 package-level
+  regexps that the bridge never uses.
+- **Ships.** Regexps and other start-up work move behind `sync.OnceValue`; the bridge and `call` paths build no
+  registry or schema; duplicate patterns are merged.
+- **Done when.** Our start-up heap is under 100 KB, bridge memory drops by about 1 MB on the real target, and the suite
+  is unchanged.
+
+### 10.3 Memory limit
+
+- **Ships.** `option memory_limit '<MiB>'` sets Go's soft memory limit in the daemon. Unset means today's behaviour.
+- **Done when.** The heaviest bounded calls stay under a 16 MiB high-water mark with the limit set.
+
+### 10.4 Optional HTTP listener
+
+- **Ships.** `option listen ''` turns the loopback HTTP listener off. `status`, `doctor`, `connect` and the LuCI page
+  show it.
+- **Done when.** A config test covers the empty value, and the e2e suite passes over the socket alone.
+
+### 10.5 On-demand daemon
+
+- **Problem.** On a 128 MB router, 15 MB stays resident while no agent is connected, which is most of the time.
+- **Ships.** `option idle_exit '<minutes>'` (`0`, resident, stays the default). The daemon stops through procd only
+  with no session, no armed rollback, no held request (8.2), HTTP off, and idle time passed. A bridge or `call` that
+  finds no socket starts it and waits with the existing dial retry. Boot still starts it once, so an armed rollback
+  survives a reboot.
+- **Done when.** A test shows that each keep-alive condition alone keeps the daemon up, a mutation run covers the list,
+  and idle RAM is zero and cold-start latency on MIPS is measured on a real target.
+
+### 10.6 The `small` profile and an install fit check
+
+- **Problem.** `audit_max_mb` defaults to 16 with one rotated copy, sized for eMMC: up to 32 MB on a 16 MB flash. The
+  installer never checks that the router has room.
+- **Ships.**
+  - When `audit_max_mb` is unset, its default is clamped to 1/32 of the overlay (a fix for everyone).
+  - `option profile 'small'`: `idle_exit 5`, `listen ''`, `memory_limit 16`, `audit_max_mb 1`, `history_keep 3`,
+    `toolsets 'diag config'`. Explicit options win.
+  - The installers read RAM and free overlay, suggest `small` under 256 MB, and refuse when the binary does not fit.
+    `doctor` reports the fit.
+- **Done when.** The install tests cover fit and no-fit, and the e2e suite runs under `small` on a class-B router or with
+  emulated limits.
+
+### 10.7 Operator toolset cap
+
+- **Ships.** `option toolsets` caps the catalogue for every client, intersected with the client's `--toolset`. Core
+  (`system_status`, `mfa_unlock`) is always listed. It is static configuration, so 5.4 holds: the catalogue is fixed
+  per session and never depends on grants.
+- **Done when.** The toolset partition test passes, and the catalogue size under `small` is measured.
+
+### 10.8 Compaction without loss
+
+- **Problem.** About 250–300 lines repeat existing helpers. The worst is the armed-write sequence, written five times
+  (`uci_apply`, `restore`, `pkg_config_resolve`, both WireGuard writers), which is principle 4's risk.
+- **Ships.** Refactors with no change in behaviour: one armed-write path, `runDiag` on `runStatus`, one wireless and
+  neighbour query, one string cutter, standard-library replacements. The small fixes found on the way (one secret
+  walker for audit and output, fsync on all atomic writes, UTF-8-safe cuts) are separate commits with a failing test first.
+- **Done when.** Golden calls, contract and mutation suites are unchanged, and each item reports its line and size change.
+
+### 10.9 Structured output stays budget-neutral
+
+- **Ships.** A constraint on 5.5: `outputSchema` counts in the catalogue budget, the compact text stays in `content`,
+  and `structuredContent` goes only to clients that negotiate it.
+- **Done when.** Result bytes per golden call do not grow for text-only clients.
+
+---
+
 ## Milestone 6: Operate (v2.0)
 
 Starts with a design note in `docs/`, because approval interacts with policies and the second factor.
@@ -1111,11 +1198,18 @@ These are deliberately not planned, with the reason for each.
 | OAuth / OIDC, internet-facing HTTP | The daemon is loopback-only behind SSH or a tunnel, by design: it is root on a network device. Remote access goes over the operator's own VPN (WireGuard, Tailscale). Revisit when there are repeated requests for web or phone clients, which need a public HTTPS endpoint. |
 | Flashing firmware | `sysupgrade` validates and backs up, but never flashes. Flashing is the one action with no rollback. 6.4 plans the upgrade; a human runs it. |
 | Localised tool output | An operator tool with technical output, and models read English best. Documentation translations are planned (5.11). |
+| Build-time editions per tool | Unused code is never paged in, so removing every optional tool saves under 1 MB of compressed flash and almost no RAM, while each edition multiplies CI, releases and support. Runtime profiles do the job (10.6, 10.7). |
+| UPX or self-decompressing binaries | Each process decompresses into its own memory, so the daemon and bridges stop sharing pages and RAM use goes up. Overlay filesystems already compress. |
+| Replacing the MCP SDK with an in-house layer | Would save 4–5 MB raw (measured floor 8.8 MB vs about 4 MB), but loses spec tracking (elicitation, progress, tasks, structured output) and principle 9. Revisit if class-B users report it does not fit after Milestone 10. |
+| A separate tiny bridge binary | Adds flash. Its gain, about 2 MB per session, is mostly what 10.2 gets. |
+| Removing explicit `false` hints and `additionalProperties` | 1–2 KB of the catalogue, through an SDK compatibility switch that may go away. Strict clients rely on `additionalProperties`. |
 
 ## Open questions
 
 - 2.4: snapshot size on small-flash devices. UCI is small, but package config snapshots may not be. Should
   history move to RAM with a size cap on low-flash boards?
+  *Answered by 10.6: no. History stays on flash, so it survives a reboot, capped by `history_keep`; the `small`
+  profile sets 3, and the audit log, the larger risk, gets an overlay-sized default.*
 - 3.6: should `wg_new_client` also offer a one-time LuCI download link, or are a file on the router and the
   operator's own terminal enough?
 - 5.1: how far should support for derived firmware go? Vendor firmware can patch `uci`, `fw4` or rpcd. Should
