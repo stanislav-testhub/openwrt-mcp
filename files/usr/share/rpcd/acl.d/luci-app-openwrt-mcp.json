@@ -1,9 +1,20 @@
 {
 	"luci-app-openwrt-mcp": {
-		"description": "Read-only status of the openwrt-mcp daemon",
+		"description": "See openwrt-mcp status, requests and settings",
 		"read": {
 			"file": {
 				"/usr/bin/openwrt-mcp status --json --audit 40": [ "exec" ]
+			},
+			"ubus": {
+				"openwrt-mcp": [ "status", "requests", "settings" ]
+			}
+		}
+	},
+	"luci-app-openwrt-mcp-write": {
+		"description": "Approve requests, grant and revoke access, change openwrt-mcp settings",
+		"write": {
+			"ubus": {
+				"openwrt-mcp": [ "decide", "revoke", "grant_preset", "set_settings" ]
 			}
 		}
 	}

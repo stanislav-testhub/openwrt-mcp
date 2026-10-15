@@ -56,6 +56,9 @@ type clientReport struct {
 }
 
 type policyReport struct {
+	// Index is the block's position among this client's grants in file order: what the LuCI
+	// revoke names.
+	Index     int      `json:"index"`
 	Client    string   `json:"client"`
 	Tools     []string `json:"tools"`
 	Scopes    []string `json:"scopes"`
@@ -81,9 +84,22 @@ type auditRow struct {
 // all lists expired grants in the text output; without it they are one count line. JSON always
 // carries every grant, with its expired flag.
 func runStatus(configPath, statePath string, auditLines int, asJSON, all bool) error {
-	cfg, err := LoadConfig(configPath)
+	rep, err := buildStatus(configPath, statePath, auditLines)
 	if err != nil {
 		return err
+	}
+	if !asJSON {
+		return writeStatusText(os.Stdout, rep, all)
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(rep)
+}
+
+func buildStatus(configPath, statePath string, auditLines int) (statusReport, error) {
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		return statusReport{}, err
 	}
 
 	rep := statusReport{
@@ -99,6 +115,7 @@ func runStatus(configPath, statePath string, auditLines int, asJSON, all bool) e
 	now := time.Now()
 	for _, p := range cfg.Policies {
 		pr := policyReport{
+			Index:  perClient[p.Client],
 			Client: p.Client, Tools: p.Tools, Scopes: p.Scopes,
 			MaxPerMin: p.MaxPerMin, Enabled: p.Enabled, ShellEquivalent: p.shellEquivalent(),
 		}
@@ -136,13 +153,7 @@ func runStatus(configPath, statePath string, auditLines int, asJSON, all bool) e
 	rep.Counts["clients"] = len(rep.Clients)
 	rep.Counts["policies"] = len(rep.Policies)
 	rep.Counts["audit_shown"] = len(rep.Audit)
-
-	if !asJSON {
-		return writeStatusText(os.Stdout, rep, all)
-	}
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	return enc.Encode(rep)
+	return rep, nil
 }
 
 // daemonRunning checks that *this daemon* is serving on the configured address, not merely

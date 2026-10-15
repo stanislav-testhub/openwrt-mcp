@@ -13,4 +13,5 @@
 /etc/openwrt-mcp
 /usr/share/luci/menu.d/luci-app-openwrt-mcp.json
 /usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json
+/usr/libexec/rpcd/openwrt-mcp
 /www/luci-static/resources/view/openwrt-mcp/status.js

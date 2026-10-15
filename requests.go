@@ -75,6 +75,11 @@ type RequestStore struct {
 	byID  map[string]*Request
 	made  map[string][]time.Time // creation times per client, for the rate limit
 	byKey map[string]string      // client|tool|scope -> id of the open request
+
+	// The mirror as this process last wrote or read it, so adoptLocked re-reads only a file
+	// another process (the rpcd plugin) has changed since.
+	seenMod  time.Time
+	seenSize int64
 }
 
 func NewRequestStore(path string, sink func(AuditEvent)) *RequestStore {
@@ -202,6 +207,7 @@ func (rs *RequestStore) listLocked() []Request {
 // sweepLocked expires open requests past their time and forgets old closed ones. Every method
 // calls it first, so there is no timer and no state that is wrong between calls.
 func (rs *RequestStore) sweepLocked(now time.Time) {
+	rs.adoptLocked(false)
 	changed := false
 	for id, r := range rs.byID {
 		switch {
@@ -230,26 +236,123 @@ func (rs *RequestStore) emit(kind string, r *Request, summary string) {
 	}
 }
 
-// saveLocked mirrors the requests for the rpcd plugin: write-and-rename, 0600. A failure is
+// saveLocked mirrors the requests for the rpcd plugin: write-and-rename, 0600, under the mirror
+// lock and after taking in any decision the plugin wrote, so a save never erases one. A failure is
 // logged and otherwise ignored, because a mirror that cannot be written must not stop a call.
 func (rs *RequestStore) saveLocked() {
 	if rs.path == "" {
 		return
 	}
-	b, err := json.MarshalIndent(struct {
-		Requests []Request `json:"requests"`
-	}{rs.listLocked()}, "", "\t")
+	unlock, err := lockMirror(rs.path)
 	if err == nil {
-		err = os.MkdirAll(filepath.Dir(rs.path), 0o700)
-	}
-	if err == nil {
-		tmp := rs.path + ".tmp"
-		if err = os.WriteFile(tmp, b, privateMode); err == nil {
-			err = os.Rename(tmp, rs.path)
-		}
+		defer unlock()
+		rs.adoptLocked(true)
+		err = writeMirror(rs.path, rs.listLocked())
 	}
 	if err != nil {
 		log.Printf("openwrt-mcp: cannot write %s: %v", rs.path, err)
+		return
+	}
+	rs.noteMirrorLocked()
+}
+
+func (rs *RequestStore) noteMirrorLocked() {
+	if fi, err := os.Stat(rs.path); err == nil {
+		rs.seenMod, rs.seenSize = fi.ModTime(), fi.Size()
+	}
+}
+
+// adoptLocked takes in the answers the rpcd plugin wrote to the mirror: a request still open
+// here that the file shows settled is closed the same way. force skips the change check, for a
+// caller that holds the lock and is about to overwrite the file.
+func (rs *RequestStore) adoptLocked(force bool) {
+	if rs.path == "" {
+		return
+	}
+	fi, err := os.Stat(rs.path)
+	if err != nil || (!force && fi.ModTime().Equal(rs.seenMod) && fi.Size() == rs.seenSize) {
+		return
+	}
+	disk, err := readMirror(rs.path)
+	if err != nil {
+		return
+	}
+	for _, d := range disk {
+		if r, ok := rs.byID[d.ID]; ok && r.State == reqOpen && d.State != reqOpen {
+			rs.closeLocked(r, d.State, d.Decider, d.Decided)
+		}
+	}
+	rs.seenMod, rs.seenSize = fi.ModTime(), fi.Size()
+}
+
+// readMirror returns the requests in the mirror file; a missing file holds none.
+func readMirror(path string) ([]Request, error) {
+	b, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		Requests []Request `json:"requests"`
+	}
+	if err := json.Unmarshal(b, &doc); err != nil {
+		return nil, err
+	}
+	return doc.Requests, nil
+}
+
+func writeMirror(path string, reqs []Request) error {
+	if reqs == nil {
+		reqs = []Request{}
+	}
+	b, err := json.MarshalIndent(struct {
+		Requests []Request `json:"requests"`
+	}{reqs}, "", "\t")
+	if err == nil {
+		err = os.MkdirAll(filepath.Dir(path), 0o700)
+	}
+	if err == nil {
+		tmp := path + ".tmp"
+		if err = os.WriteFile(tmp, b, privateMode); err == nil {
+			err = os.Rename(tmp, path)
+		}
+	}
+	return err
+}
+
+// The mirror has two writers in two processes, the daemon and the rpcd plugin, so each change to
+// it is a read-modify-write under a lock file. O_EXCL makes taking it atomic; a lock older than
+// mirrorLockStale belongs to a process that died and is broken.
+const (
+	mirrorLockStale = 10 * time.Second
+	mirrorLockWait  = 3 * time.Second
+)
+
+func lockMirror(path string) (unlock func(), err error) {
+	lock := path + ".lock"
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return nil, err
+	}
+	deadline := time.Now().Add(mirrorLockWait)
+	for {
+		f, err := os.OpenFile(lock, os.O_WRONLY|os.O_CREATE|os.O_EXCL, privateMode)
+		if err == nil {
+			f.Close()
+			return func() { os.Remove(lock) }, nil
+		}
+		if !os.IsExist(err) {
+			return nil, err
+		}
+		if fi, serr := os.Stat(lock); serr == nil && time.Since(fi.ModTime()) > mirrorLockStale {
+			os.Remove(lock)
+			continue
+		}
+		if time.Now().After(deadline) {
+			return nil, fmt.Errorf("the request mirror is locked by another process")
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 

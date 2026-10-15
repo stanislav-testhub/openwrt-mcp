@@ -313,6 +313,11 @@ func main() {
 		must(err)
 		must(runWGShow(os.Stdout, cfg, name, keep))
 
+	case "rpcd":
+		// What /usr/libexec/rpcd/openwrt-mcp runs: the LuCI approval methods (rpcd.go).
+		os.Exit(runRpcd(rpcdEnv{configPath: *configPath, statePath: *statePath, requestsPath: sysPath(requestsPath)},
+			args[1:], os.Stdin, os.Stdout))
+
 	case "version":
 		fmt.Printf("openwrt-mcp %s\n", version)
 
@@ -416,6 +421,7 @@ func usage() {
   status   [--json] [--audit N] [--all]        daemon state, pairings, grants, recent audit
   mfa      enrol <client> [device] | status   optional TOTP second factor for gated tools
   wg-show  <client name> [--keep]             print a WireGuard client config left by wg_new_client, then delete it
+  rpcd     list | call <method>               the LuCI approval methods, run by rpcd (not for a terminal)
   diag     [--audit N] [--detail]              version, board, policy shape and recent audit, with addresses and names masked
   connect  --client <c> --host <router> ...    (on your PC) make the key and set up an MCP client
   connect doctor --host <router> ...           (on your PC) check key, forced command, daemon and tools

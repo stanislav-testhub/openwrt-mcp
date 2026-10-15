@@ -100,7 +100,7 @@ case "${1:-}" in
 		ssh_r "PURGE=$([ "${2:-}" = --purge ] && echo 1 || echo 0) sh -s" <<'EOF'
 [ -x /etc/init.d/openwrt-mcp ] && { /etc/init.d/openwrt-mcp stop; /etc/init.d/openwrt-mcp disable; }
 rm -f /usr/bin/openwrt-mcp /etc/init.d/openwrt-mcp /lib/upgrade/keep.d/openwrt-mcp \
-	/usr/share/luci/menu.d/luci-app-openwrt-mcp.json /usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json
+	/usr/share/luci/menu.d/luci-app-openwrt-mcp.json /usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json /usr/libexec/rpcd/openwrt-mcp
 rm -rf /www/luci-static/resources/view/openwrt-mcp /var/run/openwrt-mcp
 rm -f /tmp/luci-indexcache*; /etc/init.d/rpcd reload
 sed -i '/openwrt-mcp stdio --client/d' /etc/dropbear/authorized_keys 2>/dev/null || true

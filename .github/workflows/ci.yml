@@ -16,7 +16,7 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test -race -count=1 ./...
-      - run: sh -n install.sh && sh -n install-router.sh && sh -n files/etc/init.d/openwrt-mcp
+      - run: sh -n install.sh && sh -n install-router.sh && sh -n files/etc/init.d/openwrt-mcp && sh -n files/usr/libexec/rpcd/openwrt-mcp
 
       - name: router-side installer downloads and verifies
         run: bash install-router_test.sh
@@ -63,7 +63,7 @@ jobs:
           # keep.d must name everything install.sh puts outside /etc/config.
           for f in /usr/bin/openwrt-mcp /etc/init.d/openwrt-mcp /etc/openwrt-mcp \
                    /usr/share/luci/menu.d/luci-app-openwrt-mcp.json \
-                   /usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json \
+                   /usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json /usr/libexec/rpcd/openwrt-mcp \
                    /www/luci-static/resources/view/openwrt-mcp/status.js; do
             grep -qx "$f" files/lib/upgrade/keep.d/openwrt-mcp || { echo "keep.d misses $f"; exit 1; }
           done
