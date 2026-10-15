@@ -152,7 +152,13 @@ type Config struct {
 	RequestWait time.Duration
 
 	// Optional channels (channels.go), each off until the owner switches it on.
-	Pairing bool
+	Pairing  bool
+	PushHook bool
+
+	// Approve in chat (chatapprove.go): on for the clients in ChatClients, or for every client
+	// that negotiates elicitation when the list is empty.
+	ChatApprove bool
+	ChatClients []string
 }
 
 const (
@@ -227,6 +233,9 @@ func LoadConfig(configPath string) (*Config, error) {
 				c.RequestWait = min(time.Duration(v)*time.Second, maxRequestWait)
 			}
 			c.Pairing = s.Options["pairing"] == "1"
+			c.PushHook = s.Options["push_hook"] == "1"
+			c.ChatApprove = s.Options["chat_approve"] == "1"
+			c.ChatClients = s.Lists["chat_approve_client"]
 			// Only a literal 0 turns redaction off: a typo must not.
 			if v, ok := s.Options["redact_output"]; ok {
 				c.RedactOutput = v != "0"

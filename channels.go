@@ -22,6 +22,16 @@ type channel struct {
 }
 
 var channels = []channel{
+	{Name: "chat", Title: "Approve in chat", option: "chat_approve", on: func(c *Config) bool { return c.ChatApprove },
+		Harm: "A held call is also shown to the client as a question you answer in its own window. The client relays " +
+			"your answer: a client, an extension or an agent that answers its own prompts would grant itself. " +
+			"Use it only with clients you trust to show you the prompt. It grants only the exact scope asked for, " +
+			"for at most 8 hours, and never a tool that is a root shell. Limit it to named clients with " +
+			"'list chat_approve_client'."},
+	{Name: "push", Title: "Push hook", option: "push_hook", on: func(c *Config) bool { return c.PushHook },
+		Harm: "Each new request (client, tool, scope and redacted arguments) is sent to the scripts in " +
+			"/etc/openwrt-mcp/hooks.d, which can forward it to a third-party service such as Telegram or ntfy. " +
+			"Those scripts run as root: a broken or hostile one is a root process. Approving stays in LuCI."},
 	{Name: "pair", Title: "Pair from LuCI", option: "pairing", on: func(c *Config) bool { return c.Pairing },
 		Harm: "Anyone who can log in to LuCI with write access can add a key that reaches the router over SSH. " +
 			"The key is limited to the MCP bridge, but its grants are whatever you give it."},

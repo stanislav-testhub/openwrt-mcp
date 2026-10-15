@@ -39,6 +39,8 @@ type Server struct {
 	servers map[string]*mcp.Server // per authenticated client name
 	pending map[string]*pendingApply
 
+	pushMu sync.Mutex // serialises push-hook batches (pushhook.go)
+
 	slots chan struct{} // one entry per running tool call, capacity inflightLimit (limits.go)
 }
 
@@ -103,6 +105,7 @@ func NewServer(configPath, statePath string) (*Server, error) {
 		slots:      make(chan struct{}, inflightLimit),
 	}
 	s.requests = NewRequestStore(sysPath(requestsPath), s.audit.Record)
+	s.requests.onNew = func(r Request) { go s.pushRequest(r) }
 	if !cfg.RedactOutput {
 		s.noteRedaction(false, "option redact_output '0' at startup")
 	}

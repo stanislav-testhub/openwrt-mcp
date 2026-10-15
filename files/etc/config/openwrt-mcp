@@ -26,6 +26,14 @@ config server
 	# until you turn it on, and each switch is audited. 'pairing' adds a Clients tab where a
 	# public key can be bound to the MCP bridge from the browser.
 	# option pairing '0'
+	# 'push_hook' sends each new approval request as the ubus event openwrt-mcp.request and to every
+	# executable in /etc/openwrt-mcp/hooks.d/ (JSON on stdin), e.g. to ping your phone.
+	# option push_hook '0'
+	# 'chat_approve' also asks the calling MCP client to approve a held call in its own prompt (exact
+	# scope, at most 8h, never a root-shell tool). Name the clients that may use it, or leave the list
+	# empty for every client that supports elicitation.
+	# option chat_approve '0'
+	# list chat_approve_client 'claude-code'
 
 # No policies by default: every gated tool is denied until you grant it.
 # ubus_list and mfa_unlock are the exceptions -- introspection and the second factor itself.

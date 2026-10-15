@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 // A refused call becomes a request an operator can approve (docs/luci-approvals.md, 8.2). The
@@ -72,6 +74,7 @@ type RequestStore struct {
 	mu    sync.Mutex
 	path  string
 	sink  func(AuditEvent)
+	onNew func(Request) // called for each newly opened request, with the lock held: it must not block
 	byID  map[string]*Request
 	made  map[string][]time.Time // creation times per client, for the rate limit
 	byKey map[string]string      // client|tool|scope -> id of the open request
@@ -133,6 +136,9 @@ func (rs *RequestStore) Open(now time.Time, ttl time.Duration, client, tool, sco
 	rs.byKey[requestKey(client, tool, scope)] = r.ID
 	rs.emit("request", r, fmt.Sprintf("open %s: %s on %s", r.ID, tool, scope))
 	rs.saveLocked()
+	if rs.onNew != nil {
+		rs.onNew(*r)
+	}
 	return *r, true
 }
 
@@ -388,15 +394,16 @@ type approval struct {
 	p       *Policy
 	waited  time.Duration
 	reqID   string
-	release func() // the in-flight slot taken while holding; nil when none was
-	denial  string // set when the call must be refused
+	release func()              // the in-flight slot taken while holding; nil when none was
+	input   *mcp.CallToolResult // set when the client is asked to approve in chat: returned as is
+	denial  string              // set when the call must be refused
 	code    string
 }
 
 // awaitApproval handles a call the policy refused: it opens (or reuses) a request, and with
 // request_wait set holds the call until a grant covers it, the request is denied, or the wait
 // ends. A hold takes an in-flight slot, so held calls cannot be used to pile up work.
-func (s *Server) awaitApproval(ctx context.Context, client, tool string, scopes []string, reason, missing string, args any) approval {
+func (s *Server) awaitApproval(ctx context.Context, sess *mcp.ServerSession, answers mcp.InputResponseMap, client, tool string, scopes []string, reason, missing string, args any) approval {
 	deny := func(text string) approval { return approval{denial: text, code: codePolicyDenied} }
 	if missing == "" { // a rate limit: more access is not what the call lacks
 		return deny(reason)
@@ -406,6 +413,20 @@ func (s *Server) awaitApproval(ctx context.Context, client, tool string, scopes 
 	req, ok := s.requests.Open(time.Now(), ttl, client, tool, missing, args)
 	if !ok {
 		return deny(reason)
+	}
+	if blocks := chatBlocks(cfg, sess, req); blocks != nil {
+		ans, answered := answers[chatInputKey].(*mcp.ElicitResult)
+		if !answered {
+			return approval{input: chatPrompt(req)}
+		}
+		s.applyChatAnswer(req, blocks, ans)
+		now := time.Now()
+		if got, ok := s.requests.Get(req.ID, now); ok && got.State == reqDenied {
+			return deny("denied by the operator: request " + req.ID + " was refused")
+		}
+		if p, _, _ := s.cfg().authorise(client, tool, scopes, now); p != nil {
+			return approval{p: p, reqID: req.ID}
+		}
 	}
 	denial := requestHint(reason, req, time.Now())
 	if cfg.RequestWait <= 0 {

@@ -288,7 +288,7 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 	schema := inputSchema[In]()
 	srv.AddReceivingMiddleware(omitNulls(name, schema))
 	mcp.AddTool(srv, &mcp.Tool{Name: name, Title: a.Title, Description: desc, Annotations: &a, InputSchema: schema},
-		func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
+		func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 			started := time.Now()
 			scopes := scopeOf(in)
 			ev := AuditEvent{Time: nowISO(), Client: client, Tool: name, Scope: strings.Join(scopes, " ")}
@@ -317,7 +317,10 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				now := time.Now()
 				p, reason, missing := s.cfg().authorise(client, name, scopes, now)
 				if p == nil {
-					a := s.awaitApproval(ctx, client, name, scopes, reason, missing, ev.Args)
+					a := s.awaitApproval(ctx, req.Session, req.Params.InputResponses, client, name, scopes, reason, missing, ev.Args)
+					if a.input != nil {
+						return a.input, nil, nil // the question, not an outcome: the retry carries the answer
+					}
 					if a.p == nil {
 						return finish(errResultCoded(a.denial, codeLine(a.code)), OutcomeDenied, "", a.denial)
 					}
