@@ -94,6 +94,9 @@ var CSS = [
 	'.mcp-choices{grid-template-columns:1fr}',
 	'.mcp-card .mcp-actions button,.mcp-card .mcp-actions .mcp-sep{flex:1 1 100%;margin-left:0}',
 	'.mcp-row button,.mcp-row select,.mcp-row input[type=text]{min-height:40px}',
+	'.mcp-what{flex-direction:column;align-items:flex-start}',
+	'.mcp-f{flex-wrap:wrap;width:100%}',
+	'.mcp-f select,.mcp-f input[type=text]{flex:1 1 140px;min-width:0}',
 	'.mcp-table .mcp-status,.mcp-table .mcp-allowed,.mcp-table .mcp-actions-col{width:auto;text-align:left}',
 	'.mcp .mcp-table,.mcp .mcp-table tbody{display:block;width:100%;border:0}',
 	'.mcp .mcp-table tr.table-titles{display:none}',
@@ -1238,9 +1241,9 @@ return view.extend({
 			});
 			return E('tr', { 'class': 'tr', 'data-edit-row': tool }, [
 				E('td', { 'class': 'td', 'colspan': 4 }, [ E('div', { 'class': 'mcp-row' }, [
-					E('label', { 'for': 'mcp-edit-scope' }, _('Limited to')), scope, custom,
-					E('label', { 'for': 'mcp-edit-dur' }, _('For')), dur,
-					save, btn('', 'adv-cancel', _('Cancel'), function() { ui_.editing = null; drawPermissions(); })
+					E('div', { 'class': 'mcp-f mcp-f-grow' }, [ E('label', { 'for': 'mcp-edit-scope' }, _('Limited to')), scope, custom ]),
+					E('div', { 'class': 'mcp-f' }, [ E('label', { 'for': 'mcp-edit-dur' }, _('For')), dur ]),
+					E('div', { 'class': 'mcp-f' }, [ save, btn('', 'adv-cancel', _('Cancel'), function() { ui_.editing = null; drawPermissions(); }) ])
 				]), help ])
 			]);
 		}
@@ -1311,7 +1314,12 @@ return view.extend({
 			var nodes = [];
 			if (data.writable === false)
 				nodes.push(notice('notice', _('You can see this page but not change anything. Ask the router’s administrator if you need to change permissions.')));
-			nodes.push(row(_('Assistant'), picker, [ E('code', {}, client), ' · ', _('last seen '), seen ? clock('ago', seen) : _('never') ], 'openwrt-mcp-client'));
+			// One assistant needs no picker, and its id is only useful where it has to be typed.
+			var lastSeenLine = [ _('last seen '), seen ? clock('ago', seen) : _('never') ];
+			if (clients.length > 1)
+				nodes.push(row(_('Assistant'), picker, [ E('code', {}, client), ' · ' ].concat(lastSeenLine), 'openwrt-mcp-client'));
+			else
+				nodes.push(row(_('Assistant'), E('strong', {}, name), lastSeenLine, 'openwrt-mcp-client'));
 
 			var cur = currentChoice(client);
 			if (ui_.draft && ui_.draft.client !== client)
@@ -1496,7 +1504,7 @@ return view.extend({
 			text.addEventListener('input', function() { f.text = text.value; ui_.shown = ACTIVITY_PAGE; fill(); });
 			panes.activity.replaceChildren(section(_('Activity'), _('Everything assistants did or asked for, newest first. Passwords and keys are never written here.'), [
 				E('div', { 'class': 'mcp-filters' }, [
-					E('div', { 'class': 'mcp-f' }, [ E('label', { 'for': 'mcp-f-client' }, _('Assistant')), selectOf(clientOpts, f.client, function(v) { f.client = v; ui_.shown = ACTIVITY_PAGE; fill(); }, { 'id': 'mcp-f-client' }) ]),
+					clientOpts.length > 2 ? E('div', { 'class': 'mcp-f' }, [ E('label', { 'for': 'mcp-f-client' }, _('Assistant')), selectOf(clientOpts, f.client, function(v) { f.client = v; ui_.shown = ACTIVITY_PAGE; fill(); }, { 'id': 'mcp-f-client' }) ]) : '',
 					E('div', { 'class': 'mcp-f' }, [ E('label', { 'for': 'mcp-f-kind' }, _('Kind')), selectOf(kindOpts, f.kind, function(v) { f.kind = v; ui_.shown = ACTIVITY_PAGE; fill(); }, { 'id': 'mcp-f-kind' }) ]),
 					E('div', { 'class': 'mcp-f mcp-f-grow' }, [ E('label', { 'for': 'mcp-search' }, _('Search')), text ])
 				]), body ]));

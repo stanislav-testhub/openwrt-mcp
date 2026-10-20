@@ -701,6 +701,23 @@ fresh();
 	assert.match(text(pane(root, 'permissions')), /What may Laptop do\?/);
 }
 
+// 26b. One assistant needs no picker or filter; a second brings both back
+fresh();
+{
+	let { root } = await load();
+	assert.equal(find(pane(root, 'permissions'), x => x.attrs.id === 'openwrt-mcp-client' && x.tag === 'select').length, 0, 'no picker for one assistant');
+	assert.equal(find(pane(root, 'activity'), x => x.attrs.id === 'mcp-f-client').length, 0, 'no assistant filter for one assistant');
+	assert.match(text(pane(root, 'permissions')), /Claude Code/);
+}
+fresh();
+{
+	state.st.clients.push({ name: 'laptop', policies: 0 });
+	state.st.audit.push({ time: iso(-20e3), client: 'laptop', tool: 'logread', outcome: 'OK' });
+	const { root } = await load();
+	assert.equal(find(pane(root, 'permissions'), x => x.attrs.id === 'openwrt-mcp-client' && x.tag === 'select').length, 1);
+	assert.equal(find(pane(root, 'activity'), x => x.attrs.id === 'mcp-f-client').length, 1);
+}
+
 // 26a. The service's own records read as sentences, not as "asked to use 201crequest201d"
 fresh();
 {
