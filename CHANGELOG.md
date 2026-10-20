@@ -9,6 +9,7 @@ Fixed
 - LuCI Settings no longer jumps the scroll position when a switch is ticked.
 - LuCI Activity: the service's own records (a connection opening, a request held, answered or expired) read as sentences instead of `asked to use "request"`, each row's Show raw button sits at the right edge of its cell, and each filter keeps its label with its field, with Search filling the rest of the row.
 - LuCI: with one assistant there is no Assistant picker on Permissions and no Assistant filter on Activity, and its id is shown only when there are several. On a phone, Show raw sits on its own line in every Activity row, and the custom limit editor keeps each label with its field.
+- LuCI: on a phone the tables' header row is hidden in every theme (a later rule used to show it as a stray box).
 - LuCI Permissions: the custom limit field now shows, per tool, what a limit looks like (for example `network.lan wireless.*`) and that limits are separated by spaces.
 - `allow` also refuses a placeholder scope (`<`, `>`, `{`, `}`), such as a copied `<service>.restart`.
 - `mfa status` says when an enrolled client has no policy with `mfa_tools`, so nothing is gated; the README explains that only a config policy is gated.

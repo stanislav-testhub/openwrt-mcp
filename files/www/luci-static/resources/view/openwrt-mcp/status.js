@@ -99,7 +99,7 @@ var CSS = [
 	'.mcp-f select,.mcp-f input[type=text]{flex:1 1 140px;min-width:0}',
 	'.mcp-table .mcp-status,.mcp-table .mcp-allowed,.mcp-table .mcp-actions-col{width:auto;text-align:left}',
 	'.mcp .mcp-table,.mcp .mcp-table tbody{display:block;width:100%;border:0}',
-	'.mcp .mcp-table tr.table-titles{display:none}',
+	'.mcp .mcp-table tr.tr.table-titles{display:none}',
 	'.mcp .mcp-table tr.tr{display:block;margin:8px 0;padding:4px 12px;border:1px solid rgba(128,128,128,.35);border-radius:6px}',
 	'.mcp .mcp-table td.td{display:block;width:auto;min-height:0;padding:6px 0;border:0;text-align:left}',
 	'.mcp .mcp-table td.td::before{display:block;content:attr(data-title);margin-bottom:2px;font-size:75%;letter-spacing:.05em;text-transform:uppercase;opacity:.7}',
