@@ -96,7 +96,7 @@ const WRITE = [ 'uci_apply', 'uci_confirm', 'uci_rollback', 'pkg_change', 'pkg_c
 const UNSCOPED = [ 'logread', 'network_clients', 'firewall_show', 'pkg_query', 'pkg_config_diff', 'uci_confirm', 'uci_rollback', 'ubus_list', 'mfa_unlock' ];
 function registry() {
 	const t = n => tool(n, 'Registry title of ' + n, n === 'exec' || n === 'ubus_call' ? 'shell' : (READ.includes(n) ? 'read' : 'write'), {
-		readonly: READ.includes(n), ungated: n === 'ubus_list' || n === 'mfa_unlock', unscoped: UNSCOPED.includes(n), notes: n === 'uci_apply' ? [ 'rollback' ] : [] });
+		readonly: READ.includes(n), ungated: n === 'ubus_list' || n === 'mfa_unlock', unscoped: UNSCOPED.includes(n), scope_hint: UNSCOPED.includes(n) ? undefined : 'HINT-' + n, notes: n === 'uci_apply' ? [ 'rollback' ] : [] });
 	return { groups: [ { id: 'all', title: 'All', tools: READ.concat(WRITE).map(t) } ] };
 }
 // What `allow claude-code @readonly 1h` writes.
@@ -562,6 +562,21 @@ fresh();
 	assert.deepEqual(calls[0][1], [ 'claude-code', 'net_diag', 'ping dns traceroute', '1h', false, true ]);
 }
 
+// 19c. The custom field says what a limit on this tool looks like, and only while Custom is chosen
+fresh();
+{
+	const { root } = await load();
+	const [ adv ] = find(pane(root, 'permissions'), x => x.tag === 'details');
+	byAct(find(adv, x => x.attrs['data-tool-row'] === 'net_diag')[0], 'adv-edit')[0].listeners.click();
+	const edit = find(pane(root, 'permissions'), x => x.attrs['data-edit-row'] === 'net_diag')[0];
+	const hint = find(edit, x => x.attrs['data-edit'] === 'hint')[0];
+	assert.match(hint.textContent, /HINT-net_diag/);
+	assert.equal(hint.style.display, 'none', 'hidden until Custom is chosen');
+	const sel = find(edit, x => x.tag === 'select')[0];
+	sel.value = '__custom'; sel.listeners.change();
+	assert.equal(hint.style.display, '');
+}
+
 // 19b. A blank or multi-name custom limit is refused before anything is sent
 fresh();
 {
@@ -684,6 +699,26 @@ fresh();
 	const picker = find(pane(root, 'permissions'), x => x.attrs.id === 'openwrt-mcp-client')[0];
 	assert.equal(picker.value, 'laptop');
 	assert.match(text(pane(root, 'permissions')), /What may Laptop do\?/);
+}
+
+// 26a. The service's own records read as sentences, not as "asked to use 201crequest201d"
+fresh();
+{
+	state.st.audit.push(
+		{ time: iso(-60e3), client: 'claude-code', tool: 'request', scope: 'firewall.@defaults[0].input', outcome: 'OK', summary: 'open 719edba8: uci_get on firewall.@defaults[0].input' },
+		{ time: iso(-50e3), client: 'claude-code', tool: 'decide', outcome: 'OK', summary: '719edba8 allowed by luci' },
+		{ time: iso(-40e3), client: 'claude-code', tool: 'expire', outcome: 'OK', summary: '1b9f9e01 expired unanswered' },
+		{ time: iso(-30e3), client: 'claude-code', tool: 'session', outcome: 'OK', summary: 'stdio session opened via ssh' });
+	const { root } = await load();
+	const a = pane(root, 'activity');
+	const t = text(a);
+	assert.match(t, /Claude Code asked to read the firewall settings · held for your answer/);
+	assert.match(t, /A request from Claude Code was allowed by luci/);
+	assert.match(t, /A request from Claude Code expired unanswered/);
+	assert.match(t, /stdio session opened via ssh/);
+	assert.doesNotMatch(t, /use 201c(request|decide|expire|session)201d/);
+	const row = find(a, x => x.attrs['data-activity'])[0];
+	assert.ok(find(row, x => x.attrs['class'] === 'mcp-what').length, 'text and Show raw share one flex wrapper');
 }
 
 // 26. Activity: sentences, not log lines; raw text on request; filters; older entries on demand

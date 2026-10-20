@@ -37,14 +37,15 @@ const (
 var rootShellTools = []string{"exec", "ubus_call"}
 
 type toolRow struct {
-	Name     string   `json:"name"`
-	Title    string   `json:"title"`
-	Badge    string   `json:"badge"`
-	Notes    []string `json:"notes,omitempty"` // "rollback", "keys"
-	Ungated  bool     `json:"ungated,omitempty"`
-	Unscoped bool     `json:"unscoped,omitempty"` // a grant is on or off: there is nothing to limit it by
-	Why      string   `json:"why,omitempty"` // why the row cannot be granted
-	Readonly bool     `json:"readonly"`      // in the @readonly preset
+	Name      string   `json:"name"`
+	Title     string   `json:"title"`
+	Badge     string   `json:"badge"`
+	Notes     []string `json:"notes,omitempty"` // "rollback", "keys"
+	Ungated   bool     `json:"ungated,omitempty"`
+	Unscoped  bool     `json:"unscoped,omitempty"`   // a grant is on or off: there is nothing to limit it by
+	ScopeHint string   `json:"scope_hint,omitempty"` // what a limit on this tool looks like, with examples
+	Why       string   `json:"why,omitempty"`        // why the row cannot be granted
+	Readonly  bool     `json:"readonly"`             // in the @readonly preset
 }
 
 type toolGroupRow struct {
@@ -109,8 +110,28 @@ func buildToolGroups(tools []*mcp.Tool) ([]toolGroupRow, error) {
 	return out, nil
 }
 
+// scopeHints says, per tool that takes a limit, what a limit looks like. The Permissions editor
+// shows it under the custom field. `*` matches any run of characters and `?` one; limits are
+// separated by spaces. A test keeps it in step with the tools.
+var scopeHints = map[string]string{
+	"ubus_call":          "object.method, e.g. network.interface.dump  system.board  hostapd.*.get_clients",
+	"exec":               "the program, exactly as called (argv[0]), e.g. ls  cat  /usr/bin/openwrt-mcp",
+	"system_status":      "doctor  audit (the plain overview needs no limit)",
+	"net_diag":           "action or action.target, e.g. ping.1.1.1.1  traffic.br-lan  route  wifi_survey.*",
+	"uci_get":            "config.section.option, e.g. network.lan  wireless.*  dhcp.@dnsmasq[0].*  or refs for the name search",
+	"uci_apply":          "config.section.option, e.g. network.lan  wireless.*  dhcp.@dnsmasq[0].*",
+	"service_list":       "service.detail, e.g. dnsmasq.detail  *.detail",
+	"service_control":    "service.action, e.g. dnsmasq.restart  uhttpd.*  *.status",
+	"pkg_change":         "action or action.package, e.g. add.curl  del.curl  upgrade",
+	"pkg_config_resolve": "the live config file, e.g. /etc/config/network  /etc/*",
+	"sysupgrade":         "list  test  check  backup",
+	"wg_list_clients":    "wireguard.interface, e.g. wireguard.wg0  wireguard.*",
+	"wg_new_client":      "wireguard.interface, then .reveal to show the keys, e.g. wireguard.wg0  wireguard.wg0.reveal",
+	"wg_remove_client":   "wireguard.interface.client name, e.g. wireguard.wg0.phone  wireguard.wg0.*",
+}
+
 func rowFor(t *mcp.Tool) toolRow {
-	r := toolRow{Name: t.Name, Title: t.Title, Badge: badgeWrite, Ungated: ungatedTools[t.Name], Unscoped: unscopedTools[t.Name], Readonly: readOnlyListed(t.Name)}
+	r := toolRow{Name: t.Name, Title: t.Title, Badge: badgeWrite, Ungated: ungatedTools[t.Name], Unscoped: unscopedTools[t.Name], Readonly: readOnlyListed(t.Name), ScopeHint: scopeHints[t.Name]}
 	if t.Annotations != nil {
 		if t.Annotations.ReadOnlyHint {
 			r.Badge = badgeRead

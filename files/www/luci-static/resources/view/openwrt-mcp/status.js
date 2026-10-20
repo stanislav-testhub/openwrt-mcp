@@ -83,7 +83,11 @@ var CSS = [
 	'.mcp-menu .mcp-sub{display:block;margin-left:24px;font-size:90%;opacity:.8}',
 	'.mcp-danger{border:2px solid #b3261e;border-radius:4px;padding:8px 16px;margin-top:24px}',
 	'.mcp-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:8px 0}',
+	'.mcp-f{display:flex;gap:8px;align-items:center}',
+	'.mcp-f-grow{flex:1 1 260px}',
+	'.mcp-f-grow input{flex:1;min-width:0}',
 	'.mcp-raw code{display:block}',
+	'.mcp-what{display:flex;gap:8px 16px;align-items:center;justify-content:space-between;flex-wrap:wrap}',
 	'.mcp-dim{opacity:.8}',
 	'.mcp-pending{font-style:italic}',
 	'@media (max-width:600px){',
@@ -1199,7 +1203,12 @@ return view.extend({
 				'value': m && cur === '__custom' ? m.scopes.join(' ') : '', 'aria-label': _('Technical scope'),
 					'placeholder': _('one or more limits, separated by spaces') });
 			custom.style.display = cur === '__custom' ? '' : 'none';
-			var scope = selectOf(opts, cur, function(v) { custom.style.display = v === '__custom' ? '' : 'none'; }, { 'id': 'mcp-edit-scope' });
+			var help = E('div', { 'class': 'cbi-value-description', 'data-edit': 'hint' },
+				_('Separate limits with spaces; * matches any text. Examples: %s').format((byName[tool] || {}).scope_hint || '*'));
+			help.style.display = cur === '__custom' ? '' : 'none';
+			var scope = selectOf(opts, cur, function(v) {
+				custom.style.display = help.style.display = v === '__custom' ? '' : 'none';
+			}, { 'id': 'mcp-edit-scope' });
 			var dur = selectOf(DURATIONS, ui_.duration, null, { 'id': 'mcp-edit-dur' });
 			var save = btn('action', 'adv-save', _('Save'), function() {
 				var s = scope.value === '__custom' ? custom.value.trim() : scope.value;
@@ -1232,7 +1241,7 @@ return view.extend({
 					E('label', { 'for': 'mcp-edit-scope' }, _('Limited to')), scope, custom,
 					E('label', { 'for': 'mcp-edit-dur' }, _('For')), dur,
 					save, btn('', 'adv-cancel', _('Cancel'), function() { ui_.editing = null; drawPermissions(); })
-				]) ])
+				]), help ])
 			]);
 		}
 
@@ -1381,7 +1390,7 @@ return view.extend({
 		function auditKind(a) {
 			if (a.client.charAt(0) === '<')
 				return 'mine';
-			if (!a.tool)
+			if (!a.tool || SERVICE_EVENTS[a.tool])
 				return 'service';
 			return a.outcome === 'OK' ? 'allowed' : (a.outcome === 'DENIED' ? 'refused' : 'failed');
 		}
@@ -1390,6 +1399,23 @@ return view.extend({
 			revoke: _('You took access away from an assistant'), revoke_tools: _('You switched an ability off'), permit_all: _('You turned Permit all on'),
 			end_permit_all: _('You turned Permit all off'), set_settings: _('You changed the request settings'), set_channel: _('You changed how requests reach you'),
 			pair: _('You paired a new assistant') };
+
+		// Records the service writes about itself: a connection opening, a request held, answered or expired.
+		var SERVICE_EVENTS = { session: true, request: true, decide: true, expire: true };
+
+		function serviceSentence(a) {
+			var who = displayName(a.client), s = a.summary || '';
+			if (a.tool === 'request') {
+				var m = /^open \S+: (\S+) on (.*)$/.exec(s);
+				return m ? _('%s asked to %s · held for your answer').format(who, requestAction({ tool: m[1], scope: m[2] })) :
+					_('%s asked for something it isn’t allowed to do yet').format(who);
+			}
+			if (a.tool === 'decide')
+				return _('A request from %s was %s').format(who, s.replace(/^\S+ /, '') || _('answered'));
+			if (a.tool === 'expire')
+				return _('A request from %s expired unanswered').format(who);
+			return s || a.error || _('The MCP service recorded an event');
+		}
 
 		function sentence(a) {
 			var who = displayName(a.client);
@@ -1402,7 +1428,7 @@ return view.extend({
 				}
 				return MINE[a.tool] || _('You made a change');
 			case 'service':
-				return a.summary || a.error || _('The MCP service recorded an event');
+				return serviceSentence(a);
 			case 'allowed':
 				return _('%s asked to %s · done').format(who, verb);
 			}
@@ -1447,10 +1473,10 @@ return view.extend({
 					var key = a.time + a.raw;
 					trs.push(E('tr', { 'class': 'tr', 'data-activity': a.kind }, [
 						cell(_('Time'), '', [ hhmm(d) ]),
-						cell(_('What happened'), '', [ a.text, ' ', btn('', 'raw', ui_.raw[key] ? _('Hide raw') : _('Show raw'), function() {
+						cell(_('What happened'), '', E('div', { 'class': 'mcp-what' }, [ E('span', {}, a.text), btn('', 'raw', ui_.raw[key] ? _('Hide raw') : _('Show raw'), function() {
 							ui_.raw[key] = !ui_.raw[key];
 							fill();
-						}) ]),
+						}) ])),
 						cell(_('Outcome'), 'mcp-status', [ OUTCOME_ICON[a.kind] + ' ' + OUTCOME[a.kind] ])
 					]));
 					if (ui_.raw[key])
@@ -1470,9 +1496,9 @@ return view.extend({
 			text.addEventListener('input', function() { f.text = text.value; ui_.shown = ACTIVITY_PAGE; fill(); });
 			panes.activity.replaceChildren(section(_('Activity'), _('Everything assistants did or asked for, newest first. Passwords and keys are never written here.'), [
 				E('div', { 'class': 'mcp-filters' }, [
-					E('label', { 'for': 'mcp-f-client' }, _('Assistant')), selectOf(clientOpts, f.client, function(v) { f.client = v; ui_.shown = ACTIVITY_PAGE; fill(); }, { 'id': 'mcp-f-client' }),
-					E('label', { 'for': 'mcp-f-kind' }, _('Kind')), selectOf(kindOpts, f.kind, function(v) { f.kind = v; ui_.shown = ACTIVITY_PAGE; fill(); }, { 'id': 'mcp-f-kind' }),
-					E('label', { 'for': 'mcp-search' }, _('Search')), text
+					E('div', { 'class': 'mcp-f' }, [ E('label', { 'for': 'mcp-f-client' }, _('Assistant')), selectOf(clientOpts, f.client, function(v) { f.client = v; ui_.shown = ACTIVITY_PAGE; fill(); }, { 'id': 'mcp-f-client' }) ]),
+					E('div', { 'class': 'mcp-f' }, [ E('label', { 'for': 'mcp-f-kind' }, _('Kind')), selectOf(kindOpts, f.kind, function(v) { f.kind = v; ui_.shown = ACTIVITY_PAGE; fill(); }, { 'id': 'mcp-f-kind' }) ]),
+					E('div', { 'class': 'mcp-f mcp-f-grow' }, [ E('label', { 'for': 'mcp-search' }, _('Search')), text ])
 				]), body ]));
 			fill();
 		}

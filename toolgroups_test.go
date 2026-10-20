@@ -356,6 +356,22 @@ func TestAReplacementSwapsTheToolsGrantAndLeavesOtherToolsAlone(t *testing.T) {
 	}
 }
 
+func TestEveryToolThatTakesALimitSaysWhatALimitLooksLike(t *testing.T) {
+	r := newRig(t)
+	for _, g := range r.ok("tools", nil)["groups"].([]any) {
+		for _, tl := range g.(map[string]any)["tools"].([]any) {
+			row := tl.(map[string]any)
+			name := row["name"].(string)
+			takesLimit := !unscopedTools[name] && !ungatedTools[name]
+			if hint, _ := row["scope_hint"].(string); takesLimit && hint == "" {
+				t.Errorf("%s takes a limit but the Permissions tab has no example for it", name)
+			} else if !takesLimit && hint != "" {
+				t.Errorf("%s takes no limit but has a limit example", name)
+			}
+		}
+	}
+}
+
 func TestAToolWithNothingToLimitByCannotBeGivenALimit(t *testing.T) {
 	r := newRig(t)
 	r.fails("grant", map[string]any{"client": "c", "tool": "logread", "scope": "network.*"}, "cannot be limited")

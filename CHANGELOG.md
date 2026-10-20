@@ -7,6 +7,8 @@ Fixed
 - `allow` refuses a comma in a scope: scopes are separated by spaces, so `'wireless.*,network.*'` was stored as one pattern that matched nothing. The check runs before an expired grant is replaced.
 - LuCI Permissions: a tool's custom limit takes several names separated by spaces, as the CLI does, so a tool with more than one limit can be edited and saved (the `grant` call accepts them; commas and quotes are still refused).
 - LuCI Settings no longer jumps the scroll position when a switch is ticked.
+- LuCI Activity: the service's own records (a connection opening, a request held, answered or expired) read as sentences instead of `asked to use "request"`, each row's Show raw button sits at the right edge of its cell, and each filter keeps its label with its field, with Search filling the rest of the row.
+- LuCI Permissions: the custom limit field now shows, per tool, what a limit looks like (for example `network.lan wireless.*`) and that limits are separated by spaces.
 - `allow` also refuses a placeholder scope (`<`, `>`, `{`, `}`), such as a copied `<service>.restart`.
 - `mfa status` says when an enrolled client has no policy with `mfa_tools`, so nothing is gated; the README explains that only a config policy is gated.
 - `uci_apply` no longer prints "Verified: 0 of N change(s) match" when every change is on a section addressed by position; it says "Not verified".
