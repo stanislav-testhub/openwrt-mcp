@@ -582,3 +582,37 @@ func TestCLIAllowReplacesAnExpiredGrantWithTheSameToolsAndScopes(t *testing.T) {
 		}
 	}
 }
+
+// A comma between scopes would be stored as one literal glob that matches nothing (tools are
+// comma-separated, scopes are space-separated), so a grant meant to cover two scopes silently covers none.
+func TestCLIAllowRefusesACommaInAScope(t *testing.T) {
+	c := newCLI(t)
+	c.fails("bad scope", "allow", "c", "uci_get", "wireless.*,network.*", "1h")
+	if cfg, err := LoadConfig(c.config); err != nil || len(cfg.Policies) != 0 {
+		t.Fatalf("a refused grant was written: %v %+v", err, cfg.Policies)
+	}
+}
+
+func TestCLIAllowAndRevokeAreAudited(t *testing.T) {
+	c := newCLI(t)
+	if err := os.WriteFile(c.config, []byte(c.header()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	c.ok("allow", "claude-code", "system_status", "*", "5m")
+	c.ok("revoke", "claude-code")
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(c.config), "audit.jsonl"))
+	if err != nil {
+		t.Fatalf("allow/revoke were not audited: %v", err)
+	}
+	var tools []string
+	for _, line := range strings.Split(strings.TrimSpace(string(b)), "\n") {
+		var ev AuditEvent
+		if err := json.Unmarshal([]byte(line), &ev); err != nil {
+			t.Fatalf("audit line %q: %v", line, err)
+		}
+		tools = append(tools, ev.Tool)
+	}
+	if len(tools) != 2 || tools[0] != "grant" || tools[1] != "revoke" {
+		t.Errorf("audit tools %q, want [grant revoke]", tools)
+	}
+}

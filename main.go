@@ -93,6 +93,7 @@ func main() {
 		n, err := removePolicies(*configPath, args[1])
 		must(err)
 		fmt.Printf("removed %d policy block(s) for %q\n", n, args[1])
+		auditCLI(*configPath, "revoke", "", fmt.Sprintf("removed %d policy block(s) for %q", n, args[1]))
 
 	case "pair":
 		if len(args) != 2 {
@@ -138,6 +139,7 @@ func main() {
 			replaced := replaceExpired(*configPath, args[1], blocks[0].tools, blocks[0].scopes)
 			must(appendPolicy(*configPath, args[1], strings.Join(blocks[0].tools, ","), "*", args[3]))
 			fmt.Printf("granted %s full access for %s; end it with: openwrt-mcp revoke %s\n", args[1], args[3], args[1])
+			auditCLI(*configPath, "grant", "*", fmt.Sprintf("%s: full access (@all) for %s", args[1], args[3]))
 			printReplaced(replaced)
 			break
 		}
@@ -151,6 +153,7 @@ func main() {
 			}
 			fmt.Printf("granted %s preset %s (%d policy blocks) for %s; the daemon picks it up without a restart\n",
 				args[1], args[2], len(blocks), args[3])
+			auditCLI(*configPath, "grant", "", fmt.Sprintf("%s: preset %s for %s", args[1], args[2], args[3]))
 			printReplaced(replaced)
 			break
 		}
@@ -175,10 +178,12 @@ func main() {
 			}
 			fmt.Fprintf(os.Stderr, "warning: %s\n", msg)
 		}
+		must(checkScopes(args[3]))
 		replaced := replaceExpired(*configPath, args[1], tools, strings.Fields(args[3]))
 		must(appendPolicy(*configPath, args[1], args[2], args[3], args[4]))
 		fmt.Printf("granted %s -> %s on '%s' for %s; the daemon picks it up without a restart\n",
 			args[1], args[2], args[3], args[4])
+		auditCLI(*configPath, "grant", args[3], fmt.Sprintf("%s: %s on %s for %s", args[1], args[2], args[3], args[4]))
 		printReplaced(replaced)
 
 	case "prune":
@@ -344,6 +349,31 @@ func main() {
 	}
 }
 
+// checkScopes refuses a scope that would be stored but could never match: a comma (tools are
+// comma-separated, scopes are space-separated) or a quote (it would end the UCI value).
+func checkScopes(scopes string) error {
+	for _, sc := range strings.Fields(scopes) {
+		if strings.ContainsAny(sc, "'\"\x00") {
+			return fmt.Errorf("bad scope %q: quotes are not allowed", sc)
+		}
+		if strings.Contains(sc, ",") {
+			return fmt.Errorf("bad scope %q: separate scopes with spaces, not commas", sc)
+		}
+	}
+	return nil
+}
+
+// auditCLI records a grant change made on the command line. A change still happens when the
+// config cannot be loaded for the audit path: the grant is what the operator asked for.
+func auditCLI(configPath, tool, scope, summary string) {
+	cfg, err := LoadConfig(configPath)
+	if err != nil {
+		return
+	}
+	NewAuditor(cfg.AuditPath, cfg.AuditMaxMB).Record(AuditEvent{Time: nowISO(), Client: "<cli>", Tool: tool, Scope: scope,
+		Outcome: OutcomeOK, Summary: summary})
+}
+
 // appendPolicy adds a policy block to the UCI config. Grant management is CLI-only and is
 // deliberately not exposed as an MCP tool, so there is no tool for a policy to cover and
 // therefore no self-escalation path through the policy system itself.
@@ -354,10 +384,8 @@ func appendPolicy(configPath, client, tools, scopes, duration string) error {
 	if !reClientName.MatchString(client) {
 		return fmt.Errorf("bad client name %q: use letters, digits, '.', '_' or '-' (max 64)", client)
 	}
-	for _, sc := range strings.Fields(scopes) {
-		if strings.ContainsAny(sc, "'\"\x00") {
-			return fmt.Errorf("bad scope %q: quotes are not allowed", sc)
-		}
+	if err := checkScopes(scopes); err != nil {
+		return err
 	}
 	var expires string
 	if duration != "never" {

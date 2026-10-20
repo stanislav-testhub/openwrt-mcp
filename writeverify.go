@@ -236,13 +236,23 @@ func verifyApplied(ctx context.Context, names []string, changes []UCIChange) (mi
 	}
 	var lines []string
 	if len(read) > 0 && len(mismatches) == 0 {
-		line := fmt.Sprintf("Verified: re-read %s after commit, %d of %d change(s) match.", strings.Join(read, ", "), compared, len(changes))
-		if skipped := len(changes) - compared; skipped > 0 && len(notes) == 0 {
-			line += fmt.Sprintf(" (%d on a section addressed by position are not compared.)", skipped)
-		}
-		lines = append(lines, line)
+		lines = append(lines, verifiedLine(read, compared, len(changes), len(notes) == 0))
 	}
 	return mismatches, strings.Join(append(lines, notes...), "\n")
+}
+
+// verifiedLine words the all-matched result. When nothing was compared (every change is on a
+// section addressed by position) it must not claim a verification that did not happen.
+func verifiedLine(read []string, compared, total int, explainSkipped bool) string {
+	if compared == 0 && total > 0 {
+		return fmt.Sprintf("Not verified: %d change(s) on a section addressed by position are not compared; re-read %s to check them.",
+			total, strings.Join(read, ", "))
+	}
+	line := fmt.Sprintf("Verified: re-read %s after commit, %d of %d change(s) match.", strings.Join(read, ", "), compared, total)
+	if skipped := total - compared; skipped > 0 && explainSkipped {
+		line += fmt.Sprintf(" (%d on a section addressed by position are not compared.)", skipped)
+	}
+	return line
 }
 
 // ---------------------------------------------------------------- WireGuard

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+Fixed
+- `openwrt-mcp allow` and `revoke` (including presets and `@all`) now write `grant` and `revoke` audit rows, as the LuCI path does.
+- `allow` refuses a comma in a scope: scopes are separated by spaces, so `'wireless.*,network.*'` was stored as one pattern that matched nothing. The check runs before an expired grant is replaced.
+- `uci_apply` no longer prints "Verified: 0 of N change(s) match" when every change is on a section addressed by position; it says "Not verified".
+
 ## 1.5.0 -- Reach and resilience
 
 Reach routers the 25.12-only server could not, run it from a plain shell, let a client ask for less than its grants allow,

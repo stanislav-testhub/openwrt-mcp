@@ -882,3 +882,12 @@ func TestEveryWritePathVerifiesAfterWrite(t *testing.T) {
 		})
 	}
 }
+
+func TestAVerifyLineNeverClaimsVerificationWhenNothingWasCompared(t *testing.T) {
+	if got := verifiedLine([]string{"system"}, 0, 1, true); !strings.HasPrefix(got, "Not verified:") || strings.Contains(got, "match") {
+		t.Errorf("all-positional change: %q", got)
+	}
+	if got := verifiedLine([]string{"system"}, 1, 1, true); got != "Verified: re-read system after commit, 1 of 1 change(s) match." {
+		t.Errorf("named section: %q", got)
+	}
+}
