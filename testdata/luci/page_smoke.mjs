@@ -177,6 +177,7 @@ fresh();
 fresh();
 {
 	const { root } = await load();
+	assert.doesNotMatch(text(pane(root, 'overview')), /Pausing/, 'there is no Pause button to promise');
 	const [ c ] = find(pane(root, 'overview'), x => x.attrs['data-assistant']);
 	const t = text(c);
 	assert.match(t, /Claude Code claude-code/);
@@ -711,6 +712,8 @@ fresh();
 	const s = pane(root, 'settings');
 	const t = text(s);
 	assert.match(t, /Ask me before refusing/);
+	assert.doesNotMatch(t, /sends no request/, '0 still opens a request, the call is just refused at once');
+	assert.match(t, /0 refuses at once but still sends you the request/);
 	assert.match(t, /Keep a request open for/);
 	assert.match(t, /How requests reach you/);
 	assert.match(t, /This page .* Always on/);

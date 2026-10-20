@@ -972,7 +972,7 @@ return view.extend({
 			var clients = knownClients(st);
 			var cards = clients.map(function(c) { return assistantCard(c, seen, tokens); });
 			nodes.push(section(_('Assistants (%d)').format(clients.length),
-				_('Each assistant can only do what you allowed. Pausing keeps its permissions for later; removing deletes them.'),
+				_('Each assistant can only do what you allowed. Removing access deletes its permissions.'),
 				clients.length ? cards : [ E('div', { 'class': 'mcp-card' }, [
 					E('h4', {}, _('No assistants yet')),
 					E('p', {}, _('No assistant has connected to this router. Follow your assistant’s setup guide; it shows up here after its first connection. Nothing is waiting for you.'))
@@ -1506,7 +1506,7 @@ return view.extend({
 			panes.settings.replaceChildren(
 				section(_('Requests'), _('These two settings apply when you press Save.'), [
 					row(_('Ask me before refusing'), [ wait, ' ', _('seconds') ],
-						_('When an assistant tries something it isn’t allowed to do, keep it waiting this long while you get a request. 0 refuses at once and sends no request. From 0 to %d.').format(s.wait_max), 'mcp-wait'),
+						_('When an assistant tries something it isn’t allowed to do, keep it waiting this long while you get a request. 0 refuses at once but still sends you the request. From 0 to %d.').format(s.wait_max), 'mcp-wait'),
 					row(_('Keep a request open for'), ttl, _('A request nobody answers in time is refused.'), 'mcp-ttl')
 				]),
 				section(_('How requests reach you'), _('Each extra way is off until you turn it on, and ticking a box applies at once. The line under it says how it could be misused.'), [
