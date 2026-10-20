@@ -278,6 +278,16 @@ func main() {
 			}
 			cfg, err := LoadConfig(*configPath)
 			must(err)
+			for _, c := range clients {
+				gated := false
+				for _, p := range cfg.Policies {
+					gated = gated || (p.Client == c && len(p.MFATools) > 0)
+				}
+				if !gated {
+					fmt.Printf("  NOTE: no policy requires a code for %q, so nothing is gated. Only a config policy\n"+
+						"        with mfa_tools is gated; grants from allow or the LuCI page never are.\n", c)
+				}
+			}
 			for _, p := range cfg.Policies {
 				if len(p.MFATools) > 0 {
 					fmt.Printf("  policy %s requires a code for: %s (window %s)\n",
@@ -350,9 +360,13 @@ func main() {
 }
 
 // checkScopes refuses a scope that would be stored but could never match: a comma (tools are
-// comma-separated, scopes are space-separated) or a quote (it would end the UCI value).
+// comma-separated, scopes are space-separated), a quote (it would end the UCI value) or a
+// placeholder bracket (a copied <service>.restart).
 func checkScopes(scopes string) error {
 	for _, sc := range strings.Fields(scopes) {
+		if strings.ContainsAny(sc, "<>{}") {
+			return fmt.Errorf("bad scope %q: looks like a placeholder, name the real scope", sc)
+		}
 		if strings.ContainsAny(sc, "'\"\x00") {
 			return fmt.Errorf("bad scope %q: quotes are not allowed", sc)
 		}

@@ -438,6 +438,11 @@ Unchanged from upstream: `openwrt-mcp mfa enrol <client>` prints an `otpauth://`
 policy `list mfa_tools 'uci_apply'`, `option mfa_window '15m'`. One code opens a time-boxed
 window; codes are single-use; unlocks live in memory only.
 
+Enrolling alone gates nothing. Only a `config policy` section in `/etc/config/openwrt-mcp` with
+`mfa_tools` is gated, and `mfa_tools` may name only tools that same policy grants. Grants made with
+`openwrt-mcp allow` or from the LuCI page never require a code. `openwrt-mcp mfa status` says when an
+enrolled client has no gating policy.
+
 Wrong codes are limited: in the `config server` section, `option mfa_max_failures '5'` consecutive
 wrong codes lock that client out of `mfa_unlock` for `option mfa_lockout '300'` seconds (`'5m'` also
 works), doubling on each repeat to one hour. A correct code during the lockout is refused and not

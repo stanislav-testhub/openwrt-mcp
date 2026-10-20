@@ -262,6 +262,21 @@ func TestCLIMFAEnrolAndStatus(t *testing.T) {
 	c.fails("usage", "mfa", "wat")
 }
 
+// Enrolling alone gates nothing: only a config policy with mfa_tools does, so status must say so.
+func TestCLIMFAStatusFlagsAnEnrolledClientThatNothingGates(t *testing.T) {
+	c := newCLI(t)
+	c.ok("mfa", "enrol", "claude-code", "my-router")
+	if st := c.ok("mfa", "status"); !strings.Contains(st, `no policy requires a code for "claude-code"`) {
+		t.Errorf("an enrolled but ungated client is not flagged:\n%s", st)
+	}
+	if err := os.WriteFile(c.config, []byte("config policy\n\toption client 'claude-code'\n\tlist tools 'exec'\n\tlist mfa_tools 'exec'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if st := c.ok("mfa", "status"); strings.Contains(st, "no policy requires") {
+		t.Errorf("a gated client is flagged as ungated:\n%s", st)
+	}
+}
+
 func TestCLIStdioRefusesWhenTheBridgeIsSwitchedOff(t *testing.T) {
 	c := newCLI(t)
 	if err := os.WriteFile(c.config, []byte("config server\n\toption socket ''\n"), 0o600); err != nil {
@@ -588,6 +603,17 @@ func TestCLIAllowReplacesAnExpiredGrantWithTheSameToolsAndScopes(t *testing.T) {
 func TestCLIAllowRefusesACommaInAScope(t *testing.T) {
 	c := newCLI(t)
 	c.fails("bad scope", "allow", "c", "uci_get", "wireless.*,network.*", "1h")
+	if cfg, err := LoadConfig(c.config); err != nil || len(cfg.Policies) != 0 {
+		t.Fatalf("a refused grant was written: %v %+v", err, cfg.Policies)
+	}
+}
+
+// A copied placeholder such as <service>.restart is stored as a live grant that matches nothing.
+func TestCLIAllowRefusesAPlaceholderScope(t *testing.T) {
+	c := newCLI(t)
+	for _, sc := range []string{"<service>.restart", "{svc}.restart", "dhcp.>"} {
+		c.fails("bad scope", "allow", "c", "service_control", sc, "1h")
+	}
 	if cfg, err := LoadConfig(c.config); err != nil || len(cfg.Policies) != 0 {
 		t.Fatalf("a refused grant was written: %v %+v", err, cfg.Policies)
 	}
