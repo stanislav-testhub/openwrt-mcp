@@ -25,12 +25,12 @@ func TestPresetsNameOnlyRealTools(t *testing.T) {
 // The read-only ubus list must not reach methods that write or leak credentials.
 func TestReadonlyUbusExcludesWritesAndSessions(t *testing.T) {
 	for _, bad := range []string{"session.list", "session.login", "system.reboot", "uci.set", "uci.apply",
-		"rc.init", "network.interface.lan.down", "network.reload", "file.write", "file.exec", "iwinfo.scan"} {
+		"rc.init", "network.interface.lan.down", "network.reload", "file.write", "file.exec"} {
 		if matchAny(readonlyUbus, bad) {
 			t.Errorf("readonly ubus scope covers %s", bad)
 		}
 	}
-	for _, good := range []string{"network.interface.lan.status", "hostapd.phy0-ap0.get_clients", "system.board"} {
+	for _, good := range []string{"network.interface.lan.status", "hostapd.phy0-ap0.get_clients", "system.board", "iwinfo.scan"} {
 		if !matchAny(readonlyUbus, good) {
 			t.Errorf("readonly ubus scope misses %s", good)
 		}

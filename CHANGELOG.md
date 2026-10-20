@@ -1,8 +1,40 @@
 # Changelog
 
-## Unreleased
+## 1.6.0 -- Approve from the router
+
+An agent that hits a missing grant no longer waits for someone to open a shell: the request shows in LuCI, one click
+answers it, and the held call continues. Not yet verified on a real router: the LuCI rendering, rpcd refusing a write
+call without the write ACL, and the Overview widget hiding itself (see README, *Approve from LuCI*).
+
+Added
+- **Approval requests and held calls (ROADMAP 8.2).** A refused call records a request (client, tool, exact scope,
+  redacted arguments, all derived by the daemon). With `request_wait` (default 300 s, 0 to 600; 0 refuses at once) the
+  call is held and continues when a grant covers it. Requests are deduplicated, capped (5 per client, 50 in all), expire
+  after `request_ttl` and live in RAM.
+- **Deny floor (8.1).** Whatever the grant (`@operator` and `@all` included), an agent cannot widen its own access:
+  `ubus_call` to `openwrt-mcp`, `session`, `file` and `rpc-sys`, `uci` writes to the `openwrt-mcp` and `rpcd` configs,
+  and `exec` or writes on the daemon's binary, policy, rpcd plugin and ACL, LuCI page, init script, `etc/dropbear` and
+  request state are refused.
+- **LuCI page and rpcd plugin (8.3, 8.4).** *Services -> MCP Server*: Overview, Permissions (abilities in groups with
+  a risk badge, Revoke, per-tool limits), Activity (audit log with filters), Settings. Reads need the read ACL, writes
+  need `luci-app-openwrt-mcp-write`. Write methods include `decide`, `grant`, `revoke`, `revoke_tools` and `set_settings`.
+- **Status -> Overview widget (8.5).** Shows pending requests and appears only while something is pending.
+- **Permit all (8.6).** Grants a client every tool on every scope, root shell included: 24 h cap, typed client name,
+  refused for a client with a second factor, red banner with End now, calls marked `"via":"permit-all"` in the audit
+  log. CLI: `openwrt-mcp allow CLIENT @all 1h --shell-equivalent`.
+- **Optional channels, off by default, each audited (8.7 to 8.9).**
+  - `pairing`: a Clients tab that writes the same forced-command line as `authorize-key`.
+  - `push_hook`: a new request fires the ubus event `openwrt-mcp.request` and runs the executables in
+    `/etc/openwrt-mcp/hooks.d/` (10 s limit; group/world-writable and non-executable files are skipped).
+  - `chat_approve` and `list chat_approve_client`: the request is also shown in the client's own prompt (MCP
+    elicitation); exact scope, 15 m, 1 h or 8 h, never for a root-shell tool.
+- `docs/luci-approvals.md`, README *Approve from LuCI* and SECURITY trust-boundary text.
+
+Not included: "Allow once" (the shortest grant is 15 minutes), Pause/Resume, and a push web-address field; the server
+has no support for them yet.
 
 Fixed
+- With stdin already at EOF, `openwrt-mcp` could swallow a refused command's message instead of reporting it.
 - `openwrt-mcp allow` and `revoke` (including presets and `@all`) now write `grant` and `revoke` audit rows, as the LuCI path does.
 - `allow` refuses a comma in a scope: scopes are separated by spaces, so `'wireless.*,network.*'` was stored as one pattern that matched nothing. The check runs before an expired grant is replaced.
 - LuCI Permissions: a tool's custom limit takes several names separated by spaces, as the CLI does, so a tool with more than one limit can be edited and saved (the `grant` call accepts them; commas and quotes are still refused).

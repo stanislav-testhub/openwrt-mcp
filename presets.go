@@ -26,7 +26,7 @@ var readonlyUbus = []string{
 	"system.board", "system.info",
 	"network.interface.dump", "network.interface.*.status", "network.device.status", "network.wireless.status",
 	"iwinfo.devices", "iwinfo.info", "iwinfo.assoclist", "iwinfo.freqlist", "iwinfo.txpowerlist",
-	"iwinfo.countrylist", "iwinfo.survey",
+	"iwinfo.countrylist", "iwinfo.survey", "iwinfo.scan",
 	"hostapd.*.get_clients", "hostapd.*.get_status",
 	"luci-rpc.getDHCPLeases", "luci-rpc.getHostHints", "luci-rpc.getNetworkDevices",
 	"luci-rpc.getWirelessDevices", "luci-rpc.getBoardJSON",
