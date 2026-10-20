@@ -1185,7 +1185,8 @@ return view.extend({
 				opts.push([ '__custom', _('Custom…') ]);
 			var cur = unscoped ? '*' : (m && m.scopes.length === 1 && opts.some(function(o) { return o[0] === m.scopes[0]; }) ? m.scopes[0] : (m ? '__custom' : '*'));
 			var custom = E('input', { 'class': 'cbi-input-text', 'type': 'text', 'id': 'mcp-edit-custom', 'data-edit': 'custom',
-				'value': m && cur === '__custom' ? m.scopes.join(' ') : '', 'aria-label': _('Technical scope') });
+				'value': m && cur === '__custom' ? m.scopes.join(' ') : '', 'aria-label': _('Technical scope'),
+					'placeholder': _('one or more limits, separated by spaces') });
 			custom.style.display = cur === '__custom' ? '' : 'none';
 			var scope = selectOf(opts, cur, function(v) { custom.style.display = v === '__custom' ? '' : 'none'; }, { 'id': 'mcp-edit-scope' });
 			var dur = selectOf(DURATIONS, ui_.duration, null, { 'id': 'mcp-edit-dur' });
@@ -1194,8 +1195,11 @@ return view.extend({
 				if (scope.value === '__custom') {
 					if (!s)
 						return notify(_('Type the limit, or choose “Everything this tool can touch”. Nothing was changed.'), 'danger');
-					if (/[\s,']/.test(s))
-						return notify(_('A limit is one name, with no spaces, commas or quotes. Nothing was changed.'), 'danger');
+					if (/,/.test(s))
+						return notify(_('Separate limits with spaces, not commas. Nothing was changed.'), 'danger');
+					if (/['"]/.test(s))
+						return notify(_('A limit cannot contain a quote. Nothing was changed.'), 'danger');
+					s = s.split(/\s+/).join(' ');
 				}
 				var go = function(confirm) {
 					// One call replaces the old grant after the new one passed every check, so a
@@ -1571,7 +1575,7 @@ return view.extend({
 			var key = function(k, v) { var s = JSON.stringify(v); if (ui_.sig[k] === s) return false; ui_.sig[k] = s; return true; };
 			if (key('permissions', [ data.st.policies, data.st.clients, data.st.permit_all, data.writable, ui_.client, data.tools ])) drawPermissions();
 			if (key('activity', [ data.st.audit, openRequests(data.st).length ])) drawActivity();
-			if (key('settings', data.settings)) { drawSettings(); showTab(); }
+			if (key('settings', data.settings)) keepScroll(function() { drawSettings(); showTab(); });
 			if (channelOn('pair') && key('clients', [ data.settings.channels, data.writable ])) drawClients();
 			tick(root);
 		}

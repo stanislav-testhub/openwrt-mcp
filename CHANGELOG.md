@@ -5,6 +5,8 @@
 Fixed
 - `openwrt-mcp allow` and `revoke` (including presets and `@all`) now write `grant` and `revoke` audit rows, as the LuCI path does.
 - `allow` refuses a comma in a scope: scopes are separated by spaces, so `'wireless.*,network.*'` was stored as one pattern that matched nothing. The check runs before an expired grant is replaced.
+- LuCI Permissions: a tool's custom limit takes several names separated by spaces, as the CLI does, so a tool with more than one limit can be edited and saved (the `grant` call accepts them; commas and quotes are still refused).
+- LuCI Settings no longer jumps the scroll position when a switch is ticked.
 - `allow` also refuses a placeholder scope (`<`, `>`, `{`, `}`), such as a copied `<service>.restart`.
 - `mfa status` says when an enrolled client has no policy with `mfa_tools`, so nothing is gated; the README explains that only a config policy is gated.
 - `uci_apply` no longer prints "Verified: 0 of N change(s) match" when every change is on a section addressed by position; it says "Not verified".

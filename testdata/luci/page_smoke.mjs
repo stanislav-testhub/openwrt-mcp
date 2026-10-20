@@ -545,6 +545,23 @@ fresh();
 	assert.deepEqual(calls[0][1], [ 'claude-code', 'net_diag', 'ping', '1h', false, true ]);
 }
 
+// 19a. A tool with several limits keeps them in the editor; saving sends them space-separated
+fresh();
+{
+	state.st.policies.push({ index: 9, client: 'claude-code', tools: [ 'net_diag' ], scopes: [ 'ping', 'dns' ], expires: iso(3600e3), expired: false, enabled: true });
+	state.st.policies = state.st.policies.filter(p => !(p.tools.length === 1 && p.tools[0] === 'net_diag' && p.scopes[0] === '*'));
+	const { root } = await load();
+	const [ adv ] = find(pane(root, 'permissions'), x => x.tag === 'details');
+	byAct(find(adv, x => x.attrs['data-tool-row'] === 'net_diag')[0], 'adv-edit')[0].listeners.click();
+	const edit = find(pane(root, 'permissions'), x => x.attrs['data-edit-row'] === 'net_diag')[0];
+	const custom = find(edit, x => x.attrs['data-edit'] === 'custom')[0];
+	assert.equal(custom.value, 'ping dns', 'both limits are shown, not one');
+	custom.value = '  ping   dns  traceroute ';
+	byAct(edit, 'adv-save')[0].listeners.click();
+	await flush();
+	assert.deepEqual(calls[0][1], [ 'claude-code', 'net_diag', 'ping dns traceroute', '1h', false, true ]);
+}
+
 // 19b. A blank or multi-name custom limit is refused before anything is sent
 fresh();
 {
@@ -555,7 +572,7 @@ fresh();
 	const sel = find(edit, x => x.tag === 'select')[0];
 	sel.value = '__custom'; sel.listeners.change();
 	const custom = find(edit, x => x.attrs['data-edit'] === 'custom')[0];
-	for (const [ v, want ] of [ [ '', /Type the limit/ ], [ '   ', /Type the limit/ ], [ 'wgua, tailscale', /one name/ ], [ 'wgua,tailscale,wg0', /one name/ ] ]) {
+	for (const [ v, want ] of [ [ '', /Type the limit/ ], [ '   ', /Type the limit/ ], [ 'wgua, tailscale', /commas/ ], [ 'wgua,tailscale,wg0', /commas/ ], [ "wgua'", /quote/ ] ]) {
 		custom.value = v;
 		byAct(edit, 'adv-save')[0].listeners.click();
 		await flush();
@@ -783,6 +800,27 @@ fresh();
 		({ root } = await load());
 		assert.match(text(find(root, x => /cbi-tab(?!-)/.test(x.attrs.class || ''))[0]), /Overview/);
 	} finally { delete win.sessionStorage; }
+}
+
+// 27c. Ticking a switch on Settings redraws the pane; the scroll position is put back, as on Permissions
+fresh();
+{
+	const { root } = await load();
+	const scrolled = [];
+	const settings = pane(root, 'settings');
+	let jumped = false;
+	// The page "jumps" to the top only when the Settings pane is rebuilt.
+	const rebuild = settings.replaceChildren;
+	settings.replaceChildren = function(...a) { jumped = true; return rebuild.apply(this, a); };
+	Object.defineProperty(win, 'pageYOffset', { configurable: true, get: () => (jumped ? 0 : 300) });
+	win.scrollTo = (x, y) => scrolled.push([ x, y ]);
+	const [ sw ] = find(settings, x => x.attrs['data-channel'] === 'pair');
+	state.settings.channels[0].enabled = true; // what the router will report after the call
+	sw.checked = true; sw.listeners.change();
+	await flush();
+	delete win.pageYOffset; delete win.scrollTo;
+	assert.ok(jumped, 'the Settings pane was not redrawn, so this test proves nothing');
+	assert.deepEqual(scrolled, [ [ 0, 300 ] ], 'the Settings redraw after a tick must restore the scroll position');
 }
 
 // 28. The pairing channel is off: no Clients tab; switching it on is one call. On: the tab shows the key form.

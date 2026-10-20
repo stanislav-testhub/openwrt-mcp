@@ -502,10 +502,15 @@ func rpcdGrant(env rpcdEnv, raw json.RawMessage) (any, error) {
 	if in.Scope == "" {
 		in.Scope = "*"
 	}
-	if strings.ContainsAny(in.Scope, " \t\r\n',") {
-		return nil, rpcdFail("a limit is one name: %q has a space, comma or quote in it. Use one name, or give the tool a separate grant for each", in.Scope)
+	// Limits are separated by spaces, as on the CLI.
+	if err := checkScopes(in.Scope); err != nil {
+		return nil, rpcdFail("%v", err)
 	}
-	if unscopedTools[in.Tool] && in.Scope != "*" {
+	scopes := strings.Fields(in.Scope)
+	if len(scopes) == 0 {
+		scopes = []string{"*"}
+	}
+	if unscopedTools[in.Tool] && (len(scopes) != 1 || scopes[0] != "*") {
 		return nil, rpcdFail("%s cannot be limited: it has nothing to limit by, so a limit would never match", in.Tool)
 	}
 	if in.Duration == "" {
@@ -518,7 +523,8 @@ func rpcdGrant(env rpcdEnv, raw json.RawMessage) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	blocks := []presetPolicy{{tools: []string{in.Tool}, scopes: []string{in.Scope}}}
+	in.Scope = strings.Join(scopes, " ")
+	blocks := []presetPolicy{{tools: []string{in.Tool}, scopes: scopes}}
 	if hit := shellEquivalentNames(blocks[0].tools, blocks[0].scopes); len(hit) > 0 && !in.Confirm {
 		return nil, rpcdError{Code: "needs_confirm", Msg: fmt.Sprintf(
 			"this grant lets %s run %s, and each of those can run any other program: it is a root shell whatever the other scopes say",

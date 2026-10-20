@@ -130,8 +130,8 @@ func TestGrantRefusesWhatItCannotWriteAndChangesNothing(t *testing.T) {
 	for in, want := range map[string]string{
 		`{"client":"bad name","tool":"logread"}`:        "bad client name",
 		`{"client":"c","tool":"no_such_tool"}`:          "no tool",
-		`{"client":"c","tool":"logread","scope":"a b"}`: "one name",
-		`{"client":"c","tool":"logread","scope":"a'b"}`: "one name",
+		`{"client":"c","tool":"logread","scope":"a b"}`: "cannot be limited",
+		`{"client":"c","tool":"logread","scope":"a'b"}`: "bad scope",
 		`{"client":"c","tool":"logread","breadth":"x"}`: "bad arguments",
 	} {
 		var m map[string]any
@@ -301,12 +301,28 @@ func TestARefusedReplacementKeepsTheOldGrant(t *testing.T) {
 	if err := appendPolicy(r.env.configPath, "c", "wg_list_clients", "wireguard.wgua", "1h"); err != nil {
 		t.Fatal(err)
 	}
-	for _, scope := range []string{"wgua, tailscale", "wgua,tailscale,wg0", "a b"} {
-		r.fails("grant", map[string]any{"client": "c", "tool": "wg_list_clients", "scope": scope, "replace": true}, "one name")
+	for _, scope := range []string{"wgua, tailscale", "wgua,tailscale,wg0", "wg'ua", "<iface>"} {
+		r.fails("grant", map[string]any{"client": "c", "tool": "wg_list_clients", "scope": scope, "replace": true}, "bad scope")
 		if !r.allowed("c", "wg_list_clients", "wireguard.wgua") {
 			t.Fatalf("scope %q: the refused edit removed the old grant", scope)
 		}
 	}
+}
+
+// Several limits for one tool are space-separated, as on the CLI; a single grant covers each of them.
+func TestAGrantTakesSeveralLimitsForOneTool(t *testing.T) {
+	r := newRig(t)
+	if err := appendPolicy(r.env.configPath, "c", "uci_get", "*", "1h"); err != nil {
+		t.Fatal(err)
+	}
+	r.ok("grant", map[string]any{"client": "c", "tool": "uci_get", "scope": "wireless.*  network.*", "duration": "1h", "replace": true})
+	for scope, want := range map[string]bool{"wireless.radio0": true, "network.lan": true, "firewall.zone": false} {
+		if got := r.allowed("c", "uci_get", scope); got != want {
+			t.Errorf("uci_get on %s: allowed=%v, want %v", scope, got, want)
+		}
+	}
+	// A tool with nothing to limit by still takes only "*", however many names are given.
+	r.fails("grant", map[string]any{"client": "c", "tool": "logread", "scope": "a b"}, "cannot be limited")
 }
 
 func TestAReplacementAskingForConfirmationKeepsTheOldGrant(t *testing.T) {
