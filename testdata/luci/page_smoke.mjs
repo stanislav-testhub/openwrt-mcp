@@ -802,7 +802,24 @@ fresh();
 	} finally { delete win.sessionStorage; }
 }
 
-// 27c. Ticking a switch on Settings redraws the pane; the scroll position is put back, as on Permissions
+// 27e. Ticking a switch sets the boxes in place: the Settings pane is not rebuilt, so nothing flashes or moves
+fresh();
+{
+	const { root } = await load();
+	const settings = pane(root, 'settings');
+	let rebuilt = false;
+	const rebuild = settings.replaceChildren;
+	settings.replaceChildren = function(...a) { rebuilt = true; return rebuild.apply(this, a); };
+	const [ sw ] = find(settings, x => x.attrs['data-channel'] === 'pair');
+	state.settings.channels[0].enabled = true; // what the router will report after the call
+	sw.checked = true; sw.listeners.change();
+	await flush();
+	assert.equal(rebuilt, false, 'a switch tick must not rebuild the pane');
+	assert.equal(find(settings, x => x.attrs['data-channel'] === 'pair')[0], sw, 'the same box stays in the page');
+	assert.ok(find(root, x => x.tag === 'a' && /Clients/.test(text(x))).length, 'the Clients tab still appears');
+}
+
+// 27f. Other settings changed with the tick: the pane is rebuilt and the scroll position is put back
 fresh();
 {
 	const { root } = await load();
@@ -815,12 +832,32 @@ fresh();
 	Object.defineProperty(win, 'pageYOffset', { configurable: true, get: () => (jumped ? 0 : 300) });
 	win.scrollTo = (x, y) => scrolled.push([ x, y ]);
 	const [ sw ] = find(settings, x => x.attrs['data-channel'] === 'pair');
-	state.settings.channels[0].enabled = true; // what the router will report after the call
+	state.settings.request_ttl = 120;
 	sw.checked = true; sw.listeners.change();
 	await flush();
 	delete win.pageYOffset; delete win.scrollTo;
 	assert.ok(jumped, 'the Settings pane was not redrawn, so this test proves nothing');
-	assert.deepEqual(scrolled, [ [ 0, 300 ] ], 'the Settings redraw after a tick must restore the scroll position');
+	assert.deepEqual(scrolled, [ [ 0, 300 ] ], 'the Settings redraw must restore the scroll position');
+}
+
+// 27g. Turning pairing on adds a tab and the tab bar wraps to a second line: the ticked box is kept where it was
+fresh();
+{
+	const { root } = await load();
+	const tabbar = find(root, x => x.attrs.class === 'cbi-tabmenu')[0];
+	let wrapped = false;
+	const rebuild = tabbar.replaceChildren;
+	tabbar.replaceChildren = function(...a) { wrapped = true; return rebuild.apply(this, a); };
+	const [ sw ] = find(pane(root, 'settings'), x => x.attrs['data-channel'] === 'pair');
+	const scrolledBy = [];
+	win.scrollBy = (x, y) => scrolledBy.push([ x, y ]);
+	doc.activeElement = null;
+	doc.getElementById = id => (id === sw.attrs.id ? { getBoundingClientRect: () => ({ top: wrapped ? 744 : 700 }) } : null);
+	state.settings.channels[0].enabled = true;
+	sw.checked = true; sw.listeners.change();
+	await flush();
+	delete win.scrollBy; delete doc.getElementById; delete doc.activeElement;
+	assert.deepEqual(scrolledBy, [ [ 0, 44 ] ], 'the page scrolls by what the tab bar grew, so the box stays put');
 }
 
 // 28. The pairing channel is off: no Clients tab; switching it on is one call. On: the tab shows the key form.

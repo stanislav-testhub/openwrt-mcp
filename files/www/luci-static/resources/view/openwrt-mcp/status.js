@@ -475,7 +475,7 @@ return view.extend({
 	render: function(data) {
 		var ui_ = { tab: savedTab() || 'overview', client: null, req: {}, answered: [], adv: false, editing: null, choice: null, duration: '1h',
 			pa: { box: false, name: '', duration: '1h' }, filter: { client: '', kind: '', text: '' }, shown: ACTIVITY_PAGE,
-			raw: {}, sig: {}, draft: null, settingsDraft: null };
+			raw: {}, sig: {}, draft: null, settingsDraft: null, settingsShape: '', channelBoxes: {}, anchor: null };
 		if (!data.tools) {
 			data.st = { clients: [], policies: [], requests: [], audit: [], pending: [], permit_all: [] };
 			data.tools = { groups: [] };
@@ -938,7 +938,18 @@ return view.extend({
 		// A redraw swaps whole panes; put the page back where the owner was, so a tap does not jump to the top.
 		function keepScroll(fn) {
 			var y = window.pageYOffset;
+			// The box the user just ticked is kept where it was: a redraw can move what is above it
+			// (a tab bar that wraps to a second line), which restoring the scroll offset cannot undo.
+			var a = ui_.anchor && document.getElementById ? document.getElementById(ui_.anchor) : null;
+			var top = a ? a.getBoundingClientRect().top : 0;
 			fn();
+			a = ui_.anchor && document.getElementById ? document.getElementById(ui_.anchor) : null;
+			if (a && typeof window.scrollBy === 'function') {
+				var d = a.getBoundingClientRect().top - top;
+				if (d)
+					window.scrollBy(0, d);
+				return;
+			}
 			if (typeof window.scrollTo === 'function' && window.pageYOffset !== y)
 				window.scrollTo(0, y);
 		}
@@ -1494,7 +1505,8 @@ return view.extend({
 				var copy = CHANNEL_COPY[c.name] || [ _(c.title), '' ];
 				var box = E('input', { 'type': 'checkbox', 'data-channel': c.name, 'id': 'mcp-ch-' + c.name, 'disabled': data.writable ? null : '' });
 				box.checked = c.enabled;
-				box.addEventListener('change', function() { run(callSetChannel(c.name, box.checked)); });
+				ui_.channelBoxes[c.name] = box;
+				box.addEventListener('change', function() { ui_.anchor = 'mcp-ch-' + c.name; run(callSetChannel(c.name, box.checked)); });
 				return row(copy[0], E('label', {}, [ box, ' ', _('On') ]), [ copy[1] ? copy[1] + ' ' : '', E('strong', {}, _('Risk:')), ' ', _(c.harm) ], 'mcp-ch-' + c.name);
 			});
 			var mfa = s.mfa_clients || [];
@@ -1575,8 +1587,19 @@ return view.extend({
 			var key = function(k, v) { var s = JSON.stringify(v); if (ui_.sig[k] === s) return false; ui_.sig[k] = s; return true; };
 			if (key('permissions', [ data.st.policies, data.st.clients, data.st.permit_all, data.writable, ui_.client, data.tools ])) drawPermissions();
 			if (key('activity', [ data.st.audit, openRequests(data.st).length ])) drawActivity();
-			if (key('settings', data.settings)) keepScroll(function() { drawSettings(); showTab(); });
+			if (key('settings', data.settings)) keepScroll(function() {
+				// Ticking a switch changes only the channel flags: set the boxes in place, since
+				// rebuilding the pane makes the page flash and jump for a frame.
+				var shape = JSON.stringify(Object.assign({}, data.settings, { channels: (data.settings.channels || []).map(function(c) { return c.name; }) }));
+				if (ui_.settingsShape === shape)
+					(data.settings.channels || []).forEach(function(c) { if (ui_.channelBoxes[c.name]) ui_.channelBoxes[c.name].checked = c.enabled; });
+				else
+					drawSettings();
+				ui_.settingsShape = shape;
+				showTab();
+			});
 			if (channelOn('pair') && key('clients', [ data.settings.channels, data.writable ])) drawClients();
+			ui_.anchor = null;
 			tick(root);
 		}
 
