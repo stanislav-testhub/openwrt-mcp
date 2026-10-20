@@ -30,6 +30,7 @@ var CSS = [
 	'.mcp-wrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}',
 	'.mcp-wrow .mcp-wtext{flex:1 1 20em}',
 	'.mcp-wrow .mcp-sep{margin-left:16px}',
+	'.mcp-wrow a.cbi-button{display:inline-flex;align-items:center;justify-content:center;text-decoration:none}',
 	'@media (max-width:600px){.mcp-wrow button,.mcp-wrow a{flex:1 1 100%;min-height:40px}.mcp-wrow .mcp-sep{margin-left:0}}'
 ].join('\n');
 
@@ -279,12 +280,11 @@ return baseclass.extend({
 		var open = data.open.sort(function(a, b) { return Date.parse(a.created) - Date.parse(b.created); });
 		var nodes = [ E('style', {}, CSS) ].concat(permitAll.map(banner));
 		if (open.length) {
-			nodes.push(E('h3', {}, open.length === 1 ? _('MCP Server · 1 request waiting') : _('MCP Server · %d requests waiting').format(open.length)));
+			nodes.push(E('h3', {}, open.length === 1 ? _('1 request waiting') : _('%d requests waiting').format(open.length)));
 			open.slice(0, 3).forEach(function(r) { nodes.push(requestLine(r)); });
 			if (open.length > 3)
 				nodes.push(E('p', {}, _('and %d more').format(open.length - 3)));
-		} else if (!permitAll.length)
-			nodes.push(E('h3', {}, _('MCP Server')));
+		}
 		pending.forEach(function(p) {
 			nodes.push(E('div', { 'class': 'alert-message warning' },
 				_('A change to %s by %s is waiting for confirmation. It undoes itself in %s.').format(

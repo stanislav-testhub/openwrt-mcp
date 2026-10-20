@@ -78,8 +78,8 @@ func TestBadgesAndNotesComeFromTheRegistry(t *testing.T) {
 		if got.Badge != w.badge || !slices.Equal(got.Notes, w.notes) {
 			t.Errorf("%s: badge %q notes %v, want %q %v", name, got.Badge, got.Notes, w.badge, w.notes)
 		}
-		if got.Title != toolTitles[name] {
-			t.Errorf("%s: title %q, the registry says %q", name, got.Title, toolTitles[name])
+		if got.Title != toolTitle(name) {
+			t.Errorf("%s: title %q, the registry says %q", name, got.Title, toolTitle(name))
 		}
 	}
 	if len(rows) != len(allToolNames) {

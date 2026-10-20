@@ -632,3 +632,25 @@ func TestAnAuditOnOpkgIsAnErrorNotAnEmptyReport(t *testing.T) {
 		t.Errorf("audit = %q, %v", out, err)
 	}
 }
+
+func TestPackageToolsNameOnlyTheManagerTheRouterRuns(t *testing.T) {
+	for _, tc := range []struct{ bin, other, titleSuffix string }{
+		{"usr/bin/apk", "opkg", "(.apk-new)"},
+		{"bin/opkg", "apk", "(-opkg)"},
+	} {
+		root := withFixtureRoot(t)
+		writeFixture(t, root, tc.bin, "")
+		cs := connectClient(t, testServer(t, ""), "c")
+		for _, tl := range listedTools(t, cs) {
+			if !strings.HasPrefix(tl.Name, "pkg_") {
+				continue
+			}
+			if tl.Name == "pkg_config_diff" && !strings.HasSuffix(tl.Title, tc.titleSuffix+"") {
+				t.Errorf("%s title %q lacks %s", tl.Name, tl.Title, tc.titleSuffix)
+			}
+			if strings.Contains(strings.ToLower(tl.Title+" "+tl.Description), tc.other) {
+				t.Errorf("%s on %s mentions %s: %q / %q", tl.Name, tc.bin, tc.other, tl.Title, tl.Description)
+			}
+		}
+	}
+}

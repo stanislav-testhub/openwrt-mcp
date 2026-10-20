@@ -77,7 +77,7 @@ fresh();
 	const root = await draw();
 	assert.equal(find(root, x => x.attrs['data-request']).length, 2);
 	const t = text(root);
-	assert.match(t, /MCP Server · 2 requests waiting/);
+	assert.match(t, /2 requests waiting/);
 	assert.match(t, /Claude Code wants to turn off Wi-Fi radio 1/);
 	assert.match(t, /Changes things/);
 	assert.match(t, /Claude Code wants to run a command as root Full control/);
@@ -109,7 +109,7 @@ fresh();
 {
 	state.st.requests = state.st.requests.slice(0, 1);
 	const root = await draw();
-	assert.match(text(root), /MCP Server · 1 request waiting/);
+	assert.match(text(root), /1 request waiting/);
 	const c = card(root, 'aaaa1111');
 	assert.match(byAct(c, 'allow')[0].attrs.class, /cbi-button-action/);
 	byAct(c, 'allow')[0].listeners.click();
@@ -224,7 +224,7 @@ fresh();
 		state.st.requests.push({ id: 'ext' + i, client: 'claude-code', tool: 'pkg_change', scope: '*', state: 'open', created: iso(-i * 1000), expires: iso(500e3) });
 	const root = await draw();
 	assert.equal(find(root, x => x.attrs['data-request']).length, 3);
-	assert.match(text(root), /MCP Server · 6 requests waiting/);
+	assert.match(text(root), /6 requests waiting/);
 	assert.match(text(root), /and 3 more/);
 }
 // 14. live grants are listed with their time left; look-only alone keeps the include hidden

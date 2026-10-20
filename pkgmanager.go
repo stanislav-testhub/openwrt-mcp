@@ -322,3 +322,14 @@ func capabilityLine() string {
 	}
 	return "packages: " + currentPkgManager().name() + "; firewall: " + fw
 }
+
+// The tool descriptions name only the package manager this router runs, not both.
+func pmName() string    { return currentPkgManager().name() }
+func pmNewFile() string { return currentPkgManager().newConfigSuffix() }
+func pmOldFile() string { return currentPkgManager().oldConfigSuffix() }
+func pmText(apk, opkg string) string {
+	if pmName() == "apk" {
+		return apk
+	}
+	return opkg
+}

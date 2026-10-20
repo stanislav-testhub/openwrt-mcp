@@ -7,6 +7,8 @@ Fixed
 - `allow` refuses a comma in a scope: scopes are separated by spaces, so `'wireless.*,network.*'` was stored as one pattern that matched nothing. The check runs before an expired grant is replaced.
 - LuCI Permissions: a tool's custom limit takes several names separated by spaces, as the CLI does, so a tool with more than one limit can be edited and saved (the `grant` call accepts them; commas and quotes are still refused).
 - LuCI Settings no longer jumps the scroll position when a switch is ticked.
+- The package tools name only the package manager the router runs: titles read "Query packages (apk)" and "Review new package configs (.apk-new)" on 25.12, and "(opkg)" and "(-opkg)" on 24.10, and their descriptions no longer say "apk; opkg on 24.10". The generated skill file keeps the plain titles.
+- LuCI Status › Overview: the widget no longer repeats the "MCP Server" title, and its Open MCP Server button text is centered.
 - LuCI Activity: the service's own records (a connection opening, a request held, answered or expired) read as sentences instead of `asked to use "request"`, each row's Show raw button sits at the right edge of its cell, and each filter keeps its label with its field, with Search filling the rest of the row.
 - LuCI: with one assistant there is no Assistant picker on Permissions and no Assistant filter on Activity, and its id is shown only when there are several. On a phone, Show raw sits on its own line in every Activity row, and the custom limit editor keeps each label with its field.
 - LuCI: on a phone the tables' header row is hidden in every theme (a later rule used to show it as a stray box).

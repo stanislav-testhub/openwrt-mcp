@@ -155,25 +155,25 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 	// ---- packages (apk)
 
 	addTool(s, srv, client, "pkg_query",
-		"Query the package manager (apk; opkg on 24.10): installed (optionally a glob), upgradable, search, info, "+
-			"files, owner (which package owns a path), policy and audit (apk only), world (explicitly requested "+
+		"Query the package manager ("+pmName()+"): installed (optionally a glob), upgradable, search, info, "+
+			"files, owner (which package owns a path), "+pmText("policy and audit, ", "")+"world (explicitly requested "+
 			"packages). refresh=true updates the lists first.",
 		annRead, noScope[pkgQueryIn], pkgQuery)
 
 	addTool(s, srv, client, "pkg_change",
-		"Install, remove or upgrade packages with apk (opkg on 24.10). SIMULATES unless commit=true, so call once "+
-			"to see the plan, then again to do it. Reports any new .apk-new (opkg: -opkg) config files. Upgrading "+
+		"Install, remove or upgrade packages with "+pmName()+". SIMULATES unless commit=true, so call once "+
+			"to see the plan, then again to do it. Reports any new "+pmNewFile()+" config files. Upgrading "+
 			"everything in place is discouraged on OpenWrt.",
 		annDest, pkgChangeScope, pkgChange)
 
 	addTool(s, srv, client, "pkg_config_diff",
-		"Show the .apk-new (opkg: -opkg) files an upgrade left behind (new package defaults not applied because "+
+		"Show the "+pmNewFile()+" files an upgrade left behind (new package defaults not applied because "+
 			"the live config was modified), each as a diff against the live file.",
 		annRead, noScope[pkgConfigDiffIn], pkgConfigDiff)
 
 	addTool(s, srv, client, "pkg_config_resolve",
-		"Resolve one .apk-new (opkg: -opkg): keep_current deletes it; use_new installs it over the live file (old "+
-			"copy kept as .pre-apk-new, opkg: .pre-opkg-new; for /etc/config/* with a rollback timer and uci_confirm, "+
+		"Resolve one "+pmNewFile()+": keep_current deletes it; use_new installs it over the live file (old "+
+			"copy kept as "+pmOldFile()+"; for /etc/config/* with a rollback timer and uci_confirm, "+
 			"like uci_apply).",
 		annDest, pkgResolveScope,
 		func(ctx context.Context, in pkgConfigResolveIn) (string, string, error) {
@@ -230,6 +230,19 @@ var allToolNames = []string{
 	"net_diag", "uci_get", "uci_apply", "uci_confirm", "uci_rollback", "service_list", "service_control",
 	"pkg_query", "pkg_change", "pkg_config_diff", "pkg_config_resolve", "sysupgrade", "wg_list_clients",
 	"wg_new_client", "wg_remove_client", "mfa_unlock",
+}
+
+// toolTitle is the display name; the package tools say which package manager they drive, so a
+// 25.12 router shows apk and a 24.10 router opkg.
+func toolTitle(name string) string {
+	t := toolTitles[name]
+	switch name {
+	case "pkg_query", "pkg_change":
+		return t + " (" + pmName() + ")"
+	case "pkg_config_diff", "pkg_config_resolve":
+		return t + " (" + pmNewFile() + ")"
+	}
+	return t
 }
 
 // toolTitles is each tool's display name. Clients show title, then annotations.title, then

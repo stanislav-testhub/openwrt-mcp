@@ -440,10 +440,10 @@ func TestToolTitlesAndHints(t *testing.T) {
 		"uci_rollback":       {"Roll back pending change", false, true, &no, &no},
 		"service_list":       {"List services", true, false, nil, &no},
 		"service_control":    {"Control a service", false, false, &yes, &no},
-		"pkg_query":          {"Query packages", true, false, nil, &yes},
-		"pkg_change":         {"Install, remove or upgrade packages", false, false, &yes, &yes},
-		"pkg_config_diff":    {"Review new package configs", true, false, nil, &no},
-		"pkg_config_resolve": {"Resolve a package config", false, false, &yes, &no},
+		"pkg_query":          {"Query packages (apk)", true, false, nil, &yes},
+		"pkg_change":         {"Install, remove or upgrade packages (apk)", false, false, &yes, &yes},
+		"pkg_config_diff":    {"Review new package configs (.apk-new)", true, false, nil, &no},
+		"pkg_config_resolve": {"Resolve a package config (.apk-new)", false, false, &yes, &no},
 		"sysupgrade":         {"Firmware checks and backup (never flashes)", false, false, &no, &yes},
 		"wg_list_clients":    {"List WireGuard peers", true, false, nil, &no},
 		"wg_new_client":      {"Add WireGuard peer", false, false, &yes, &no},
@@ -462,6 +462,7 @@ func TestToolTitlesAndHints(t *testing.T) {
 		}
 		return "false"
 	}
+	withFixtureRoot(t) // no package manager binary: the current release, apk
 	cs := connectClient(t, testServer(t, ""), "c")
 	seen := map[string]bool{}
 	for _, tl := range listedTools(t, cs) {

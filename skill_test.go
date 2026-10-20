@@ -59,7 +59,8 @@ func renderSkill(tools []*mcp.Tool) string {
 	b.WriteString(skillIntro)
 	b.WriteString("\n")
 	for _, tl := range sorted {
-		fmt.Fprintf(&b, "- `%s`: %s\n", tl.Name, tl.Title)
+		// The skill file is for every release, so it uses the plain title, not the per-router suffix.
+		fmt.Fprintf(&b, "- `%s`: %s\n", tl.Name, toolTitles[tl.Name])
 	}
 	return b.String()
 }
