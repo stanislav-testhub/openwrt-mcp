@@ -215,3 +215,16 @@ func TestFloorEntriesArePinned(t *testing.T) {
 		t.Errorf("floorPaths = %s", got)
 	}
 }
+
+// A refusal to touch the policy or rpcd config is a policy refusal, and an agent reading the
+// code must see POLICY_DENIED, not FAILED (which reads as a fault worth retrying).
+func TestPolicyConfigRefusalCarriesPolicyDenied(t *testing.T) {
+	everythingFake(t)
+	withFixtureRoot(t)
+	out, isErr := callText(t, connectClient(t, testServer(t, grantAll()), "c"), "uci_apply", map[string]any{
+		"changes": []map[string]any{{"config": "rpcd", "section": "l", "type": "login"}},
+	})
+	if !isErr || !strings.Contains(out, "[code: POLICY_DENIED]") {
+		t.Errorf("want an error coded POLICY_DENIED:\n%s", out)
+	}
+}

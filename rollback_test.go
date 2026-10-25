@@ -560,8 +560,19 @@ func TestResolveUseNewIsRollbackArmed(t *testing.T) {
 	if !strings.Contains(readConf(t, "dhcp"), "'new'") {
 		t.Error("new default not installed")
 	}
-	if b, _ := os.ReadFile(filepath.Join(uciConfDir, "dhcp.pre-apk-new")); string(b) != origDHCP {
-		t.Error("old copy not kept as .pre-apk-new")
+	// The old copy must not look like a UCI package: reload_config and uci walk /etc/config/* and
+	// choke on "dhcp.pre-apk-new" ("uci: Invalid argument"), so it is kept as a hidden file.
+	if b, _ := os.ReadFile(filepath.Join(uciConfDir, ".dhcp.pre-apk-new")); string(b) != origDHCP {
+		t.Error("old copy not kept as .dhcp.pre-apk-new")
+	}
+	if !strings.Contains(out, "/etc/config/.dhcp.pre-apk-new") {
+		t.Errorf("the result must name where the old copy is:\n%s", out)
+	}
+	ents, _ := os.ReadDir(uciConfDir)
+	for _, e := range ents {
+		if strings.Contains(e.Name(), "pre-apk-new") && !strings.HasPrefix(e.Name(), ".") {
+			t.Errorf("%s is picked up by /etc/config/*", e.Name())
+		}
 	}
 	if _, _, err := s.uciRollbackNow(context.Background(), firstToken(s)); err != nil {
 		t.Fatal(err)

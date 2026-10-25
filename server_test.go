@@ -416,6 +416,15 @@ func listenTestSocket(t *testing.T, s *Server) string {
 		case <-time.After(3 * time.Second):
 			t.Error("serveSocket did not stop after its listener closed")
 		}
+		// A bridge writes its session-closed audit record after the client hangs up: wait for it
+		// before the test's temp directory goes away.
+		ended := make(chan struct{})
+		go func() { s.bridges.Wait(); close(ended) }()
+		select {
+		case <-ended:
+		case <-time.After(5 * time.Second):
+			t.Error("a bridge session did not end after the client hung up")
+		}
 	})
 	return sock
 }

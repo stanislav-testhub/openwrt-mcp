@@ -148,7 +148,17 @@ func TestChatDeclineDeniesTheRequestAndTheCall(t *testing.T) {
 func heldStill(t *testing.T, s *Server, c *chatClient, name string, args map[string]any, wantAsked int32) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		// Cancelling ends the held call, and the server then writes its audit line. Leave only
+		// once it has, or the write races the removal of the test's temp directory.
+		cancel()
+		for end := time.Now().Add(5 * time.Second); time.Now().Before(end); time.Sleep(5 * time.Millisecond) {
+			if strings.Contains(auditFile(t, s), "cancelled while waiting for approval") {
+				return
+			}
+		}
+		t.Error("the held call never wrote its cancellation to the audit log")
+	}()
 	expectPending(t, callAsync(t, c.ClientSession, ctx, name, args), name)
 	if got := c.asked.Load(); got != wantAsked {
 		t.Errorf("asked %d times, want %d", got, wantAsked)

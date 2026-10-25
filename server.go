@@ -41,7 +41,8 @@ type Server struct {
 
 	pushMu sync.Mutex // serialises push-hook batches (pushhook.go)
 
-	slots chan struct{} // one entry per running tool call, capacity inflightLimit (limits.go)
+	slots   chan struct{}  // one entry per running tool call, capacity inflightLimit (limits.go)
+	bridges sync.WaitGroup // the bridge sessions serveSocket started, so a test can wait for their last audit write
 }
 
 // cfg returns the current policy set, re-reading the config file when it has changed on
@@ -242,7 +243,11 @@ func (s *Server) serveSocket(ln net.Listener) {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		go s.handleBridge(conn)
+		s.bridges.Add(1)
+		go func() {
+			defer s.bridges.Done()
+			s.handleBridge(conn)
+		}()
 	}
 }
 

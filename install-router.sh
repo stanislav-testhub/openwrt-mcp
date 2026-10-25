@@ -79,8 +79,12 @@ install_payload() {
 	}
 	put usr/bin/openwrt-mcp /usr/bin/openwrt-mcp 0755
 	put etc/init.d/openwrt-mcp /etc/init.d/openwrt-mcp 0755
+	# The shipped config is kept beside the live one for comparison. Not in /etc/config: reload_config
+	# runs `uci show` on every file there, and "openwrt-mcp.default" is no UCI package name.
+	mkdir -p /etc/openwrt-mcp && chmod 0700 /etc/openwrt-mcp
+	rm -f /etc/config/openwrt-mcp.default
 	if [ -f /etc/config/openwrt-mcp ]; then
-		cmp -s "$S/etc/config/openwrt-mcp" /etc/config/openwrt-mcp || cp "$S/etc/config/openwrt-mcp" /etc/config/openwrt-mcp.default
+		cmp -s "$S/etc/config/openwrt-mcp" /etc/config/openwrt-mcp || cp "$S/etc/config/openwrt-mcp" /etc/openwrt-mcp/config.default
 	else
 		put etc/config/openwrt-mcp /etc/config/openwrt-mcp 0600
 	fi

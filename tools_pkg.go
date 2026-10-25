@@ -403,6 +403,9 @@ func (s *Server) pkgConfigResolve(ctx context.Context, client string, in pkgConf
 	live := strings.TrimSuffix(path.Clean(in.Path), m.newConfigSuffix())
 	newF := live + m.newConfigSuffix()
 	oldF := live + m.oldConfigSuffix()
+	if dir, name := path.Split(live); dir == "/etc/config/" {
+		oldF = dir + "." + name + m.oldConfigSuffix() // not a name /etc/config/* globs to
+	}
 	if !strings.HasPrefix(live, "/etc/") || !contains(findNewConfigs(), newF) {
 		return "", "", fmt.Errorf("no %s", newF)
 	}

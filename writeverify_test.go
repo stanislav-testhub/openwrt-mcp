@@ -290,6 +290,7 @@ type wgBackend struct {
 	versions    map[string][]string // file body -> the committed lines it stands for
 	rev         int
 	renews      int
+	ifups       int // `ifup wg0`: the only way a 24.10 interface takes up peer changes
 	blindReload bool
 	slowLoad    int // the reload takes effect only after this many reads of the interface
 	loadIn      int
@@ -377,6 +378,12 @@ func newWGBackend(t *testing.T, f *fakeRouter, handshakeC int64, lieUCI, lieKern
 	}))
 	f.onFn("ubus call network.interface.wg0 renew", locked(func([]string) string {
 		b.renews++
+		b.reread()
+		b.load()
+		return ""
+	}))
+	f.onFn("ifup wg0", locked(func([]string) string {
+		b.ifups++
 		b.reread()
 		b.load()
 		return ""

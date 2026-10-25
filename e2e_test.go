@@ -180,7 +180,7 @@ func TestBridgeRejectsABadHandshake(t *testing.T) {
 	s := testServer(t, "")
 	for _, hello := range []string{"not json\n", `{"client":"../etc"}` + "\n", `{"client":""}` + "\n"} {
 		srvSide, cliSide := net.Pipe()
-		go s.handleBridge(srvSide)
+		serveBridge(t, s, srvSide)
 		_ = cliSide.SetDeadline(time.Now().Add(5 * time.Second))
 		cliSide.Write([]byte(hello))
 		line, _ := bufio.NewReader(cliSide).ReadString('\n')
@@ -200,4 +200,21 @@ func TestPkgChangeUnknownActionIsRejectedBeforePolicy(t *testing.T) {
 	if !isErr || strings.Contains(out, "denied") || !strings.Contains(out, "unknown action") {
 		t.Errorf("want a validation error for action=remove, got isErr=%v: %s", isErr, out)
 	}
+}
+
+// serveBridge runs the daemon's side of a bridge connection. The session-closed audit record is
+// written after the client hangs up, so the test waits for the bridge to end before its temp
+// directory is removed; closing srvSide makes sure it does end.
+func serveBridge(t *testing.T, s *Server, srvSide net.Conn) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() { s.handleBridge(srvSide); close(done) }()
+	t.Cleanup(func() {
+		srvSide.Close()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("the bridge session did not end")
+		}
+	})
 }

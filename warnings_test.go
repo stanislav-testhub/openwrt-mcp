@@ -798,7 +798,7 @@ func TestThePeerReachesAStdioSession(t *testing.T) {
 	s, f, _ := adviceFixture(t, policyFor("c", []string{"uci_apply"}, "network.*"))
 	f.on("ip route get 198.51.100.7", viaWG)
 	srvSide, cliSide := net.Pipe()
-	go s.handleBridge(srvSide)
+	serveBridge(t, s, srvSide)
 	_ = cliSide.SetDeadline(time.Now().Add(10 * time.Second))
 	w := bufio.NewWriter(cliSide)
 	w.WriteString(`{"client":"c","origin":"ssh from 198.51.100.7","peer":"198.51.100.7"}` + "\n")

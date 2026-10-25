@@ -256,3 +256,14 @@ func FuzzSummariseAdGuardHome(f *testing.F) {
 		}
 	})
 }
+
+// The 24.10 package names the file in `config`, not `config_file`, and keeps it at /etc/adguardhome.yaml.
+func TestAdGuardHomeDetailFollowsTheConfigOptionOfThe2410Package(t *testing.T) {
+	f, root := adapterRouter(t)
+	writeFixture(t, root, "etc/adguardhome.yaml", adapterFixture(t, "adguardhome.yaml"))
+	f.fail("uci -q get adguardhome.config.config_file", "")
+	f.on("uci -q get adguardhome.config.config", "/etc/adguardhome.yaml\n")
+	if got := agDetail(t)[1]; got != "config: /etc/adguardhome.yaml, schema 34" {
+		t.Errorf("config line = %q", got)
+	}
+}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -304,5 +305,28 @@ func TestPkgConfigDiffIgnoresUCIFormatting(t *testing.T) {
 	}
 	if !f.ran("uci -q -c") || strings.Contains(f.allCalls(), "/tmp/.uci") {
 		t.Errorf("did not normalise through a private uci copy:\n%s", f.allCalls())
+	}
+}
+
+// BusyBox's `ip` (stock 24.10) has no -j: it prints its whole usage and fails. The neighbour table
+// must then come from the plain `ip neigh show`, and that usage text must not reach the reply.
+func TestNetworkClientsFallsBackToPlainIPNeighWithoutJSON(t *testing.T) {
+	f := everythingFake(t)
+	withFixtureRoot(t)
+	f.onFn("ip -j neigh show", func([]string, string) (string, error) {
+		return "", fmt.Errorf("exit status 1: BusyBox v1.36.1 multi-call binary.\n\nUsage: ip [OPTIONS] address|route|link|neigh|rule\n")
+	})
+	f.on("ip neigh show", "192.168.1.50 dev br-lan lladdr aa:bb:cc:00:00:50 REACHABLE\n"+
+		"fe80::1 dev br-lan lladdr aa:bb:cc:00:00:50 STALE\n"+
+		"192.168.1.51 dev br-lan  FAILED\n")
+	out, isErr := callText(t, connectClient(t, testServer(t, grantAll()), "c"), "network_clients", map[string]any{})
+	if isErr {
+		t.Fatal(out)
+	}
+	if !strings.Contains(out, "192.168.1.50") || !strings.Contains(out, "aa:bb:cc:00:00:50") {
+		t.Errorf("the plain `ip neigh show` table was not used:\n%s", out)
+	}
+	if strings.Contains(out, "BusyBox") || strings.Contains(out, "Usage:") || strings.Contains(out, "neighbour table unavailable") {
+		t.Errorf("BusyBox usage leaked into the reply:\n%s", out)
 	}
 }

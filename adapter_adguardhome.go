@@ -31,10 +31,14 @@ func readAdGuardHome(ctx context.Context) string {
 		lines = append(lines, "AdGuard Home: not running")
 	}
 
+	// config_file is the option other builds use; the 24.10 package names the file in `config`.
 	path := agDefaultConfig
-	if out, err := run(ctx, defaultCmdTimeout, "uci", "-q", "get", "adguardhome.config.config_file"); err == nil {
-		if p := strings.TrimSpace(out); p != "" {
-			path = p
+	for _, opt := range []string{"config_file", "config"} {
+		if out, err := run(ctx, defaultCmdTimeout, "uci", "-q", "get", "adguardhome.config."+opt); err == nil {
+			if p := strings.TrimSpace(out); p != "" {
+				path = p
+				break
+			}
 		}
 	}
 	port := ""

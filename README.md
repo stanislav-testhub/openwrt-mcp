@@ -36,7 +36,8 @@ GL-MT6000 right after start, and 23 tools in about 22 KB of tool descriptions. E
   `system_status` says which one and which firewall it found.
   - **What differs on 24.10:** `pkg_query` has no `policy` and no `audit` (opkg has neither; the tool says so). `pkg_change`
     simulates with `opkg --noaction`. New package defaults arrive as `<file>-opkg` instead of `<file>.apk-new`, and
-    `pkg_config_diff` / `pkg_config_resolve` handle both (the old copy is kept as `.pre-opkg-new`). `world` lists the packages
+    `pkg_config_diff` / `pkg_config_resolve` handle both (the old copy is kept as `.pre-opkg-new`; for `/etc/config/NAME` as the hidden `.NAME.pre-opkg-new`, which `reload_config` skips). Adding or removing a WireGuard peer re-runs `ifup` for the interface (24.10's handler cannot sync peers in
+    place), so every tunnel's sessions restart for a moment. `world` lists the packages
     opkg marks "user installed". `system_status mode=doctor` reports `opkg-new-pending`; `mode=audit` skips the package audit
     and says why.
   - **fw3 (OpenWrt 21.02 and older, or firmware built on it):** best effort. `firewall_show` answers `ruleset` (`iptables-save`,
@@ -260,8 +261,9 @@ policy, the rpcd config, `/etc/openwrt-mcp` and the request state; and `uci_appl
 `pkg_config_resolve` on those two configs. A client that already holds a root shell is outside what the floor
 can claim: see [SECURITY.md](SECURITY.md#authorisation). Design note: [`docs/luci-approvals.md`](docs/luci-approvals.md).
 
-Not verified on a real router yet: the LuCI rendering, rpcd refusing a write call without the write ACL, and the
-Overview widget hiding itself. Screenshots will be added once a hardware run is done.
+Run on a real OpenWrt 25.12.5 router (including the LuCI phone layout) and on a 24.10.8 VM: the LuCI pages rendered in headless Chromium, the approve, deny and
+root-shell confirmation flow, rpcd refusing a write call for a read-only login, and the Overview widget showing only while a
+request is pending. Screenshots will be added.
 
 **Why not an `.apk`:** 25.12 packages are apk-tools v3 ADB archives. Building one needs the
 OpenWrt SDK or a host apk-tools with `mkpkg` (the router's apk has no `mkpkg`), and an

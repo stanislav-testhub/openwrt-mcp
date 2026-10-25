@@ -274,7 +274,7 @@ func TestBridgeCommandSelectsTheSessionProfile(t *testing.T) {
 	} {
 		s := testServer(t, "")
 		srvSide, cliSide := net.Pipe()
-		go s.handleBridge(srvSide)
+		serveBridge(t, s, srvSide)
 		_ = cliSide.SetDeadline(time.Now().Add(5 * time.Second))
 		w := bufio.NewWriter(cliSide)
 		w.WriteString(`{"client":"c","origin":"ssh from 192.0.2.7","command":` + jsonString(c.command) + "}\n")

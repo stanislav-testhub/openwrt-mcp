@@ -40,8 +40,9 @@ import (
 //
 // Peers reach the running interface the way any config change does: snapshot, armed rollback,
 // commit, reload, and netifd's WireGuard handler does the rest. On 25.12 that handler syncs the
-// peers with `wg syncconf`, which leaves the sessions of the other peers alone; other releases
-// are untested. A peer that is in the config is never changed with `wg set`, so a rollback that
+// peers with `wg syncconf`, which leaves the sessions of the other peers alone. 24.10's handler has no
+// renew action, so there the interface is brought up again with `ifup` (every peer's session restarts).
+// A peer that is in the config is never changed with `wg set`, so a rollback that
 // puts the file back puts the interface back with it.
 
 type wgServer struct {

@@ -103,13 +103,8 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 		}
 	}
 
-	var neigh []struct {
-		Dst    string   `json:"dst"`
-		Dev    string   `json:"dev"`
-		LLAddr string   `json:"lladdr"`
-		State  []string `json:"state"`
-	}
-	if err := runJSON(ctx, &neigh, "ip", "-j", "neigh", "show"); err == nil {
+	neigh, err := neighbours(ctx)
+	if err == nil {
 		for _, n := range neigh {
 			if !isMAC(n.LLAddr) {
 				continue
@@ -126,7 +121,7 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 			}
 		}
 	} else {
-		notes = append(notes, "neighbour table unavailable: "+err.Error())
+		notes = append(notes, "neighbour table unavailable: "+firstLine(err.Error()))
 	}
 
 	var devs struct {
@@ -369,4 +364,57 @@ func firewallShowFw3(ctx context.Context, in firewallShowIn) (string, string, er
 	}
 	out, err := run(ctx, defaultCmdTimeout, argv...)
 	return out, strings.Join(argv, " "), err
+}
+
+type neighbour struct {
+	Dst    string   `json:"dst"`
+	Dev    string   `json:"dev"`
+	LLAddr string   `json:"lladdr"`
+	State  []string `json:"state"`
+}
+
+// neighbours reads the neighbour table. `ip -j` needs iproute2; stock 24.10 ships BusyBox's `ip`,
+// which has no -j and answers with its whole usage text, so the plain table is the fallback.
+func neighbours(ctx context.Context) ([]neighbour, error) {
+	var n []neighbour
+	jerr := runJSON(ctx, &n, "ip", "-j", "neigh", "show")
+	if jerr == nil {
+		return n, nil
+	}
+	out, err := run(ctx, defaultCmdTimeout, "ip", "neigh", "show")
+	if err != nil {
+		return nil, jerr
+	}
+	return parseNeighText(out), nil
+}
+
+// parseNeighText reads `ip neigh show` lines: "<dst> dev <if> [lladdr <mac>] [router] <STATE>".
+func parseNeighText(out string) []neighbour {
+	var res []neighbour
+	for _, line := range strings.Split(out, "\n") {
+		f := strings.Fields(line)
+		if len(f) < 2 {
+			continue
+		}
+		n := neighbour{Dst: f[0]}
+		for i := 1; i < len(f); i++ {
+			switch f[i] {
+			case "dev":
+				if i+1 < len(f) {
+					n.Dev = f[i+1]
+					i++
+				}
+			case "lladdr":
+				if i+1 < len(f) {
+					n.LLAddr = f[i+1]
+					i++
+				}
+			case "router", "proxy", "extern_learn":
+			default:
+				n.State = []string{f[i]}
+			}
+		}
+		res = append(res, n)
+	}
+	return res
 }

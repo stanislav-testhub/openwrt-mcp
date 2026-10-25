@@ -3,8 +3,11 @@
 ## 1.6.0 -- Approve from the router
 
 An agent that hits a missing grant no longer waits for someone to open a shell: the request shows in LuCI, one click
-answers it, and the held call continues. Not yet verified on a real router: the LuCI rendering, rpcd refusing a write
-call without the write ACL, and the Overview widget hiding itself (see README, *Approve from LuCI*).
+answers it, and the held call continues. Run end to end on a real OpenWrt 25.12.5 router (GL-MT6000, including the LuCI
+phone layout) and on 24.10.8 (x86/64 VM): install, every tool,
+approvals from LuCI (rendered in headless Chromium: Overview, Permissions, Activity, Settings, the Status widget, the
+root-shell confirmation box), rpcd refusing a write call for a read-only login, and the widget appearing only while a
+request is pending (see README, *Approve from LuCI*).
 
 Added
 - **Approval requests and held calls (ROADMAP 8.2).** A refused call records a request (client, tool, exact scope,
@@ -48,6 +51,26 @@ Fixed
 - `allow` also refuses a placeholder scope (`<`, `>`, `{`, `}`), such as a copied `<service>.restart`.
 - `mfa status` says when an enrolled client has no policy with `mfa_tools`, so nothing is gated; the README explains that only a config policy is gated.
 - `uci_apply` no longer prints "Verified: 0 of N change(s) match" when every change is on a section addressed by position; it says "Not verified".
+- **24.10 WireGuard.** `wg_new_client` and `wg_remove_client` returned `NOT_APPLIED` on stock 24.10: its netifd handler has no
+  `renew` action (the call succeeds and does nothing) and `reload_config` does not touch peers, so the peer reached the
+  interface only at the next `ifup`. Where the handler has no `renew` the interface is now brought up again with `ifup`,
+  for the writer and for a rollback alike (25.12 keeps its in-place `renew`). On 24.10 this restarts the tunnel sessions
+  of every peer for a moment. Run on a 24.10.8 VM: add, remove, confirm and rollback of both.
+- `network_clients` on 24.10: BusyBox's `ip` has no `-j`, so the neighbour table was lost and the note carried BusyBox's
+  whole usage text. It reads the plain `ip neigh show` then, and a failure is one line.
+- `pkg_config_resolve use_new` on `/etc/config/NAME` kept the old copy as `NAME.pre-opkg-new` / `NAME.pre-apk-new` in
+  `/etc/config`, where `reload_config` and `uci` treat it as a package and print "uci: Invalid argument" on every
+  reload. It is now the hidden `.NAME.pre-opkg-new` (or `.pre-apk-new`).
+- `install-router.sh` left `/etc/config/openwrt-mcp.default` when the installed config differed from the shipped one;
+  `reload_config` printed "uci: Entry not found" for it on every change, into `uci_apply`, `wg_*` and `pkg_*` results.
+  The shipped copy is now `/etc/openwrt-mcp/config.default`, and an older `.default` in `/etc/config` is removed.
+- AdGuard Home adapter: the 24.10 package names the config file in `adguardhome.config.config` (`/etc/adguardhome.yaml`),
+  not `config_file`; both options are read.
+- A refusal to change the policy or rpcd config through `uci_apply`, `restore` or `pkg_config_resolve` carries
+  `POLICY_DENIED`, not `FAILED`. `system_status` names the router's own new-config suffix, not `.apk-new` on opkg.
+- Tests: three bridge and chat tests raced the removal of their temp directory (the session's closing audit record was
+  written after the test returned) and failed about every other run; they now wait for it, and `install.sh`'s test gate
+  no longer fails at random.
 
 ## 1.5.0 -- Reach and resilience
 

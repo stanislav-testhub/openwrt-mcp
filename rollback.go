@@ -557,17 +557,32 @@ func reloadConfigs(ctx context.Context, configs []string, force bool) string {
 	return strings.TrimSpace(out)
 }
 
-// renewInterface asks netifd to run the protocol handler's renew action. For WireGuard that syncs
-// the peers from the config without taking the interface down. The name comes from our own state
-// file but goes into an argv, so it must still be a UCI name.
+// renewInterface makes netifd put the interface's WireGuard peers in line with the config. Where
+// the protocol handler has a renew action (25.12) that syncs the peers without taking the
+// interface down. Stock 24.10 has none: `ubus call ... renew` succeeds there and does nothing, and
+// only `ifup` loads the peers (it sets the interface up again, so tunnel sessions restart). The
+// name comes from our own state file but goes into an argv, so it must still be a UCI name.
 func renewInterface(ctx context.Context, iface string) error {
 	if !reUCIOption.MatchString(iface) {
 		return fmt.Errorf("bad interface name %q", iface)
+	}
+	if !wgHandlerRenews() {
+		if out, err := run(ctx, defaultCmdTimeout, "ifup", iface); err != nil {
+			return fmt.Errorf("ifup %s: %w %s", iface, err, strings.TrimSpace(out))
+		}
+		return nil
 	}
 	if out, err := run(ctx, defaultCmdTimeout, "ubus", "call", "network.interface."+iface, "renew"); err != nil {
 		return fmt.Errorf("renewing %s: %w %s", iface, err, strings.TrimSpace(out))
 	}
 	return nil
+}
+
+// wgHandlerRenews reports whether netifd's WireGuard handler has a renew action. If the handler
+// cannot be read it is assumed to have one: that is the behaviour the tool was written for.
+func wgHandlerRenews() bool {
+	b, err := os.ReadFile(sysPath("/lib/netifd/proto/wireguard.sh"))
+	return err != nil || strings.Contains(string(b), "proto_wireguard_renew")
 }
 
 // removeClientFile deletes a client config named in a pending record, if it is one: a record the
@@ -656,8 +671,8 @@ func indentOut(s string) string {
 // errPolicyFile: whatever a client has been granted, it cannot grant itself more. Without
 // this, uci_apply on scope '*' (the @operator preset) could add a policy with exec on '*'
 // and confirm it. The rpcd config is covered too: its logins decide who may approve in LuCI.
-var errPolicyFile = fmt.Errorf("the openwrt-mcp policy config and the rpcd config cannot be changed through MCP, " +
-	"whatever the grant; change the policy on the router with openwrt-mcp allow / revoke")
+var errPolicyFile = withCode(codePolicyDenied, fmt.Errorf("the openwrt-mcp policy config and the rpcd config cannot be changed through MCP, "+
+	"whatever the grant; change the policy on the router with openwrt-mcp allow / revoke"))
 
 func (s *Server) isPolicyFile(p string) bool {
 	p = filepath.ToSlash(filepath.Clean(p))
