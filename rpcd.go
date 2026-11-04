@@ -171,6 +171,31 @@ func scopeFamily(scope string) string {
 	return scope
 }
 
+// requestScopes splits the scope a request carries: a call that touches several things (pkg_change
+// with three packages) is held with their scopes joined by spaces, and a grant names each one.
+func requestScopes(r Request) []string {
+	if f := strings.Fields(r.Scope); len(f) > 0 {
+		return f
+	}
+	return []string{r.Scope}
+}
+
+// scopeFamilies is scopeFamily for each scope, without repeats ("del.a del.b" is "del.*").
+func scopeFamilies(scopes []string) []string {
+	var out []string
+	for _, s := range scopes {
+		if f := scopeFamily(s); !slices.Contains(out, f) {
+			out = append(out, f)
+		}
+	}
+	return out
+}
+
+func firstUncoveredOK(globs, scopes []string) bool {
+	_, ok := firstUncovered(globs, scopes)
+	return ok
+}
+
 func (e rpcdEnv) listRequests(cfg *Config) ([]rpcdRequest, error) {
 	reqs, err := readMirror(e.requestsPath)
 	if err != nil {
@@ -180,13 +205,13 @@ func (e rpcdEnv) listRequests(cfg *Config) ([]rpcdRequest, error) {
 	out := make([]rpcdRequest, 0, len(reqs))
 	for _, r := range reqs {
 		if r.State == reqOpen {
-			if p, _, _ := cfg.authorise(r.Client, r.Tool, []string{r.Scope}, now); p != nil {
+			if p, _, _ := cfg.authorise(r.Client, r.Tool, requestScopes(r), now); p != nil {
 				r.State, r.Decider, r.Decided = reqAllowed, "policy", now
 			} else if now.After(r.Expires) {
 				r.State = reqExpired
 			}
 		}
-		out = append(out, rpcdRequest{r, scopeFamily(r.Scope)})
+		out = append(out, rpcdRequest{r, strings.Join(scopeFamilies(requestScopes(r)), " ")})
 	}
 	return out, nil
 }
@@ -263,15 +288,13 @@ func rpcdAudit(cfg *Config, env rpcdEnv, tool, client, scope, summary string) {
 // planGrant is what Allow writes for a request at the chosen breadth, narrowest first. The result
 // must cover the very call that was refused, or the held call would never be released.
 func planGrant(r Request, breadth string) ([]presetPolicy, error) {
-	if strings.ContainsAny(r.Scope, " \t\r\n") {
-		return nil, rpcdFail("the scope %q contains a space, so a grant cannot name it exactly: use the command line", r.Scope)
-	}
+	scopes := requestScopes(r)
 	var blocks []presetPolicy
 	switch breadth {
 	case "", "exact":
-		blocks = []presetPolicy{{tools: []string{r.Tool}, scopes: []string{r.Scope}}}
+		blocks = []presetPolicy{{tools: []string{r.Tool}, scopes: scopes}}
 	case "family":
-		blocks = []presetPolicy{{tools: []string{r.Tool}, scopes: []string{scopeFamily(r.Scope)}}}
+		blocks = []presetPolicy{{tools: []string{r.Tool}, scopes: scopeFamilies(scopes)}}
 	case "tool":
 		blocks = []presetPolicy{{tools: []string{r.Tool}, scopes: []string{"*"}}}
 	case "operator":
@@ -280,7 +303,7 @@ func planGrant(r Request, breadth string) ([]presetPolicy, error) {
 		return nil, rpcdFail("unknown breadth %q (exact, family, tool or operator)", breadth)
 	}
 	covered := slices.ContainsFunc(blocks, func(b presetPolicy) bool {
-		return slices.Contains(b.tools, r.Tool) && matchAny(b.scopes, r.Scope)
+		return slices.Contains(b.tools, r.Tool) && firstUncoveredOK(b.scopes, scopes)
 	})
 	if !covered {
 		return nil, rpcdFail("that grant would not cover %s on %s (the operator preset leaves out the tools that bypass the safety rails): choose another breadth",
@@ -352,7 +375,7 @@ func rpcdDecide(env rpcdEnv, raw json.RawMessage) (any, error) {
 	case now.After(r.Expires):
 		return nil, rpcdFail("request %s expired: the agent has to ask again", r.ID)
 	}
-	if p, _, _ := cfg.authorise(r.Client, r.Tool, []string{r.Scope}, now); p != nil {
+	if p, _, _ := cfg.authorise(r.Client, r.Tool, requestScopes(*r), now); p != nil {
 		return nil, rpcdFail("request %s is already allowed by an existing grant", r.ID)
 	}
 

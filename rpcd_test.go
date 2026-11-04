@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"sync"
@@ -629,12 +630,29 @@ func TestAMisspelledOrExtraFieldIsRefusedNotIgnored(t *testing.T) {
 	}
 }
 
-func TestAScopeWithSpacesCannotBeGrantedExactly(t *testing.T) {
-	r := newRig(t)
-	q := r.open("claude", "exec", "git status")
-	r.fails("decide", map[string]any{"id": q.ID, "decision": "allow", "confirm": true}, "space")
-	if len(r.config().Policies) != 0 {
-		t.Error("a scope with a space was written; the config would hold two scopes, neither the one asked for")
+// A call that touches several things (pkg_change with three packages) is held with their scopes
+// joined by spaces. Allow names each one, at every breadth, and the grant covers the held call.
+func TestARequestWithSeveralScopesIsGrantedScopeByScope(t *testing.T) {
+	for _, breadth := range []string{"exact", "family", "tool"} {
+		t.Run(breadth, func(t *testing.T) {
+			r := newRig(t)
+			q := r.open("claude", "pkg_change", "del.luci-app-podkop del.podkop del.luci-app-vantage")
+			r.ok("decide", map[string]any{"id": q.ID, "decision": "allow", "breadth": breadth})
+			cfg := r.config()
+			if len(cfg.Policies) != 1 {
+				t.Fatalf("want one grant, got %d", len(cfg.Policies))
+			}
+			if p, _, _ := cfg.authorise("claude", "pkg_change", []string{"del.luci-app-podkop", "del.podkop", "del.luci-app-vantage"}, time.Now()); p == nil {
+				t.Errorf("the %s grant does not cover the call that was held: %v", breadth, cfg.Policies[0].Scopes)
+			}
+		})
+	}
+}
+
+func TestAFamilyOfMixedScopesCoversEachAction(t *testing.T) {
+	got := scopeFamilies([]string{"add.a", "add.b", "del.c"})
+	if !slices.Equal(got, []string{"add.*", "del.*"}) {
+		t.Errorf("got %v", got)
 	}
 }
 
@@ -709,5 +727,37 @@ func TestRevokeToolsRefusesWhatItCannotDoAndChangesNothing(t *testing.T) {
 	r.fails("revoke_tools", map[string]any{"client": "claude", "tools": []string{"firewall_show"}}, "no grant")
 	if !r.allowed("claude", "logread", "x") || !r.allowed("claude", "uci_get", "x") {
 		t.Error("a refused call changed the grants")
+	}
+}
+
+// The page builds its duration menus from literals in status.js. A value the daemon does not offer
+// reaches the user as "Couldn't save: duration is not offered", so each menu must stay inside the
+// list its endpoint checks.
+func TestPageDurationMenusAreOnesTheDaemonAccepts(t *testing.T) {
+	js, err := os.ReadFile("files/www/luci-static/resources/view/openwrt-mcp/status.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(js)
+	menu := func(name string) []string {
+		m := regexp.MustCompile(`var ` + name + ` = \[(.*)\];`).FindStringSubmatch(src)
+		if m == nil {
+			t.Fatalf("no %s in status.js", name)
+		}
+		var out []string
+		for _, v := range regexp.MustCompile(`\[ '([0-9a-z]+)', _\(`).FindAllStringSubmatch(m[1], -1) {
+			out = append(out, v[1])
+		}
+		return out
+	}
+	for _, d := range menu("PERMIT_ALL_DURATIONS") {
+		if !slices.Contains(permitAllDurations, d) {
+			t.Errorf("Permit all menu offers %q, the daemon takes %v", d, permitAllDurations)
+		}
+	}
+	for _, d := range menu("DURATIONS") {
+		if d != "never" && !slices.Contains(rpcdDurations, d) {
+			t.Errorf("duration menu offers %q, the daemon takes %v and never", d, rpcdDurations)
+		}
 	}
 }

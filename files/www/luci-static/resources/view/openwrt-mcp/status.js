@@ -48,8 +48,8 @@ var ACTIVITY_PAGE = 25;
 var ONCE = '15m'; // the shortest grant a request card can write; there is no single-use grant
 
 var DURATIONS = [ [ '1h', _('1 hour') ], [ '8h', _('8 hours') ], [ '1d', _('1 day') ], [ 'never', _('until I remove it') ] ];
-var PERMIT_ALL_DURATIONS = [ [ '1h', _('1 hour') ], [ '8h', _('8 hours') ], [ '24h', _('24 hours') ] ];
-var DURATION_WORDS = { '15m': _('15 minutes'), '1h': _('1 hour'), '8h': _('8 hours'), '1d': _('1 day'), '7d': _('7 days'), 'never': _('until you remove it') };
+var PERMIT_ALL_DURATIONS = [ [ '1h', _('1 hour') ], [ '4h', _('4 hours') ], [ '24h', _('24 hours') ] ];
+var DURATION_WORDS = { '15m': _('15 minutes'), '1h': _('1 hour'), '4h': _('4 hours'), '8h': _('8 hours'), '24h': _('24 hours'), '1d': _('1 day'), '7d': _('7 days'), 'never': _('until you remove it') };
 
 var CSS = [
 	'.mcp-risk{display:inline-block;box-sizing:border-box;height:auto;min-height:0;margin:2px 0;padding:2px 8px;border-radius:3px;font-size:75%;line-height:1.4;font-weight:600;letter-spacing:.04em;text-transform:uppercase;vertical-align:middle;white-space:nowrap}',

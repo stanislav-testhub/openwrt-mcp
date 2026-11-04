@@ -627,7 +627,7 @@ fresh();
 	assert.match(text(sec), /Not recommended/);
 	assert.match(text(sec), /Still on while it runs: blocked actions stay blocked/);
 	assert.equal(p.children[p.children.length - 1], sec, 'it comes after everything else');
-	assert.deepEqual(find(sec, x => x.tag === 'option').map(o => o.attrs.value), [ '1h', '8h', '24h' ]);
+	assert.deepEqual(find(sec, x => x.tag === 'option').map(o => o.attrs.value), [ '1h', '4h', '24h' ]);
 	const [ box ] = find(sec, x => x.attrs.type === 'checkbox');
 	const [ typed ] = find(sec, x => x.attrs.type === 'text');
 	const go = byAct(sec, 'permit-all')[0];
