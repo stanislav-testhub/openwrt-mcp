@@ -513,3 +513,91 @@ func TestWave1AdaptersAreOfferedWhenInstalled(t *testing.T) {
 		t.Errorf("offer line:\n%s", out)
 	}
 }
+
+// ---------------------------------------------------------------- query layer (ROADMAP 9.1)
+
+func queryOut(t *testing.T, svc, q string) string {
+	t.Helper()
+	return listServices(t, serviceListIn{Detail: svc, Query: q})
+}
+
+func TestAdblockFastQueryFindsTheBlockingEntryAndTheAllowlist(t *testing.T) {
+	f, root := wave1Router(t)
+	f.on("uci -q show adblock-fast", "adblock-fast.config=adblock-fast\nadblock-fast.config.allowed_domain='cdn.example.org'\n")
+	writeFixture(t, root, "var/run/adblock-fast/dnsmasq.servers", "server=/tracker.example/\nserver=/ads.example.net/\nserver=/other.test/\n")
+	cases := []struct{ q, want string }{
+		{"ads.example.net", "blocked: ads.example.net matches an entry for ads.example.net in dnsmasq.servers"},
+		{"X.Ads.Example.NET.", "blocked: x.ads.example.net matches an entry for ads.example.net in dnsmasq.servers"},
+		{"www.tracker.example", "blocked: www.tracker.example matches an entry for tracker.example in dnsmasq.servers"},
+		{"example.org", "not blocked: example.org is in none of the loaded lists"},
+		{"cdn.example.org", "allowed: cdn.example.org is in allowed_domain, so it is not blocked"},
+	}
+	for _, c := range cases {
+		if got := detailBody(t, queryOut(t, "adblock-fast", c.q)); !strings.HasPrefix(strings.Join(got, "\n"), c.want) {
+			t.Errorf("query %q:\n got %q\nwant prefix %q", c.q, got, c.want)
+		}
+	}
+	// The list's other entries never leave the router.
+	mustNotContain(t, queryOut(t, "adblock-fast", "ads.example.net"), "other.test", "tracker.example/")
+}
+
+func TestAdblockFastQueryReadsHostsFormatToo(t *testing.T) {
+	f, root := wave1Router(t)
+	f.fail("uci -q show adblock-fast", "")
+	writeFixture(t, root, "var/run/adblock-fast/dnsmasq.addnhosts", "127.0.0.1 ads.example.net\n:: ads.example.net\n127.0.0.1 ads.example.net.evil.test\n")
+	if got := queryOut(t, "adblock-fast", "ads.example.net"); !strings.Contains(got, "in dnsmasq.addnhosts") {
+		t.Errorf("hosts format:\n%s", got)
+	}
+	if got := queryOut(t, "adblock-fast", "evil.test"); !strings.Contains(got, "not blocked") {
+		t.Errorf("a longer name must not match its prefix:\n%s", got)
+	}
+	_, root2 := wave1Router(t)
+	_ = root2
+	if got := queryOut(t, "adblock-fast", "ads.example.net"); !strings.Contains(got, "no block list is loaded") {
+		t.Errorf("no list:\n%s", got)
+	}
+}
+
+func TestBanIPQueryAsksEachActiveSetOfTheRightFamily(t *testing.T) {
+	f, root := wave1Router(t)
+	writeFixture(t, root, "var/run/banIP/banIP.runtime.json", `{"status":"enabled","active_feeds":["blocklist.v4","threat.v4","threat.v6","bad;name.v4"]}`)
+	f.on("nft get element inet banIP threat.v4 { 198.51.100.7 }", "table inet banIP { set threat.v4 { elements = { 198.51.100.7 } } }\n")
+	f.fail("nft get element inet banIP blocklist.v4", "Error: Could not process rule: No such file or directory")
+	if got := detailBody(t, queryOut(t, "banip", "198.51.100.7")); !reflect.DeepEqual(got, []string{"banned: 198.51.100.7 is in threat.v4"}) {
+		t.Errorf("banned: %q", got)
+	}
+	if got := detailBody(t, queryOut(t, "banip", "192.0.2.1")); !reflect.DeepEqual(got, []string{"not banned: 192.0.2.1 is in none of the 2 sets checked"}) {
+		t.Errorf("not banned: %q", got)
+	}
+	for _, argv := range f.argvList() {
+		if argv[0] == "nft" && (strings.Contains(strings.Join(argv, " "), "bad;name") || strings.Contains(strings.Join(argv, " "), ".v6")) && strings.Contains(strings.Join(argv, " "), "198.51") {
+			t.Errorf("queried a set it should have skipped: %q", argv)
+		}
+	}
+}
+
+func TestQueryValueIsValidatedBeforeAnythingRuns(t *testing.T) {
+	f, _ := wave1Router(t)
+	before := len(f.argvList())
+	for svc, bad := range map[string][]string{
+		"adblock-fast": {"nodot", "a b.example", "x.example/../etc", "-rf.example", "ex..ample.com", "$(reboot).example", "ads.example.net; reboot", strings.Repeat("a", 300) + ".com"},
+		"banip":        {"example.com", "1.2.3", "1.2.3.4; reboot", "{ 1.2.3.4 }", "999.1.1.1"},
+	} {
+		for _, q := range bad {
+			if _, _, err := serviceList(t.Context(), serviceListIn{Detail: svc, Query: q}); err == nil {
+				t.Errorf("%s query %q was accepted", svc, q)
+			}
+		}
+	}
+	if _, _, err := serviceList(t.Context(), serviceListIn{Detail: "ttyd", Query: "example.com"}); err == nil || !strings.Contains(err.Error(), "has no query") {
+		t.Errorf("an adapter without a query: %v", err)
+	}
+	if _, _, err := serviceList(t.Context(), serviceListIn{Query: "example.com"}); err == nil {
+		t.Errorf("query without detail was accepted")
+	}
+	for _, argv := range f.argvList()[before:] {
+		if argv[0] != "ubus" {
+			t.Errorf("a rejected query ran %q", argv)
+		}
+	}
+}

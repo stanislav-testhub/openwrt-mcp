@@ -209,12 +209,13 @@ func TestToolSchemasArePortable(t *testing.T) {
 //
 // 1.5 (5.2): +200 and +50 for service_list's `detail` parameter, which serves every add-on
 // adapter without a tool per add-on (23,422 and 12,411 measured on top of 1.4).
+// 1.7 (9.1): +50 and +50 for service_list's `query` parameter, the one lookup an add-on adapter answers (23,942 and 12,800 measured).
 // 1.5 (5.1): +150 and +150 so the package tools can name both managers' files (.apk-new / -opkg,
 // .pre-apk-new / .pre-opkg-new) and say what an opkg router cannot answer (23,606 and 12,595 measured).
 // 1.5 (5.10): +250 and +250 for uci_get's `refs` mode, a search across configs that the cross-config
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 23900 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg)
+	catalogueBudgetBytes = 23950 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg)
 	catalogueProseBudget = 12875 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
@@ -575,7 +576,7 @@ func readOnlyCommand(a []string) bool {
 	case "ip":
 		return contains(a, "show")
 	case "nft":
-		return len(a) > 1 && a[1] == "list"
+		return len(a) > 1 && (a[1] == "list" || (a[1] == "get" && len(a) > 2 && a[2] == "element")) // get element: the banIP query
 	case "fw4":
 		return len(a) > 1 && (a[1] == "check" || (a[1] == "-q" && len(a) > 2 && a[2] == "print"))
 	case "apk":

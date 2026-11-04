@@ -273,6 +273,7 @@ func rcList(ctx context.Context) (map[string]rcEntry, error) {
 type serviceListIn struct {
 	Filter string `json:"filter,omitempty" jsonschema:"only services whose name contains this"`
 	Detail string `json:"detail,omitempty" jsonschema:"add-on init script name (the list names those installed): its status. Overrides filter"`
+	Query  string `json:"query,omitempty" jsonschema:"with detail: look one domain or IP up (adblock-fast, banip)"`
 }
 
 // serviceListScope is empty for a list and "<service>.detail" for an add-on's status, which
@@ -286,6 +287,9 @@ func serviceListScope(in serviceListIn) []string {
 }
 
 func serviceList(ctx context.Context, in serviceListIn) (string, string, error) {
+	if in.Query != "" && in.Detail == "" {
+		return "", "", fmt.Errorf("query needs detail=<add-on>")
+	}
 	if in.Detail != "" && !reServiceName.MatchString(in.Detail) {
 		return "", "", fmt.Errorf("detail must be an init script name (letters, digits, '.', '_' and '-'); see service_list")
 	}
@@ -294,7 +298,7 @@ func serviceList(ctx context.Context, in serviceListIn) (string, string, error) 
 		return "", "", err
 	}
 	if in.Detail != "" {
-		return serviceDetail(ctx, m, in.Detail)
+		return serviceDetail(ctx, m, in.Detail, in.Query)
 	}
 	var b strings.Builder
 	b.WriteString(serviceHeader() + "\n")

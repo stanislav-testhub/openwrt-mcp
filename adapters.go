@@ -33,23 +33,53 @@ type adapter struct {
 	service   string
 	untrusted string // the third-party text the output carries ("" if it is all the operator's own)
 	read      func(ctx context.Context) string
+	query     *adapterQuery // optional: `service_list detail=<service> query=<value>`
+}
+
+// adapterQuery answers one bounded lookup ("is this domain blocked", "is this address banned").
+// The value is validated by kind before the function sees it, so no argv or file path is built
+// from unchecked caller text.
+type adapterQuery struct {
+	kind string // "domain" or "ip"
+	fn   func(ctx context.Context, value string) string
+}
+
+var reQueryDomain = regexp.MustCompile(`^[a-z0-9_]([a-z0-9_.-]{0,251}[a-z0-9_])?$`)
+
+// cleanQuery validates and normalises a query value of the given kind.
+func cleanQuery(kind, v string) (string, error) {
+	v = strings.ToLower(strings.TrimSpace(v))
+	switch kind {
+	case "domain":
+		v = strings.TrimSuffix(v, ".")
+		if !reQueryDomain.MatchString(v) || strings.Contains(v, "..") || !strings.Contains(v, ".") {
+			return "", fmt.Errorf("query must be a domain name such as example.com")
+		}
+	case "ip":
+		ip := net.ParseIP(v)
+		if ip == nil {
+			return "", fmt.Errorf("query must be an IPv4 or IPv6 address")
+		}
+		v = ip.String()
+	}
+	return v, nil
 }
 
 // adapters is sorted by service name; the listing and the "available here" line follow it.
 var adapters = []adapter{
-	{"adblock", "", readAdblock},
-	{"adblock-fast", "", readAdblockFast},
-	{"adguardhome", "", readAdGuardHome},
-	{"banip", "", readBanIP},
-	{"ddns", "", readDDNS},
-	{"https-dns-proxy", "", readHTTPSDNSProxy},
-	{"miniupnpd", "UPnP lease descriptions", readUPnP},
-	{"mwan3", "", readMwan3},
-	{"pbr", "", readPBR},
-	{"podkop", "", readPodkop},
-	{"sqm", "", readSQM},
-	{"tailscale", "tailnet host names", readTailscale},
-	{"ttyd", "", readTTYD},
+	{service: "adblock", read: readAdblock},
+	{service: "adblock-fast", read: readAdblockFast, query: &adapterQuery{"domain", queryAdblockFast}},
+	{service: "adguardhome", read: readAdGuardHome},
+	{service: "banip", read: readBanIP, query: &adapterQuery{"ip", queryBanIP}},
+	{service: "ddns", read: readDDNS},
+	{service: "https-dns-proxy", read: readHTTPSDNSProxy},
+	{service: "miniupnpd", untrusted: "UPnP lease descriptions", read: readUPnP},
+	{service: "mwan3", read: readMwan3},
+	{service: "pbr", read: readPBR},
+	{service: "podkop", read: readPodkop},
+	{service: "sqm", read: readSQM},
+	{service: "tailscale", untrusted: "tailnet host names", read: readTailscale},
+	{service: "ttyd", read: readTTYD},
 }
 
 func adapterFor(service string) (adapter, bool) {
@@ -89,7 +119,7 @@ func serviceRow(name string, e rcEntry) string {
 
 // serviceDetail is the result of service_list detail=name: the service's own row, then what the
 // adapter says.
-func serviceDetail(ctx context.Context, rc map[string]rcEntry, name string) (string, string, error) {
+func serviceDetail(ctx context.Context, rc map[string]rcEntry, name, query string) (string, string, error) {
 	e, ok := rc[name]
 	if !ok {
 		return "", "", fmt.Errorf("no init script %q (see service_list)", name)
@@ -104,6 +134,17 @@ func serviceDetail(ctx context.Context, rc map[string]rcEntry, name string) (str
 		}
 		fmt.Fprintf(&b, "no add-on status for %s; available here: %s", name, here)
 		return b.String(), "service " + name, nil
+	}
+	if query != "" {
+		if a.query == nil {
+			return "", "", fmt.Errorf("%s has no query; omit query for its status", name)
+		}
+		v, err := cleanQuery(a.query.kind, query)
+		if err != nil {
+			return "", "", err
+		}
+		b.WriteString(strings.TrimRight(a.query.fn(ctx, v), "\n"))
+		return b.String(), "service query " + name, nil
 	}
 	b.WriteString(strings.TrimRight(a.read(ctx), "\n"))
 	text := b.String()

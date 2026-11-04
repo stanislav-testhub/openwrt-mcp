@@ -3,6 +3,11 @@
 ## Unreleased
 
 Added
+- **`service_list detail=NAME query=VALUE` (ROADMAP 9.1, query layer).** One bounded lookup per add-on, validated by kind before
+  anything runs. adblock-fast: `query=<domain>` says whether the name (or a parent domain) is in the loaded block list and in
+  which one, or whether `allowed_domain` exempts it. banIP: `query=<ip>` asks each active set of the address's family
+  (`nft get element`) and names the sets that hold it. Neither prints list contents. The catalogue grows by this one parameter
+  (+42 bytes, budget raised to 23,950). adblock has no query yet: its lists are compressed backups.
 - **Add-on status, wave 1 (ROADMAP 9.3, first part).** `service_list detail=NAME` now also reads adblock, adblock-fast, banIP,
   ddns, https-dns-proxy, miniupnpd, mwan3, pbr, sqm and ttyd when installed. Read-only, fixed fields only: ttyd's credential,
   ddns passwords and update URLs, https-dns-proxy resolver paths, pbr's policy addresses and adblock-fast's list URLs never
