@@ -428,6 +428,9 @@ func (s *Server) awaitApproval(ctx context.Context, sess *mcp.ServerSession, ans
 		if p, _, _ := s.cfg().authorise(client, tool, scopes, now); p != nil {
 			return approval{p: p, reqID: req.ID}
 		}
+		if ans.Action == "decline" {
+			return deny(chatDeclined(reason, req, now))
+		}
 	}
 	denial := requestHint(reason, req, time.Now())
 	if cfg.RequestWait <= 0 {

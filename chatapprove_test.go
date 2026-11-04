@@ -132,15 +132,52 @@ func TestChatPromptDefaultsToAnHourAndNamesTheRequestWithoutSecrets(t *testing.T
 	}
 }
 
-func TestChatDeclineDeniesTheRequestAndTheCall(t *testing.T) {
+// A decline cannot be told from a client that auto-declines or cannot show the prompt (the desktop
+// app answers without displaying it), so it refuses this call but never settles the request: it
+// stays open for LuCI, and the refusal says where to approve.
+func TestChatDeclineRefusesTheCallButLeavesTheRequestOpenForLuCI(t *testing.T) {
 	s := chatServer(t, chatOn)
 	c := connectChat(t, s, "c", &mcp.ElicitResult{Action: "decline"})
 	res := expectResult(t, callAsync(t, c.ClientSession, context.Background(), "uci_get", uciGetCall), "declined call")
-	if !res.isErr || !strings.Contains(res.text, "denied by the operator") {
-		t.Errorf("declined call: %q", res.text)
+	if !res.isErr {
+		t.Fatalf("a declined call went through: %q", res.text)
 	}
-	if got := s.requests.List(time.Now())[0]; got.State != reqDenied || got.Decider != "chat" {
-		t.Errorf("request = %+v", got)
+	got := s.requests.List(time.Now())[0]
+	if got.State != reqOpen {
+		t.Errorf("request = %+v, want it still open for LuCI", got)
+	}
+	for _, want := range []string{"declined in chat", got.ID, "LuCI"} {
+		if !strings.Contains(res.text, want) {
+			t.Errorf("refusal %q does not say %q", res.text, want)
+		}
+	}
+	if strings.Contains(res.text, "denied by the operator") {
+		t.Errorf("a chat decline reads like a final operator denial: %q", res.text)
+	}
+	if g := timedGrants(s); len(g) != 0 {
+		t.Errorf("a grant was written: %+v", g)
+	}
+}
+
+// The request left open by a decline is approved in LuCI, and the retry then goes through.
+func TestChatDeclinedRequestCanBeApprovedInLuCIThenRetried(t *testing.T) {
+	s := chatServer(t, chatOn)
+	c := connectChat(t, s, "c", &mcp.ElicitResult{Action: "decline"})
+	expectResult(t, callAsync(t, c.ClientSession, context.Background(), "uci_get", uciGetCall), "declined call")
+	r := s.requests.List(time.Now())[0]
+	blocks, err := planGrant(r, "exact")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := writeGrants(s.configPath, "c", blocks, "1h"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.requests.Decide(r.ID, true, "luci", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	res := expectResult(t, callAsync(t, c.ClientSession, context.Background(), "uci_get", uciGetCall), "retry")
+	if res.isErr {
+		t.Errorf("the retry after a LuCI approval was refused: %s", res.text)
 	}
 }
 

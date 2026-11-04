@@ -82,9 +82,11 @@ func chatPrompt(r Request) *mcp.CallToolResult {
 	}}}
 }
 
-// applyChatAnswer settles the request from the client's answer: accept grants the exact scope,
-// decline denies, anything else (a dismissed prompt, a duration this channel does not offer, a
-// request already settled in LuCI) leaves the request open.
+// applyChatAnswer settles the request from the client's answer: accept grants the exact scope.
+// Anything else leaves the request open for LuCI: a dismissed prompt, a duration this channel does
+// not offer, a request already settled in LuCI, and a decline. A decline cannot be told from a
+// client that auto-declines or cannot show the prompt (the Claude desktop app answers without
+// displaying it), so it refuses the call (chatDeclined) but never denies the request for good.
 func (s *Server) applyChatAnswer(r Request, blocks []presetPolicy, ans *mcp.ElicitResult) {
 	now := time.Now()
 	switch ans.Action {
@@ -106,9 +108,13 @@ func (s *Server) applyChatAnswer(r Request, blocks []presetPolicy, ans *mcp.Elic
 		if _, err := s.requests.Decide(r.ID, true, chatActor, now); err == nil {
 			s.chatAudit(r, fmt.Sprintf("%s: %s on %s for %s (exact)", r.ID, r.Tool, r.Scope, dur))
 		}
-	case "decline":
-		s.requests.Decide(r.ID, false, chatActor, now) // the store audits the decision
 	}
+}
+
+// chatDeclined is the refusal for a call whose chat prompt was declined. It says where to approve,
+// as requestHint does for a timeout, because the user may never have seen the prompt.
+func chatDeclined(reason string, r Request, now time.Time) string {
+	return requestHint("declined in chat (or the client could not show the prompt); the request stays open\n"+reason, r, now)
 }
 
 func (s *Server) chatAudit(r Request, summary string) {

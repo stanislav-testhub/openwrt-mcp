@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+Fixed
+- Approve in chat: a declined prompt no longer denies the request for good. Some clients answer the prompt with *decline*
+  without showing it, which left nothing to approve in LuCI and made the refusal look like a human decision. The call is still
+  refused at once, but the request stays open, and the refusal names the request and where to approve it (LuCI or the CLI).
+  Only a refusal made in LuCI or by the CLI is final.
+
 ## 1.6.0 -- Approve from the router
 
 An agent that hits a missing grant no longer waits for someone to open a shell: the request shows in LuCI, one click
