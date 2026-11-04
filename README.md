@@ -106,7 +106,7 @@ are welcome.
 | `uci_get` | `<config>[.<section>[.<option>]]`; `refs` for a name search | `uci show`, optionally with stable `cfgXXXXXX` ids. Ends with the config's **revision**. `history=list` / `diff:<id>` shows the kept versions from before each confirmed change. `refs=NAME` finds what defines and uses a name across configs. |
 | `uci_apply` | `<config>.<section>[.<option>]` per change; `<config>` for `restore`; `probe.<kind>.<target>` per probe | Stage, check, commit, reload, **rollback armed**. `dry_run` shows exactly what would change and what the service's own checker says. `expected_revisions` refuses if a config moved meanwhile, `probe` checks the router afterwards, `restore=<id>` puts a past version back. After the commit the config is read back; a change the router did not keep is `NOT_APPLIED` and nothing is reloaded. |
 | `uci_confirm` / `uci_rollback` | tool | Make a pending change permanent / undo it now. |
-| `service_list` / `service_control` | tool, `<service>.detail` / `<service>.<action>` | procd services; `service_list detail=NAME` returns an installed add-on's own status (tailscale, AdGuard Home, podkop; the plain list names the ones installed here); stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. `service_control` waits for the state to settle (`wait`) and says if it did not; a final state that contradicts the action is `NOT_APPLIED`. |
+| `service_list` / `service_control` | tool, `<service>.detail` / `<service>.<action>` | procd services; `service_list detail=NAME` returns an installed add-on's own status (tailscale, AdGuard Home, podkop, and the 1.7 wave: adblock, adblock-fast, banIP, ddns, https-dns-proxy, miniupnpd, mwan3, pbr, sqm, ttyd; the plain list names the ones installed here); stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. `service_control` waits for the state to settle (`wait`) and says if it did not; a final state that contradicts the action is `NOT_APPLIED`. |
 | `pkg_query` | tool | installed, upgradable, search, info, files, owner, policy, `apk audit`, world; 200 lines a page, `offset` for the next. |
 | `pkg_change` | `<action>.<pkg>` / `upgrade` | apk add/del/upgrade; **simulates unless `commit=true`**; reports new `.apk-new` files; checks `/etc/apk/world` afterwards. |
 | `pkg_config_diff` | tool | Every `.apk-new` as a diff against the live file -- for `/etc/config/*` by setting (`uci show`), so quoting/indentation noise disappears. |
@@ -167,6 +167,20 @@ sanitised and marked untrusted.
 | tailscale | state, tailnet DNS suffix, this node's addresses, advertised routes, exit node, health, peers (online, direct or relayed, traffic) | GL-MT6000, 25.12 |
 | AdGuard Home | running, listen addresses, protection and filtering switches, upstreams (scheme and host only), bootstrap, filter list and rule counts, whether dnsmasq forwards to it | GL-MT6000, 25.12 |
 | podkop | version, sing-box running, nft table, dnsmasq path, settings, one line per section (type, interface, community lists, size of dynamic lists) | GL-MT6000, 25.12 |
+| adblock | procd instance, status, version, blocked domain count, active feeds, DNS backend, last run (from `/var/run/adblock/adblock.runtime.json`) | fixture-tested |
+| adblock-fast | procd service data: status, the package's stats line, error and warning codes (not their info text), config summary | fixture-tested |
+| banIP | status, version, element count, active feeds, WAN interfaces (warns when none), last run | fixture-tested |
+| ddns | per section: domain, provider, registered address, WAN address from netifd, age of the last update; warns on a stale record and on a WAN address in 100.64.0.0/10 | fixture-tested |
+| https-dns-proxy | instances: resolver host only (no path, so no NextDNS id), listen address and port, bootstrap set or not; whether dnsmasq forwards to a local proxy port | fixture-tested |
+| miniupnpd | settings (warns when secure mode is off) and the live mappings: protocol, external port, client, description (marked untrusted) | fixture-tested |
+| mwan3 | per interface: status, link, tracking state, track IPs up, time online; per policy: members and weights, warns when no member is online (from `ubus call mwan3 status`) | fixture-tested |
+| pbr | gateways with routing table, fwmark and priority, error and warning codes, settings incl. firewall mask, policy names and interfaces (not their addresses or domains) | fixture-tested |
+| sqm | per queue: interface, rates, qdisc, script, live packets, drops and backlog from `tc -s`; warns when flow offloading bypasses the shaper | fixture-tested |
+| ttyd | per instance: port, interface (warns when it listens on every interface), whether a credential is set (never its value), TLS, read-only | fixture-tested |
+
+"Fixture-tested" means the parser is tested against inputs written from the add-on's upstream source (its init script, rpcd
+plugin or runtime file), not against a capture from a router: none of these add-ons is installed on the verification router
+yet. They move to "verified" when each has run on one (ROADMAP 9.7).
 
 Deliberately not read: AdGuard Home's web API (it needs the UI login), podkop's `proxy_string`, selector and outbound
 settings, and the user's domain and subnet lists.

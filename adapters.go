@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net"
+	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 )
@@ -32,9 +37,19 @@ type adapter struct {
 
 // adapters is sorted by service name; the listing and the "available here" line follow it.
 var adapters = []adapter{
+	{"adblock", "", readAdblock},
+	{"adblock-fast", "", readAdblockFast},
 	{"adguardhome", "", readAdGuardHome},
+	{"banip", "", readBanIP},
+	{"ddns", "", readDDNS},
+	{"https-dns-proxy", "", readHTTPSDNSProxy},
+	{"miniupnpd", "UPnP lease descriptions", readUPnP},
+	{"mwan3", "", readMwan3},
+	{"pbr", "", readPBR},
 	{"podkop", "", readPodkop},
+	{"sqm", "", readSQM},
 	{"tailscale", "tailnet host names", readTailscale},
+	{"ttyd", "", readTTYD},
 }
 
 func adapterFor(service string) (adapter, bool) {
@@ -149,3 +164,168 @@ func dnsmasqServers(ctx context.Context) []string {
 	}
 	return f
 }
+
+// uciName matches what UCI allows in a section name, the only thing built into a file path or an
+// ubus object name from the config.
+var uciName = regexp.MustCompile(`^[A-Za-z0-9_]{1,40}$`)
+
+// ifaceName is a network interface or device name as the kernel and netifd allow it.
+var ifaceName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,15}$`)
+
+// runtimeDir accepts a directory or file path that an add-on's config names only when it is in
+// RAM-backed storage, so a config option cannot point an adapter at /etc/shadow.
+func runtimePath(p, fallback string) string {
+	if (strings.HasPrefix(p, "/var/run/") || strings.HasPrefix(p, "/tmp/")) && !strings.Contains(p, "..") && len(p) <= 120 {
+		return p
+	}
+	return fallback
+}
+
+// procdData is what a procd service registered under `ubus call service list`: whether any
+// instance runs, and the data object (at service level, or on the first instance that has one).
+func procdData(ctx context.Context, name string) (found, running bool, data map[string]json.RawMessage) {
+	var all map[string]struct {
+		Data      map[string]json.RawMessage `json:"data"`
+		Instances map[string]struct {
+			Running bool                       `json:"running"`
+			Data    map[string]json.RawMessage `json:"data"`
+		} `json:"instances"`
+	}
+	if err := runJSON(ctx, &all, "ubus", "call", "service", "list", `{"name":"`+name+`"}`); err != nil {
+		return false, false, nil
+	}
+	svc, ok := all[name]
+	if !ok {
+		return false, false, nil
+	}
+	data = svc.Data
+	keys := make([]string, 0, len(svc.Instances))
+	for k := range svc.Instances {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		in := svc.Instances[k]
+		running = running || in.Running
+		if len(data) == 0 && len(in.Data) > 0 {
+			data = in.Data
+		}
+	}
+	return true, running, data
+}
+
+// dataString reads a string field of procd data.
+func dataString(d map[string]json.RawMessage, key string) string {
+	var s string
+	if raw, ok := d[key]; ok && json.Unmarshal(raw, &s) == nil {
+		return s
+	}
+	return ""
+}
+
+// dataCodes lists the `code` of each entry of an errors/warnings array in procd data, in order.
+// Only the codes are printed: the info text is whatever the add-on chose to say (list URLs).
+func dataCodes(d map[string]json.RawMessage, key string) []string {
+	var list []struct {
+		Code string `json:"code"`
+	}
+	if raw, ok := d[key]; !ok || json.Unmarshal(raw, &list) != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range list {
+		if c := clip(e.Code, 40); c != "" {
+			out = append(out, c)
+		}
+		if len(out) == 8 {
+			break
+		}
+	}
+	return out
+}
+
+// uptimeSeconds is the router's uptime, the clock add-ons such as ddns-scripts stamp files with.
+func uptimeSeconds() (int, bool) {
+	s, err := readSys("/proc/uptime")
+	if err != nil {
+		return 0, false
+	}
+	f := strings.Fields(s)
+	if len(f) == 0 {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(f[0], 64)
+	if err != nil || v < 0 {
+		return 0, false
+	}
+	return int(v), true
+}
+
+// ageText is a duration in seconds as "45s", "12m", "3h" or "2d".
+func ageText(sec int) string {
+	switch {
+	case sec < 0:
+		return "0s"
+	case sec < 120:
+		return fmt.Sprintf("%ds", sec)
+	case sec < 2*3600:
+		return fmt.Sprintf("%dm", sec/60)
+	case sec < 2*86400:
+		return fmt.Sprintf("%dh", sec/3600)
+	}
+	return fmt.Sprintf("%dd", sec/86400)
+}
+
+func pick(b bool, on, off string) string {
+	if b {
+		return on
+	}
+	return off
+}
+
+// uciFlag reads a UCI boolean the way procd scripts do.
+func uciFlag(v string, def bool) bool {
+	switch strings.ToLower(v) {
+	case "1", "on", "yes", "true", "enabled":
+		return true
+	case "0", "off", "no", "false", "disabled":
+		return false
+	}
+	return def
+}
+
+// wanAddress is the first address netifd reports on a logical interface ("" when it has none).
+func wanAddress(ctx context.Context, iface string, v6 bool) string {
+	if !uciName.MatchString(iface) {
+		return ""
+	}
+	var st struct {
+		V4 []struct {
+			Address string `json:"address"`
+		} `json:"ipv4-address"`
+		V6 []struct {
+			Address string `json:"address"`
+		} `json:"ipv6-address"`
+	}
+	if runJSON(ctx, &st, "ubus", "call", "network.interface."+iface, "status") != nil {
+		return ""
+	}
+	if v6 && len(st.V6) > 0 {
+		return st.V6[0].Address
+	}
+	if !v6 && len(st.V4) > 0 {
+		return st.V4[0].Address
+	}
+	return ""
+}
+
+var cgnatNet = func() *net.IPNet { _, n, _ := net.ParseCIDR("100.64.0.0/10"); return n }()
+
+// behindCGNAT is true for an address in 100.64.0.0/10: a WAN address no one outside the
+// provider can reach, so a port forward, UPnP mapping or dynamic DNS record for it cannot work.
+func behindCGNAT(addr string) bool {
+	ip := net.ParseIP(addr)
+	return ip != nil && cgnatNet.Contains(ip)
+}
+
+func validIP(s string) bool { return net.ParseIP(s) != nil }

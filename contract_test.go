@@ -557,6 +557,9 @@ func readOnlyCommand(a []string) bool {
 		if len(a) >= 3 && a[1] == "-v" && a[2] == "list" {
 			return true
 		}
+		if len(a) >= 5 && a[1] == "call" && a[2] == "mwan3" && a[3] == "status" { // the mwan3 adapter's rpcd plugin: reads only
+			return true
+		}
 		return len(a) >= 4 && a[1] == "call" && matchAny(readonlyUbus, a[2]+"."+a[3])
 	case "uci":
 		for i := 1; i < len(a); i++ {
@@ -595,6 +598,8 @@ func readOnlyCommand(a []string) bool {
 		return len(a) > 1 && a[1] == "status"
 	case "sing-box":
 		return len(a) > 1 && a[1] == "version"
+	case "tc": // the sqm adapter reads qdisc statistics
+		return len(a) > 3 && a[1] == "-s" && a[2] == "qdisc" && a[3] == "show"
 	}
 	return false
 }

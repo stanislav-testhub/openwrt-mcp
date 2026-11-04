@@ -3,6 +3,14 @@
 ## Unreleased
 
 Added
+- **Add-on status, wave 1 (ROADMAP 9.3, first part).** `service_list detail=NAME` now also reads adblock, adblock-fast, banIP,
+  ddns, https-dns-proxy, miniupnpd, mwan3, pbr, sqm and ttyd when installed. Read-only, fixed fields only: ttyd's credential,
+  ddns passwords and update URLs, https-dns-proxy resolver paths, pbr's policy addresses and adblock-fast's list URLs never
+  print. Findings are lines of the detail for now (ttyd on every interface without a login, UPnP secure mode off, ddns record
+  stale or behind CGNAT, sqm with flow offloading, a mwan3 policy with no member online, banIP with no WAN interface). No new
+  tool or parameter; the catalogue size is unchanged. These adapters are **fixture-tested** from the add-ons' upstream sources,
+  not yet verified on a router. Not in this step: the `query` and verb layers (9.1), DNS path and exposure views, doctor and
+  audit findings, banIP and UPnP verbs.
 - LuCI: when one assistant has two or more requests waiting, a row above the cards offers **Allow all N for 15 minutes** and
   **Deny all N**. Each request gets the same narrow grant its own button would write, and one Undo takes the whole answer back.
   A request for full control (a root shell) never joins; it keeps its own card and confirmation. This is the "Allow all N"

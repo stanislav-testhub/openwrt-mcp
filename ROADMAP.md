@@ -868,6 +868,10 @@ server's most-requested packages, and from issue activity in `openwrt/packages` 
 
 ### 9.3 Wave 1 (v1.7): DNS, filtering and exposure
 
+**Status (unreleased):** the L1 status adapters for all ten add-ons are built and fixture-tested from upstream sources
+(`adapter_<svc>.go`, `adapters_wave1_test.go`); each carries its own warnings as lines of the detail. Still open in this
+wave: the `query` and verb layers, doctor and audit findings, the DNS path and exposure views, and a run on a real router.
+
 - **Ships.** adblock, adblock-fast, banIP, https-dns-proxy, mwan3, pbr, ddns, UPnP (miniupnpd), sqm-scripts and ttyd.
   sqm and ttyd have the most measured installs of any service add-on. Examples:
   "blocked by which list" for a domain, "banned by which feed" for an IP, registered IP versus WAN IP (and a finding
