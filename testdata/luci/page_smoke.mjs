@@ -214,6 +214,44 @@ fresh();
 	assert.equal(find(pane(root, 'overview'), x => x.attrs['data-answered']).length, 0);
 }
 
+// 3b. Several waiting requests from one assistant: one button answers them all, each with the narrow 15-minute grant.
+// A request that needs full control stays out of it.
+fresh();
+{
+	const mk = (id, scope) => ({ id, client: 'claude-code', tool: 'pkg_config_resolve', scope, family: scope, args: '', state: 'open', created: iso(-9e3), expires: iso(500e3) });
+	state.st.requests.push(mk('dddd4444', '/etc/config/chrony'), mk('eeee5555', '/etc/config/dhcp'));
+	const { root } = await load();
+	const ov = pane(root, 'overview');
+	const [ bulk ] = find(ov, x => x.attrs['data-bulk'] === 'claude-code');
+	assert.ok(bulk, 'a row for the assistant with several requests');
+	assert.match(text(bulk), /Claude Code has 3 requests waiting/, 'the root-shell request is not counted');
+	assert.match(text(byAct(bulk, 'allow-all')[0]), /Allow all 3 for 15 minutes/);
+	assert.match(byAct(bulk, 'allow-all')[0].attrs.class, /cbi-button-action/);
+	byAct(bulk, 'allow-all')[0].listeners.click();
+	await flush();
+	assert.deepEqual(calls.map(c => c[1].slice(0, 4)),
+		[ [ 'aaaa1111', 'allow', 'exact', '15m' ], [ 'dddd4444', 'allow', 'exact', '15m' ], [ 'eeee5555', 'allow', 'exact', '15m' ] ],
+		'one decide per request, narrowest breadth, none for the full-control one');
+	assert.ok(card(root, 'bbbb2222'), 'the root-shell request is still waiting for its own answer');
+	assert.equal(find(pane(root, 'overview'), x => x.attrs['data-bulk']).length, 0, 'no bulk row for a single waiting request');
+	const [ line ] = find(pane(root, 'overview'), x => x.attrs['data-answered']);
+	assert.match(text(line), /Allowed for 15 minutes/);
+	assert.match(text(line), /asked to do 3 things/, 'different requests are counted, not listed');
+	assert.equal(byAct(line, 'undo').length, 1, 'one Undo takes the whole answer back');
+}
+fresh();
+{
+	const mk = (id, scope) => ({ id, client: 'claude-code', tool: 'pkg_config_resolve', scope, family: scope, args: '', state: 'open', created: iso(-9e3), expires: iso(500e3) });
+	state.st.requests[0].state = 'allowed';
+	state.st.requests.push(mk('dddd4444', '/etc/config/chrony'), mk('eeee5555', '/etc/config/dhcp'));
+	const { root } = await load();
+	byAct(find(pane(root, 'overview'), x => x.attrs['data-bulk'])[0], 'deny-all')[0].listeners.click();
+	await flush();
+	assert.deepEqual(calls.map(c => c[1][1]), [ 'deny', 'deny' ]);
+	assert.deepEqual(calls.map(c => c[1][0]), [ 'dddd4444', 'eeee5555' ]);
+	assert.match(text(find(pane(root, 'overview'), x => x.attrs['data-answered'])[0]), /Denied · Claude Code asked to .* \(2 requests\)/);
+}
+
 // 4. The wider choices: this and similar changes, for eight hours
 fresh();
 {

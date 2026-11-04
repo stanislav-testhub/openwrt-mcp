@@ -663,6 +663,49 @@ return view.extend({
 			});
 		}
 
+		// One answer for several waiting requests of one assistant: each gets the same narrow grant
+		// its own Allow for 15 minutes would write, one after another, and the page re-reads once.
+		// A request that needs full control never joins: it keeps its own card and confirmation.
+		function decideAll(list, decision) {
+			var client = list[0].client, before = clientPolicies(client).map(policyKey);
+			var done = [], stop = null;
+			return list.reduce(function(p, r) {
+				return p.then(function() {
+					return callDecide(r.id, decision, decision === 'allow' ? 'exact' : undefined, decision === 'allow' ? ONCE : undefined, false)
+						.then(check).then(function() { done.push(r); });
+				});
+			}, Promise.resolve()).catch(function(e) { stop = e; }).then(function() {
+				if (stop)
+					fail(stop);
+				return refresh();
+			}).then(function() {
+				if (!done.length)
+					return;
+				var actions = done.map(requestAction).filter(function(a, i, all) { return all.indexOf(a) === i; });
+				ui_.answered.push({ id: 'all-' + done[0].id, client: client, decision: decision, duration: ONCE, at: Date.now(),
+					action: actions.length === 1 ? _('%s (%d requests)').format(actions[0], done.length) : _('do %d things').format(done.length),
+					added: clientPolicies(client).map(policyKey).filter(function(k) { return before.indexOf(k) < 0; }) });
+				drawOverview(true);
+			});
+		}
+
+		function bulkRows(open) {
+			var by = {};
+			if (!data.writable)
+				return [];
+			open.forEach(function(r) { if (!isFullControl(r)) (by[r.client] = by[r.client] || []).push(r); });
+			return Object.keys(by).filter(function(c) { return by[c].length > 1; }).map(function(c) {
+				var list = by[c], n = list.length;
+				return E('div', { 'class': 'cbi-section-node mcp-card mcp-bulk', 'data-bulk': c }, [
+					E('div', { 'class': 'mcp-line' }, _('%s has %d requests waiting.').format(displayName(c), n)),
+					E('div', { 'class': 'mcp-row mcp-actions' }, [
+						btn('action', 'allow-all', _('Allow all %d for 15 minutes').format(n), function() { decideAll(list, 'allow'); }),
+						btn('negative', 'deny-all', _('Deny all %d').format(n), function() { decideAll(list, 'deny'); }, { 'class': 'cbi-button cbi-button-negative mcp-sep' })
+					])
+				]);
+			});
+		}
+
 		function undo(rec) {
 			var idx = clientPolicies(rec.client).filter(function(p) { return rec.added.indexOf(policyKey(p)) >= 0; })
 				.map(function(p) { return p.index; }).sort(function(a, b) { return b - a; });
@@ -977,7 +1020,7 @@ return view.extend({
 			(st.clients || []).forEach(function(c) { tokens[c.name] = true; });
 			var nodes = [];
 			if (open.length || ui_.answered.length || recent.length || pend.length) {
-				var waitKids = open.map(requestCard).concat(ui_.answered.map(answeredLine), recent.map(expiredLine));
+				var waitKids = bulkRows(open).concat(open.map(requestCard), ui_.answered.map(answeredLine), recent.map(expiredLine));
 				pend.forEach(function(p) {
 					waitKids.push(E('div', { 'class': 'alert-message warning mcp-card' }, [
 						E('span', {}, _('A change to %s by %s is waiting for confirmation. It undoes itself in ').format(p.configs.join(', '), displayName(p.client))),

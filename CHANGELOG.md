@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Added
+- LuCI: when one assistant has two or more requests waiting, a row above the cards offers **Allow all N for 15 minutes** and
+  **Deny all N**. Each request gets the same narrow grant its own button would write, and one Undo takes the whole answer back.
+  A request for full control (a root shell) never joins; it keeps its own card and confirmation. This is the "Allow all N"
+  button the design note (`docs/luci-approvals.md`) already described. Before, a batch of calls (for example `pkg_config_resolve`
+  on nine files) meant nine separate taps.
+
 Fixed
 - Approve in chat: a declined prompt no longer denies the request for good. Some clients answer the prompt with *decline*
   without showing it, which left nothing to approve in LuCI and made the refusal look like a human decision. The call is still
