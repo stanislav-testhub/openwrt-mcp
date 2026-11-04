@@ -401,8 +401,9 @@ and description limits in step with the code, so a release bumps both together.
 
 ### 3.11 Measured token cost
 
-**Status: moved to 1.3.x.** It needs a disposable OpenWrt target to run the raw-SSH baseline on, since the
-baseline must not be the maintainer's own router; an x86-64 rootfs imported into WSL is the candidate.
+**Status: half done.** `bench/cost.sh` measures calls and bytes sent and received for three tasks, openwrt-mcp against
+raw ssh, on a disposable OpenWrt (results in the README, *Verified*). Tokens are not measured: that needs a tokenizer or a
+live model run (`ANTHROPIC_API_KEY`), and the figure must not be estimated.
 
 - **Ships.** A reproducible task set: "who is on my Wi-Fi", "why is the WAN down", "add and remove a static
   lease". It measures tokens and calls through openwrt-mcp against the same task done with raw SSH and shell

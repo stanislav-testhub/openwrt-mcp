@@ -640,12 +640,27 @@ inside the window**, dry run, refusal on foreign staged edits, list ops, WireGua
 add/list/remove against a captured 25.12 config, client join, log filtering, apk simulation,
 `.apk-new` resolution with rollback, preset contents, scope glob semantics.
 
+**Measured cost** (`sh bench/cost.sh`, OpenWrt 24.10.8 in a virtual machine, 2026-11-04; calls, and bytes sent and received,
+not tokens, which need a tokenizer or a live model and are not estimated here). The same three tasks through openwrt-mcp
+and through raw `ssh` shell commands:
+
+| Task | openwrt-mcp | Raw ssh |
+|---|---|---|
+| Who is on my network (6 leases) | 1 call, 17 sent, 1233 received | 1 call, 35 sent, 949 received |
+| Why is the second WAN down (DHCP gets no answer) | 2 calls, 59 sent, 12219 received | 3 calls, 75 sent, 3935 received |
+| Add and remove a static lease | 5 calls, 635 sent, 2018 received | 2 calls, 303 sent, 83 received |
+
+On these tasks openwrt-mcp is **not** cheaper in bytes: the tool catalogue alone is 23866 bytes per session, and the
+lease task costs more because it dry-runs, arms a rollback and confirms. What the bytes buy is the policy check,
+redaction, the audit record and the automatic rollback, none of which a raw shell has. The WAN task is dominated by
+`logread mode=summary` over a log that holds a whole boot; it is the largest single reply and a candidate for trimming.
+
 **Not yet verified on hardware** (covered by the fake-router tests only): `pkg_change` with `commit`,
 the LuCI page rendering, the web-root guard on a real `/www` path or symlink, a real power cycle (the
 recovery path is the same one the `SIGKILL` test exercises), and keep.d across a real sysupgrade. For
-1.2.0 also: a management-path change applied *with* probes (only its refusal without one was run),
-a probe failure left to the rollback timer instead of `uci_rollback`, and history across a
-sysupgrade. For 1.3.0 also: `connect --write` against a real Claude Code,
+1.2.0 also: history across a sysupgrade. A management-path change applied *with* a probe (then
+confirmed) and a probe failure left to the rollback timer (the timer restored the old value) were run on an
+OpenWrt 24.10.8 virtual machine (QEMU), not on hardware. For 1.3.0 also: `connect --write` against a real Claude Code,
 Codex, Claude Desktop, Gemini or VS Code (only the file merge and the command line are tested),
 anything on macOS, and the installer's download path on a router (the release workflow has run and
 published 1.2.0 and 1.3.0, but `install-router.sh` has not been run against them). For 1.4.0 also: the read-back after a write ran on hardware for `uci_apply`, `wg_new_client`
