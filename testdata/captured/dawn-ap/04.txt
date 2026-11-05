@@ -1,0 +1,51 @@
+# ubus call dawn get_hearing_map
+{
+	"owlab-test": {
+		"02:00:00:00:00:01": {
+			"02:00:00:00:00:02": {
+				"signal": -61,
+				"rcpi": -1,
+				"rsni": -1,
+				"freq": 5180,
+				"ht_capabilities": true,
+				"vht_capabilities": true,
+				"channel_utilization": 0,
+				"num_sta": 1,
+				"ht_support": true,
+				"vht_support": true,
+				"score": 110
+			}
+		},
+		"02:00:00:00:00:03": {
+			"02:00:00:00:00:02": {
+				"signal": -60,
+				"rcpi": -1,
+				"rsni": -1,
+				"freq": 5180,
+				"ht_capabilities": true,
+				"vht_capabilities": true,
+				"channel_utilization": 0,
+				"num_sta": 1,
+				"ht_support": true,
+				"vht_support": true,
+				"rrm-caps": ".TAP..NL",
+				"score": 125
+			}
+		},
+		"02:00:00:00:00:04": {
+			"02:00:00:00:00:02": {
+				"signal": -87,
+				"rcpi": -1,
+				"rsni": -1,
+				"freq": 5180,
+				"ht_capabilities": true,
+				"vht_capabilities": true,
+				"channel_utilization": 0,
+				"num_sta": 1,
+				"ht_support": true,
+				"vht_support": true,
+				"score": 95
+			}
+		}
+	}
+}

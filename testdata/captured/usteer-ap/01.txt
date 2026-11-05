@@ -1,0 +1,7 @@
+# uci -q show usteer
+usteer.@usteer[0]=usteer
+usteer.@usteer[0].network='lan'
+usteer.@usteer[0].syslog='1'
+usteer.@usteer[0].local_mode='0'
+usteer.@usteer[0].ipv6='0'
+usteer.@usteer[0].debug_level='2'

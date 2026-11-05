@@ -1,0 +1,5 @@
+uci -q show usteer
+ubus call usteer get_config
+ubus call usteer local_info
+ubus call usteer remote_hosts
+ubus call usteer get_clients

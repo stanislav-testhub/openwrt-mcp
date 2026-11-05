@@ -1,0 +1,2 @@
+# ubus list hostapd.*
+hostapd.phy0-ap0

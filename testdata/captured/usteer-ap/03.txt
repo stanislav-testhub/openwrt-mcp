@@ -1,0 +1,21 @@
+# ubus call usteer local_info
+{
+	"hostapd.phy0-ap0": {
+		"bssid": "02:00:00:00:00:01",
+		"ssid": "owlab-test",
+		"freq": 5180,
+		"n_assoc": 1,
+		"noise": 0,
+		"load": 0,
+		"max_assoc": 0,
+		"roam_events": {
+			"source": 0,
+			"target": 0
+		},
+		"rrm_nr": [
+			"02:00:00:00:00:01",
+			"owlab-test",
+			"387acc93669aef5900007324090603000000"
+		]
+	}
+}

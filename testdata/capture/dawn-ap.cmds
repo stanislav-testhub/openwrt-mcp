@@ -1,0 +1,4 @@
+uci -q show dawn
+ubus list hostapd.*
+ubus call dawn get_network
+ubus call dawn get_hearing_map

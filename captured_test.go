@@ -455,3 +455,31 @@ func TestStrongSwanEstablishedListsEachSAWithoutAddresses(t *testing.T) {
 	wantAll(t, got, "IKE SAs established: 1", "child SAs installed: 1", "site: ESTABLISHED, IKEv2, up 12s", "child net: INSTALLED TUNNEL", "peer names are chosen by the peer")
 	mustNotContain(t, got, "configured but with no SA", "192.168.1.", "@")
 }
+
+// usteer 2022.08.18 and DAWN 2023.05.14 on the 24.10.8 VM with a real radio: an RTL8852BE passed through from
+// the host, hostapd (wpad-mbedtls) running one 5 GHz AP, and a phone associated. usteer also lists stations
+// that only sent probe requests ("connected": false), which are not clients of this AP.
+func TestUsteerWithARealRadioAndAConnectedPhone(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("ubus call usteer get_config", captured(t, "usteer-ap", "02.txt"))
+	f.on("ubus call usteer local_info", captured(t, "usteer-ap", "03.txt"))
+	f.on("ubus call usteer remote_hosts", captured(t, "usteer-ap", "04.txt"))
+	f.on("ubus call usteer get_clients", captured(t, "usteer-ap", "05.txt"))
+	got := body(t, "usteer")
+	wantAll(t, got, "local nodes (1):", `hostapd.phy0-ap0: ssid "owlab-test", 5180 MHz, 1 client, load 0%`, "0 other usteer hosts seen")
+	mustNotContain(t, got, "02:00:00", "does not answer")
+}
+
+func TestDAWNWithARealRadioAndAConnectedPhone(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("uci -q show dawn", captured(t, "dawn-ap", "01.txt"))
+	f.on("ubus list hostapd.*", captured(t, "dawn-ap", "02.txt"))
+	f.on("ubus call dawn get_network", captured(t, "dawn-ap", "03.txt"))
+	f.on("ubus call dawn get_hearing_map", captured(t, "dawn-ap", "04.txt"))
+	got := body(t, "dawn")
+	wantAll(t, got, "dawn: running", "1 hostapd interface on ubus", "network view: 1 entry")
+	mustNotContain(t, got, "02:00:00", "Niiiiiiiiiiiiick")
+	if strings.Contains(got, "hearing map: 0 entries") {
+		t.Errorf("the hearing map had entries:\n%s", got)
+	}
+}

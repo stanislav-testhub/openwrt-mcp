@@ -1,0 +1,27 @@
+# ubus call dawn get_network
+{
+	"owlab-test": {
+		"02:00:00:00:00:01": {
+			"channel": 36,
+			"freq": 5180,
+			"channel_utilization": 0,
+			"num_sta": 1,
+			"ht_support": true,
+			"vht_support": true,
+			"op_class": 115,
+			"local": true,
+			"neighbor_report": "387acc93669aef5900007324090603000000",
+			"iface": "phy0-ap0",
+			"hostname": "OpenWrt",
+			"02:00:00:00:00:02": {
+				"signature": "wifi4|probe:0,1,45,191,221(0050f2,8),255,127,255,221(506f9a,22),221(8cfdf0,1),htcap:09ef,htagg:17,htmcs:0000ffff,vhtcap:3391f9f6,vhtrxmcs:030cfffa,vhttxmcs:030cfffa,extcap:00000a8200404000000120|assoc:0,1,33,48,70,59,45,127,191,255,255,221(0050f2,2),221(8cfdf0,1),221(0000f0,34),221(506f9a,35),htcap:09ad,htagg:17,htmcs:0000ffff,vhtcap:3381f9b2,vhtrxmcs:030cfffa,vhttxmcs:230cfffa,txpow:1408,extcap:04004802010000400020",
+				"ht": true,
+				"vht": true,
+				"rrm-caps": ".TAP..NL",
+				"signal": -60,
+				"rcpi": -1,
+				"rsni": -1
+			}
+		}
+	}
+}

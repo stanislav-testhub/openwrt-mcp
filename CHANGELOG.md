@@ -50,6 +50,11 @@ Added
       IKE packets did not reach the responder, and why was not found.
     - Not done: the libvirt VM has no Tailscale, NetBird or ZeroTier account, samba4 does not fit the VM's 98 MB root and its adapter reads
       shares from the config only, and frp client to server was not connected (the adapters read config, not tunnels).
+  - usteer and DAWN with a real radio: the host's RTL8852BE (rtw89) was passed through to the 24.10.8 VM (libvirt `hostdev`, returned to the
+    host when the VM stops), hostapd ran one 5 GHz AP and a phone associated. Both adapters printed the real node, the client count and the
+    hearing map without addresses; captured as `usteer-ap` and `dawn-ap`. Two things were not seen: a second AP or peer (the card allows one AP
+    on one channel), and steering itself. On that VM hostapd under `ujail` never registered on ubus (the cause of the earlier hwsim failure
+    on 25.12): removing `/etc/capabilities/wpad.json` fixed it. The 2.4 GHz AP was not visible to the phone at 5 dBm or at 17 dBm; 5 GHz was.
   - pbr checked with a second uplink on the 25.12.6 VM (eth2 as `wan2`): a route table and mark for it, a policy for one LAN client via `wan2`
     and `ip route get` with that mark left through eth2; the adapter lists all three gateways and `query` finds the policy. Captured as
     `pbr-two-uplinks`. Packet forwarding past the host NAT was not seen.

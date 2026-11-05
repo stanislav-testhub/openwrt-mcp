@@ -1,0 +1,27 @@
+# ubus call usteer get_clients
+{
+	"02:00:00:00:00:01": {
+		"hostapd.phy0-ap0": {
+			"connected": false,
+			"signal": -78
+		}
+	},
+	"02:00:00:00:00:02": {
+		"hostapd.phy0-ap0": {
+			"connected": false,
+			"signal": -61
+		}
+	},
+	"02:00:00:00:00:03": {
+		"hostapd.phy0-ap0": {
+			"connected": true,
+			"signal": -67
+		}
+	},
+	"02:00:00:00:00:04": {
+		"hostapd.phy0-ap0": {
+			"connected": false,
+			"signal": -87
+		}
+	}
+}
