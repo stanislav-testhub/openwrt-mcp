@@ -872,7 +872,7 @@ server's most-requested packages, and from issue activity in `openwrt/packages` 
 
 **Status (unreleased):** the L1 status adapters for all ten add-ons are built and fixture-tested from upstream sources
 (`adapter_<svc>.go`, `adapters_wave1_test.go`); each carries its own warnings as lines of the detail. `query` is built for adblock-fast (domain) and banIP (IP). Doctor and audit findings exist for all ten. Still open in this
-wave: `query` for adblock, mwan3, pbr, the verb layer, the exposure view, and a run on a real router. `net_diag action=dns_path` is built (see 9.4 status).
+wave: `query` for adblock, mwan3, pbr, verbs for ddns/pbr/UPnP, the exposure view, and a run on a real router. `net_diag action=dns_path` is built (see 9.4 status).
 
 - **Ships.** adblock, adblock-fast, banIP, https-dns-proxy, mwan3, pbr, ddns, UPnP (miniupnpd), sqm-scripts and ttyd.
   sqm and ttyd have the most measured installs of any service add-on. Examples:

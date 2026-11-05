@@ -3,6 +3,11 @@
 ## Unreleased
 
 Added
+- **Add-on verbs on `service_control` (ROADMAP 9.1, L3).** New parameter `arg`. Verbs: `adblock` refresh/suspend/resume, `adblock-fast`
+  refresh/pause/resume, `banip` refresh and `unban <ip>`, `mwan3` ifup/ifdown `<interface>`. Scope `<service>.<verb>`. Routine verbs are in
+  `@operator`; disruptive ones are left out of the preset (it now lists service_control scopes instead of `*`) and need a named grant.
+  Arguments are validated by kind (IP, or an interface present in the mwan3 config) before any command runs. `unban` deletes the address
+  from each active set holding it and fails if it is still there afterwards. Each detail ends with a `service_control verbs:` line.
 - **Doctor findings for the wave 1 add-ons left over:** `adblock-broken` (adblock error or paused, adblock-fast error codes),
   `banip-no-wan`, `hdp-bypassed` (https-dns-proxy running while its dnsmasq management is off and no forwarder points at it) and
   `pbr-errors`. Only for installed, boot-enabled add-ons.
