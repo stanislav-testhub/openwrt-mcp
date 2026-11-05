@@ -564,6 +564,27 @@ func TestAdblockFastQueryReadsHostsFormatToo(t *testing.T) {
 	}
 }
 
+func TestAdblockQueryFindsTheEntryAndHonoursTheAllowlist(t *testing.T) {
+	_, root := wave1Router(t)
+	writeFixture(t, root, "tmp/adb_list.overall", "server=/ads.example.net/\nserver=/tracker.example/\nserver=/other.test/\n")
+	writeFixture(t, root, "etc/adblock/adblock.allowlist", "# mine\nCDN.example.org\n")
+	cases := []struct{ q, want string }{
+		{"www.tracker.example", "blocked: www.tracker.example matches an entry for tracker.example in the merged list"},
+		{"example.org", "not blocked: example.org is not in the merged list"},
+		{"cdn.example.org", "allowed: cdn.example.org is in the adblock allowlist, so it is not blocked"},
+	}
+	for _, c := range cases {
+		if got := detailBody(t, queryOut(t, "adblock", c.q)); !strings.HasPrefix(strings.Join(got, "\n"), c.want) {
+			t.Errorf("query %q:\n got %q\nwant prefix %q", c.q, got, c.want)
+		}
+	}
+	mustNotContain(t, queryOut(t, "adblock", "ads.example.net"), "other.test")
+	_, _ = wave1Router(t)
+	if got := queryOut(t, "adblock", "ads.example.net"); !strings.Contains(got, "no block list is loaded") {
+		t.Errorf("no list:\n%s", got)
+	}
+}
+
 func TestBanIPQueryAsksEachActiveSetOfTheRightFamily(t *testing.T) {
 	f, root := wave1Router(t)
 	writeFixture(t, root, "var/run/banIP/banIP.runtime.json", `{"status":"enabled","active_feeds":["blocklist.v4","threat.v4","threat.v6","bad;name.v4"]}`)

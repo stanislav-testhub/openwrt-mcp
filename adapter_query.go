@@ -116,6 +116,38 @@ func scanBlockList(path string, chain []string) (hit string, ok bool) {
 	return "", true
 }
 
+// adblock (the classic package) merges its feeds into one dnsmasq-format list and keeps the
+// operator's exceptions in a plain allowlist file, one domain per line.
+const (
+	adblockList      = "/tmp/adb_list.overall"
+	adblockAllowlist = "/etc/adblock/adblock.allowlist"
+)
+
+func queryAdblock(ctx context.Context, domain string) string {
+	chain := domainChain(domain)
+	var lines []string
+	if b, err := os.ReadFile(sysPath(adblockAllowlist)); err == nil {
+		for _, l := range strings.Split(string(b), "\n") {
+			l = strings.ToLower(strings.TrimSpace(l))
+			for _, c := range chain {
+				if l == c {
+					lines = append(lines, "allowed: "+c+" is in the adblock allowlist, so it is not blocked")
+				}
+			}
+		}
+	}
+	hit, ok := scanBlockList(adblockList, chain)
+	switch {
+	case !ok:
+		return "no block list is loaded (adblock has not produced " + adblockList + " since boot); status: service_list detail=adblock"
+	case hit != "":
+		lines = append(lines, fmt.Sprintf("blocked: %s matches an entry for %s in the merged list", domain, hit))
+	case len(lines) == 0:
+		return "not blocked: " + domain + " is not in the merged list"
+	}
+	return strings.Join(lines, "\n")
+}
+
 func queryBanIP(ctx context.Context, ip string) string {
 	m, err := readRuntime(banipRuntime)
 	if err != nil {

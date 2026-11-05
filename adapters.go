@@ -68,7 +68,7 @@ func cleanQuery(kind, v string) (string, error) {
 // adapters is sorted by service name; the listing and the "available here" line follow it.
 var adapters = []adapter{
 	{service: "acme", read: readACME},
-	{service: "adblock", read: readAdblock},
+	{service: "adblock", read: readAdblock, query: &adapterQuery{"domain", queryAdblock}},
 	{service: "adblock-fast", read: readAdblockFast, query: &adapterQuery{"domain", queryAdblockFast}},
 	{service: "adguardhome", read: readAdGuardHome},
 	{service: "aria2", read: readAria2},
