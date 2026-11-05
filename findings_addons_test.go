@@ -259,3 +259,54 @@ func TestDoctorStaysQuietOnSpreadOrQuietOrSingleCoreInterrupts(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorFlagsAnEncryptedResolverNothingUses(t *testing.T) {
+	f, root := wave1Router(t)
+	installAddonConfig(t, root, "stubby")
+	installAddonConfig(t, root, "smartdns")
+	f.on("ubus call rc list", `{"stubby":{"enabled":true,"running":true,"start":50,"stop":4},"smartdns":{"enabled":true,"running":true,"start":19,"stop":4}}`)
+	f.on("uci -q show stubby", "stubby.global=stubby\nstubby.global.listen_address='127.0.0.1@5453' '0::1@5453'\n")
+	f.on("uci -q show smartdns", "smartdns.@smartdns[0]=smartdns\nsmartdns.@smartdns[0].enabled='1'\nsmartdns.@smartdns[0].port='6053'\n")
+	f.on("uci -q get dhcp.@dnsmasq[0].server", "9.9.9.9\n")
+	r := healthFindings(context.Background())
+	got := 0
+	for _, fd := range r.findings {
+		if fd.id == "dns-resolver-bypassed" {
+			got++
+		}
+	}
+	if got != 2 {
+		t.Errorf("want both resolvers flagged, got %d", got)
+	}
+	f.on("uci -q get dhcp.@dnsmasq[0].server", "127.0.0.1#5453 127.0.0.1#6053\n")
+	if healthFindings(context.Background()).byID("dns-resolver-bypassed") != nil {
+		t.Error("a resolver dnsmasq forwards to is flagged")
+	}
+	// smartdns answering on port 53 itself is the front resolver, nothing forwards to it
+	f.on("uci -q show smartdns", "smartdns.@smartdns[0]=smartdns\nsmartdns.@smartdns[0].enabled='1'\nsmartdns.@smartdns[0].port='53'\n")
+	f.on("uci -q get dhcp.@dnsmasq[0].server", "127.0.0.1#5453\n")
+	if healthFindings(context.Background()).byID("dns-resolver-bypassed") != nil {
+		t.Error("smartdns on port 53 is flagged")
+	}
+}
+
+func TestDoctorFlagsAWatchcatThatRebootsOnAShortOutage(t *testing.T) {
+	f, root := wave1Router(t)
+	installAddonConfig(t, root, "watchcat")
+	f.on("ubus call rc list", `{"watchcat":{"enabled":true,"running":true,"start":90,"stop":10}}`)
+	f.on("uci -q show watchcat", "watchcat.@watchcat[0]=watchcat\nwatchcat.@watchcat[0].mode='ping_reboot'\nwatchcat.@watchcat[0].period='60s'\nwatchcat.@watchcat[1]=watchcat\nwatchcat.@watchcat[1].mode='ping_reboot'\nwatchcat.@watchcat[1].period='6h'\nwatchcat.@watchcat[2]=watchcat\nwatchcat.@watchcat[2].mode='restart_iface'\nwatchcat.@watchcat[2].period='30s'\n")
+	n := 0
+	for _, fd := range healthFindings(context.Background()).findings {
+		if fd.id == "watchcat-short-reboot" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Errorf("want only the 60s reboot rule flagged, got %d", n)
+	}
+	for in, want := range map[string]int{"30": 30, "90s": 90, "5m": 300, "6h": 21600, "1d": 86400} {
+		if got, ok := watchSeconds(in); !ok || got != want {
+			t.Errorf("watchSeconds(%q) = %d, %v", in, got, ok)
+		}
+	}
+}

@@ -156,6 +156,8 @@ func healthFindings(ctx context.Context) *findingsRun {
 		{"adblock", checkAdblockBroken},
 		{"banip-wan", checkBanIPNoWAN},
 		{"https-dns-proxy", checkHTTPSDNSProxy},
+		{"dns-resolver", checkResolverBypassed},
+		{"watchcat", checkWatchcatShortReboot},
 		{"pbr", checkPBRErrors},
 		{"stats-db", checkStatsDBInRAM},
 		{"irqbalance", checkIRQBalance},
