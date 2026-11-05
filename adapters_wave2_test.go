@@ -268,3 +268,16 @@ func TestAuditFlagsAnFrpServerWithoutAToken(t *testing.T) {
 		t.Error("frps with a token flagged")
 	}
 }
+
+// Found on a real router: collectd installed without luci-app-statistics has no luci_statistics
+// config, which is not a fault.
+func TestCollectdWithoutLuciStatisticsIsNotAFault(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "collectd")
+	f.on("pidof collectd", "3\n")
+	f.fail("uci -q show luci_statistics", "")
+	out := body(t, "collectd")
+	wantAll(t, out, "collectd: running", "no luci_statistics config: luci-app-statistics is not installed")
+	mustNotContain(t, out, "unreadable")
+}

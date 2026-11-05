@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -80,6 +82,10 @@ func readStatistics(ctx context.Context) string {
 	lines := []string{running(ctx, "collectd")}
 	tree, err := uciShow(ctx, "luci_statistics", false)
 	if err != nil {
+		if _, rerr := readSys("/etc/config/luci_statistics"); errors.Is(rerr, os.ErrNotExist) {
+			// collectd alone (no luci-app-statistics) is configured in /etc/collectd.conf.
+			return strings.Join(append(lines, "no luci_statistics config: luci-app-statistics is not installed, so collectd uses /etc/collectd.conf (not read here)"), "\n")
+		}
 		return strings.Join(append(lines, "luci_statistics config unreadable: "+clip(err.Error(), 160)), "\n")
 	}
 	dir := tree.get("collectd_rrdtool", "DataDir")

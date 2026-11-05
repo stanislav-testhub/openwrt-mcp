@@ -74,7 +74,15 @@ Added
     real data. One bug: adblock-fast writes `server=/name/#` for a name it lets through, and `query` reported it as blocked. It now counts only
     `server=/name/` with no upstream. `unban` of an address inside an interval range works (nft splits the range). `banip refresh` returns while
     banIP is still reloading, so the status read right after it can be the previous run's. Captures of both running states are in `testdata/captured/`.
-  Not verified: adblock (classic) after a run, a pbr policy that routes traffic, a UPnP mapping, a ddns update, wave 2 to 4 add-ons, 25.12 (apk).
+  - Fourth pass, waves 2 and 3 from the official feed, installed in batches on the VM (stock config; the disk is small, so each batch was
+    removed before the next): acme, aria2, collectd, hd-idle, keepalived, ksmbd, lldpd, minidlna, mosquitto, nlbwmon, qosify, stubby,
+    swanctl, travelmate, vnstat, watchcat, wifischedule; openvpn, smartdns, tor, transmission, unbound, zerotier; frpc, frps, nextdns,
+    tailscale (NeedsLogin), cloudflared, netbird. All answer with plausible, readable status; the one thing found: collectd without
+    luci-app-statistics said "luci_statistics config unreadable", now it says the config is absent and collectd uses `/etc/collectd.conf`.
+  Not verified: adblock (classic) after a run, a pbr policy that routes traffic, a UPnP mapping, a ddns update, the states that need a
+    peer or a login (a connected tailscale, netbird, zerotier, openvpn, strongSwan, frp, a Wi-Fi uplink for travelmate), samba4 (did not
+    fit on the VM), nut, the wave 4 proxies (homeproxy, nikki, openclash, passwall, podkop, zapret, youtubeUnblock: not in the official
+    feed), 25.12 (apk).
 - **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
   same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
   names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a
