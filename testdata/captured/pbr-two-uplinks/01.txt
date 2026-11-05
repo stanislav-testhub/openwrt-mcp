@@ -1,0 +1,69 @@
+# ubus call service list '{"name":"pbr"}'
+{
+	"pbr": {
+		"instances": {
+			"main": {
+				"running": false,
+				"command": [
+					"/bin/true"
+				],
+				"term_timeout": 5,
+				"exit_code": 0,
+				"data": {
+					"errors": [
+						
+					],
+					"gateways": [
+						{
+							"name": "wan",
+							"device_ipv4": "eth1",
+							"gateway_ipv4": "192.168.1.100",
+							"device_ipv6": "eth1",
+							"gateway_ipv6": "::0",
+							"default": true,
+							"action": "create",
+							"table_id": "256",
+							"mark": "0x010000",
+							"priority": "30000"
+						},
+						{
+							"name": "wwan",
+							"device_ipv4": "phy1-sta0",
+							"gateway_ipv4": "0.0.0.0",
+							"device_ipv6": "phy1-sta0",
+							"gateway_ipv6": "::0",
+							"default": false,
+							"action": "create",
+							"table_id": "257",
+							"mark": "0x020000",
+							"priority": "29999"
+						},
+						{
+							"name": "wan2",
+							"device_ipv4": "eth2",
+							"gateway_ipv4": "192.168.1.100",
+							"device_ipv6": "eth2",
+							"gateway_ipv6": "::0",
+							"default": false,
+							"action": "create",
+							"table_id": "258",
+							"mark": "0x030000",
+							"priority": "29998"
+						}
+					],
+					"mode": "strict",
+					"packageCompat": 27,
+					"status": {
+						"gateways": "wan/eth1/192.168.1.100 \\033[0;32m[\\xe2\\x9c\\x93]\\033[0m\\nwwan/phy1-sta0/0.0.0.0\\nwan2/eth2/192.168.1.100\\n"
+					},
+					"warnings": [
+						{
+							"code": "warningResolverNotSupported",
+							"info": ""
+						}
+					]
+				}
+			}
+		}
+	}
+}

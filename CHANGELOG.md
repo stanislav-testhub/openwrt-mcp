@@ -12,7 +12,14 @@ Added
   - `service_control name=ddns action=update`: removes `<rundir>/<section>.update` of each enabled service and restarts the updaters, because
     the updater skips a send while the address equals what DNS returns and the last send is younger than `force_interval`, and a restart alone
     does not change that (read from the 25.12.6 `dynamic_dns_updater.sh`; not run against a provider). Routine. pbr and miniupnpd get no verb:
-    `reload`/`restart` already cover pbr, and miniupnpd keeps its leases in a file it reads at start, so a safe `unmap` needs a real client.
+    `reload`/`restart` already cover pbr.
+  - `service_control name=miniupnpd action=unmap arg=tcp:PORT|udp:PORT`: removes one UPnP mapping by its external port. miniupnpd has no
+    command line for it, so the verb drops the line from the lease file, restarts the daemon (which rebuilds its rules from that file) and reads
+    the file back; a mapping that is still there is reported as a failure. Routine. A client that renews its mapping creates it again. Run on
+    a 25.12.6 VM against miniupnpd 2.3.9 with a LAN client made with `upnpc`: the nft rule and the `upnpc -l` entry went, the other mapping stayed.
+  - pbr checked with a second uplink on the 25.12.6 VM (eth2 as `wan2`): a route table and mark for it, a policy for one LAN client via `wan2`
+    and `ip route get` with that mark left through eth2; the adapter lists all three gateways and `query` finds the policy. Captured as
+    `pbr-two-uplinks`. Packet forwarding past the host NAT was not seen.
   - Audit finding `wan-exposure` (info): the listening ports reachable from the internet (sockets on every address from `/proc/net` crossed
     with WAN rules and the open-zone case), the port forwards and rules into the LAN, the ports bound to every address but held back by the
     firewall, and rules that accept a port nothing listens on. Silent when nothing is reachable. Custom nft rules and upstream NAT are not seen.

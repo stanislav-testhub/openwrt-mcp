@@ -329,7 +329,7 @@ func serviceList(ctx context.Context, in serviceListIn) (string, string, error) 
 type serviceControlIn struct {
 	Name   string `json:"name" jsonschema:"init script name as listed by service_list, e.g. 'dnsmasq'"`
 	Action string `json:"action" jsonschema:"start | stop | restart | reload | enable | disable | an add-on verb listed by service_list detail"`
-	Arg    string `json:"arg,omitempty" jsonschema:"verb argument: IP or interface"`
+	Arg    string `json:"arg,omitempty" jsonschema:"verb argument: IP, iface, tcp:PORT"`
 	Wait   int    `json:"wait,omitempty" jsonschema:"seconds to wait for the service state to settle after the action (default 10, max 60)"`
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 )
 
@@ -19,7 +20,7 @@ import (
 type adapterVerb struct {
 	service, name string
 	disruptive    bool
-	arg           string // "" (none), "ip" or "iface"
+	arg           string // "" (none), "ip", "iface" or "mapping"
 	run           func(ctx context.Context, arg string) (string, error)
 }
 
@@ -49,6 +50,7 @@ var adapterVerbs = []adapterVerb{
 	{"banip", "refresh", false, "", banipRefresh},
 	{"banip", "unban", false, "ip", banipUnban},
 	{"ddns", "update", false, "", ddnsUpdate},
+	{"miniupnpd", "unmap", false, "mapping", upnpUnmap},
 	{"mwan3", "ifup", true, "iface", mwan3Link("ifup")},
 	{"mwan3", "ifdown", true, "iface", mwan3Link("ifdown")},
 }
@@ -93,6 +95,12 @@ func runVerb(ctx context.Context, v adapterVerb, arg string) (string, string, er
 		}
 	case "ip":
 		clean, err := cleanQuery("ip", arg)
+		if err != nil {
+			return "", "", invalid("arg: %v", err)
+		}
+		arg = clean
+	case "mapping":
+		clean, err := cleanMapping(arg)
 		if err != nil {
 			return "", "", invalid("arg: %v", err)
 		}
@@ -178,6 +186,45 @@ func ddnsUpdate(ctx context.Context, _ string) (string, error) {
 		return out, err
 	}
 	return "updaters restarted for " + strings.Join(names, ", ") + "; each sends its address within a few seconds. Providers may refuse an update that changes nothing, so do not repeat it in a loop.", nil
+}
+
+// cleanMapping turns "tcp:8080" into "TCP:8080": a protocol and an external port, as the lease file keys them.
+func cleanMapping(v string) (string, error) {
+	proto, port, ok := strings.Cut(strings.ToUpper(strings.TrimSpace(v)), ":")
+	n, err := strconv.Atoi(port)
+	if !ok || (proto != "TCP" && proto != "UDP") || err != nil || n < 1 || n > 65535 || port != strconv.Itoa(n) {
+		return "", fmt.Errorf("must be tcp:<external port> or udp:<external port>, for example tcp:8080")
+	}
+	return proto + ":" + port, nil
+}
+
+// upnpUnmap removes one UPnP mapping. miniupnpd has no command line for it, but it rebuilds its
+// rules from the lease file at start and rewrites that file itself on every change, so the verb
+// drops the line and restarts the daemon, then reads the file and the status back. A client that
+// renews its mapping will create it again; the verb cannot stop that.
+func upnpUnmap(ctx context.Context, key string) (string, error) {
+	t, err := uciShow(ctx, "upnpd", false)
+	if err != nil {
+		return "", fmt.Errorf("upnpd config unreadable: %w", err)
+	}
+	lease := runtimePath(t.get("config", "upnp_lease_file"), upnpLeaseFile)
+	text, err := readSys(lease)
+	if err != nil {
+		return "", fmt.Errorf("no UPnP lease file (%s): nothing is mapped", lease)
+	}
+	if !strings.Contains("\n"+text, "\n"+key+":") {
+		return "", fmt.Errorf("no UPnP mapping %s (external port): read service_list detail=miniupnpd for the live ones", strings.Replace(key, ":", " ", 1))
+	}
+	if _, err := run(ctx, defaultCmdTimeout, "sed", "-i", "-e", "/^"+key+":/d", lease); err != nil {
+		return "", fmt.Errorf("editing the lease file: %w", err)
+	}
+	if out, err := initScript("miniupnpd", "restart")(ctx, ""); err != nil {
+		return out, err
+	}
+	if after, err := readSys(lease); err == nil && strings.Contains("\n"+after, "\n"+key+":") {
+		return "", fmt.Errorf("mapping %s is back in the lease file after the restart", key)
+	}
+	return "mapping removed and miniupnpd restarted; the other mappings are reloaded from the lease file.", nil
 }
 
 // verbLine is the last line of a detail: what service_control can do for this add-on.

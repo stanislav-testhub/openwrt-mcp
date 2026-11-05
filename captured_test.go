@@ -180,6 +180,21 @@ func TestPbrOnItsRealServiceDataWithAPolicyItCouldNotApply(t *testing.T) {
 	mustNotContain(t, got, "lan-host-wan: via wan, NOTE", "Plex/Emby Local Server: via wan, NOTE")
 }
 
+// pbr 1.2.2-r20 on the 25.12.6 VM with a second uplink (eth2 as wan2): pbr made a routing table and a mark
+// for it, and a policy for one LAN client via wan2 produced a real nft rule and `ip route get` with that mark
+// left through eth2. The adapter must list three gateways and not flag the wan2 policy.
+func TestPbrWithASecondUplinkOnItsRealServiceData(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on(`ubus call service list {"name":"pbr"}`, captured(t, "pbr-two-uplinks", "01.txt"))
+	f.on("uci -q show pbr", captured(t, "pbr-two-uplinks", "02.txt"))
+	got := strings.Join(detail(t, "pbr"), "\n")
+	wantAll(t, got, "gateways (3):", "wan2: table 258, mark 0x030000, priority 29998, create", "client via wan2: via wan2", "udp dns via wan: via wan")
+	mustNotContain(t, got, "client via wan2: via wan2, NOTE", "udp dns via wan: via wan, NOTE")
+	q := queryOut(t, "pbr", "192.168.1.50")
+	wantAll(t, q, "policy client via wan2: src_addr contains 192.168.1.50, via wan2")
+	mustNotContain(t, q, "udp dns via wan")
+}
+
 // query on the real pbr data (24.10.8 VM, two policies of its own) and the stock mwan3 rules.
 func TestPbrQueryOnItsRealPolicies(t *testing.T) {
 	f, _ := wave1Router(t)

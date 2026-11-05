@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -199,5 +201,65 @@ func TestDDNSUpdateWithNoEnabledServiceFailsWithoutRunningAnything(t *testing.T)
 		if a[0] == "rm" || a[0] == "/etc/init.d/ddns" {
 			t.Errorf("ran %v", a)
 		}
+	}
+}
+
+const upnpLeases2 = "TCP:18080:192.168.1.50:8080:1794502827:miniupnpc\nUDP:19000:192.168.1.50:9000:1793901629:test video\n"
+
+func upnpRouter(t *testing.T) (*fakeRouter, string) {
+	root := withFixtureRoot(t)
+	f := newFakeRouter(t)
+	f.on("ubus call rc list", `{"miniupnpd":{"enabled":true,"running":true,"start":94,"stop":15}}`)
+	f.on("uci -q show upnpd", "upnpd.config=upnpd\nupnpd.config.upnp_lease_file='/var/run/miniupnpd.leases'\n")
+	writeFixture(t, root, "var/run/miniupnpd.leases", upnpLeases2)
+	return f, filepath.Join(root, "var/run/miniupnpd.leases")
+}
+
+func TestUPnPUnmapDropsOneLeaseAndRestartsTheDaemon(t *testing.T) {
+	f, lease := upnpRouter(t)
+	f.onFn("sed -i", func(argv []string, _ string) (string, error) {
+		if argv[3] != "/^TCP:18080:/d" || argv[4] != "/var/run/miniupnpd.leases" {
+			t.Errorf("sed argv %v", argv)
+		}
+		return "", os.WriteFile(lease, []byte("UDP:19000:192.168.1.50:9000:1793901629:test video\n"), 0o644)
+	})
+	f.on("/etc/init.d/miniupnpd restart", "")
+	out, err := callControl(t, serviceControlIn{Name: "miniupnpd", Action: "unmap", Arg: " tcp:18080 "})
+	if err != nil || !strings.Contains(out, "miniupnpd unmap TCP:18080: done") {
+		t.Fatalf("out %q err %v", out, err)
+	}
+	var cmds []string
+	for _, a := range f.argvList() {
+		cmds = append(cmds, strings.Join(a, " "))
+	}
+	all := strings.Join(cmds, "\n")
+	if strings.Index(all, "sed -i") > strings.Index(all, "/etc/init.d/miniupnpd restart") || !strings.Contains(all, "sed -i") {
+		t.Errorf("the lease must be edited before the restart:\n%s", all)
+	}
+}
+
+func TestUPnPUnmapRefusesWhatIsNotMappedOrNotAMapping(t *testing.T) {
+	f, _ := upnpRouter(t)
+	if _, err := callControl(t, serviceControlIn{Name: "miniupnpd", Action: "unmap", Arg: "tcp:19000"}); err == nil || !strings.Contains(err.Error(), "no UPnP mapping TCP 19000") {
+		t.Errorf("err %v", err)
+	}
+	for _, bad := range []string{"", "18080", "tcp:", "tcp:0", "tcp:65536", "tcp:018080", "icmp:80", "tcp:80;rm", "tcp:8080/../x", "tcp:-1"} {
+		if _, err := callControl(t, serviceControlIn{Name: "miniupnpd", Action: "unmap", Arg: bad}); err == nil {
+			t.Errorf("unmap accepted %q", bad)
+		}
+	}
+	for _, a := range f.argvList() {
+		if a[0] == "sed" || a[0] == "/etc/init.d/miniupnpd" {
+			t.Errorf("ran %v", a)
+		}
+	}
+}
+
+func TestUPnPUnmapReportsAMappingThatIsBackAfterTheRestart(t *testing.T) {
+	f, _ := upnpRouter(t)
+	f.on("sed -i", "")
+	f.on("/etc/init.d/miniupnpd restart", "")
+	if _, err := callControl(t, serviceControlIn{Name: "miniupnpd", Action: "unmap", Arg: "tcp:18080"}); err == nil || !strings.Contains(err.Error(), "is back in the lease file") {
+		t.Errorf("a failed removal was reported as done: %v", err)
 	}
 }

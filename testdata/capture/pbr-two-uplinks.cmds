@@ -1,0 +1,3 @@
+# commands the pbr adapter runs
+ubus call service list '{"name":"pbr"}'
+uci -q show pbr
