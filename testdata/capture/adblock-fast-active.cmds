@@ -1,0 +1,3 @@
+# adblock-fast after a successful run
+ubus call service list '{"name":"adblock-fast"}'
+uci -q show adblock-fast

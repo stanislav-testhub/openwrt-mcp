@@ -1,0 +1,4 @@
+# banip while active (feeds doh and tor)
+ubus call service list '{"name":"banip"}'
+uci -q show banip
+cat /var/run/banip_runtime.json

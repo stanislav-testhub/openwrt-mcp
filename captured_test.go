@@ -71,3 +71,23 @@ func TestHTTPSDNSProxyOnItsRealConfig(t *testing.T) {
 	wantAll(t, got, "instances (2):", "cloudflare-dns.com, listens on 127.0.0.1:5053, bootstrap DNS set",
 		"dns.google, listens on 127.0.0.1:5054", "https-dns-proxy is in the DNS path")
 }
+
+// The same two add-ons doing their job: banIP 1.5.6-r7 active with the doh and tor feeds, adblock-fast
+// after a run that loaded 239,581 domains (the VM got DNS through https-dns-proxy to a resolver IP).
+func TestBanIPOnItsRealActiveRuntimeFile(t *testing.T) {
+	_, root := wave1Router(t)
+	writeFixture(t, root, "var/run/banip_runtime.json", captured(t, "banip-active", "03.txt"))
+	got := strings.Join(detail(t, "banip"), "\n")
+	wantAll(t, got, "status: active, banip 1.5.6-r7", "elements: 2 229 (chains: 7, sets: 10, rules: 37)", "feeds (10): allowlist.v4MAC",
+		"doh.v4", "tor.v4", "wan interfaces: wan")
+	mustNotContain(t, got, "NOTE: status is", "WARNING")
+}
+
+func TestAdblockFastOnItsRealServiceDataAfterARun(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on(`ubus call service list {"name":"adblock-fast"}`, captured(t, "adblock-fast-active", "01.txt"))
+	f.on("uci -q show adblock-fast", captured(t, "adblock-fast-active", "02.txt"))
+	got := strings.Join(detail(t, "adblock-fast"), "\n")
+	wantAll(t, got, "status: blocking", "is blocking 239581 domains", "warnings: warningMissingRecommendedPackages")
+	mustNotContain(t, got, "https://", "failed")
+}

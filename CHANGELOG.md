@@ -69,8 +69,12 @@ Added
     answer on the real packages. miniupnpd creates its lease file with the first mapping, so a quiet LAN said "lease file not readable"; it now
     says "none (no lease file yet)". https-dns-proxy keeps `listen_addr` in its global section, which the adapter now falls back to.
     pbr and https-dns-proxy captures are in `testdata/captured/`.
-  Not verified: a *running* banIP or adblock-fast (the VM has no DNS, so adblock-fast's heartbeat check fails), `query` hits, `unban` that
-  removes something, adblock (classic) after a run, a pbr policy that routes traffic, a UPnP mapping, a ddns update, wave 2 to 4 add-ons, 25.12 (apk).
+  - Third pass, banIP and adblock-fast really running (the VM got DNS by pointing https-dns-proxy at a resolver IP, since the host drops
+    UDP DNS from the VM net). adblock-fast loaded 239,581 domains and banIP 1.5.6 ran with the doh and tor feeds. `query` and `unban` hit
+    real data. One bug: adblock-fast writes `server=/name/#` for a name it lets through, and `query` reported it as blocked. It now counts only
+    `server=/name/` with no upstream. `unban` of an address inside an interval range works (nft splits the range). `banip refresh` returns while
+    banIP is still reloading, so the status read right after it can be the previous run's. Captures of both running states are in `testdata/captured/`.
+  Not verified: adblock (classic) after a run, a pbr policy that routes traffic, a UPnP mapping, a ddns update, wave 2 to 4 add-ons, 25.12 (apk).
 - **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
   same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
   names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a

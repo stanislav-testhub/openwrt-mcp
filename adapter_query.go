@@ -72,12 +72,15 @@ func queryAdblockFast(ctx context.Context, domain string) string {
 	return strings.Join(lines, "\n")
 }
 
-// blockedName is the domain a list line blocks: `server=/name/`, `address=/name/...` or a hosts
+// blockedName is the domain a list line blocks: `server=/name/` (with no upstream), `address=/name/...` or a hosts
 // line `127.0.0.1 name` (`:: name` for IPv6). "" for anything else.
 func blockedName(line string) string {
 	for _, p := range []string{"server=/", "address=/"} {
 		if rest, ok := strings.CutPrefix(line, p); ok {
-			name, _, _ := strings.Cut(rest, "/")
+			name, upstream, _ := strings.Cut(rest, "/")
+			if p == "server=/" && upstream != "" {
+				return "" // `server=/name/#` or `/1.2.3.4` forwards the name: an exception, not a block
+			}
 			return name
 		}
 	}

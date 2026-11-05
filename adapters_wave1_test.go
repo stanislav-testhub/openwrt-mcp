@@ -530,12 +530,14 @@ func queryOut(t *testing.T, svc, q string) string {
 func TestAdblockFastQueryFindsTheBlockingEntryAndTheAllowlist(t *testing.T) {
 	f, root := wave1Router(t)
 	f.on("uci -q show adblock-fast", "adblock-fast.config=adblock-fast\nadblock-fast.config.allowed_domain='cdn.example.org'\n")
-	writeFixture(t, root, "var/run/adblock-fast/dnsmasq.servers", "server=/tracker.example/\nserver=/ads.example.net/\nserver=/other.test/\n")
+	writeFixture(t, root, "var/run/adblock-fast/dnsmasq.servers", "server=/cdn.example/#\nserver=/tracker.example/\nserver=/ads.example.net/\nserver=/other.test/\n")
 	cases := []struct{ q, want string }{
 		{"ads.example.net", "blocked: ads.example.net matches an entry for ads.example.net in dnsmasq.servers"},
 		{"X.Ads.Example.NET.", "blocked: x.ads.example.net matches an entry for ads.example.net in dnsmasq.servers"},
 		{"www.tracker.example", "blocked: www.tracker.example matches an entry for tracker.example in dnsmasq.servers"},
 		{"example.org", "not blocked: example.org is in none of the loaded lists"},
+		// Real adblock-fast writes `server=/name/#` for a name it lets through (seen on 1.2.4-r4).
+		{"cdn.example", "not blocked: cdn.example is in none of the loaded lists"},
 		{"cdn.example.org", "allowed: cdn.example.org is in allowed_domain, so it is not blocked"},
 	}
 	for _, c := range cases {

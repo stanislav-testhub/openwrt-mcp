@@ -1,0 +1,20 @@
+# ubus call service list '{"name":"banip"}'
+{
+	"banip": {
+		"instances": {
+			"banip-service": {
+				"running": true,
+				"pid": 31469,
+				"command": [
+					"/usr/bin/banip-service.sh",
+					"start"
+				],
+				"term_timeout": 5,
+				"limits": {
+					"nofile": "1024"
+				},
+				"pidfile": "/var/run/banip.pid"
+			}
+		}
+	}
+}
