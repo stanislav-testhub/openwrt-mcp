@@ -886,7 +886,7 @@ wave: `query` for adblock, mwan3, pbr, the verb layer, findings for adblock, ban
 
 ### 9.4 Wave 2 (v1.8): resolvers, QoS, VPN and remote access
 
-**Status (unreleased):** unbound, stubby and smartdns L1 adapters, `net_diag action=dns_path` and `action=path` (neighbour, unmarked route, mark map with overlap warning, pbr hits) are built and fixture-tested. Also built: watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird (L1). Findings built: sqm-qosify-both, unbound-port-clash, dns-two-blockers. Not built yet: strongSwan, cloudflared, frp, the other wave 2 findings, luci-app-statistics, irqbalance finding; the path view does not simulate nftables marking (mwan3, tailscale, podkop).
+**Status (unreleased):** unbound, stubby and smartdns L1 adapters, `net_diag action=dns_path` and `action=path` (neighbour, unmarked route, mark map with overlap warning, pbr hits) are built and fixture-tested. Also built: watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird (L1). Findings built: sqm-qosify-both, unbound-port-clash, dns-two-blockers. Also built: strongSwan, cloudflared, frpc/frps, collectd, audit finding frps-open. Not built yet: `history=24h` for collectd, the irqbalance finding, the other wave 2 findings, luci-app-statistics, irqbalance finding; the path view does not simulate nftables marking (mwan3, tailscale, podkop).
 
 - **Ships.** unbound, stubby, smartdns, nextdns, qosify, watchcat, travelmate, OpenVPN, ZeroTier, NetBird,
   strongSwan, cloudflared and frp; luci-app-statistics (collectd), which absorbs 7.5; an irqbalance doctor finding.

@@ -27,6 +27,7 @@ func auditFindings(ctx context.Context) *findingsRun {
 		{"wireguard", checkWireGuard},
 		{"ttyd", checkTTYD},
 		{"upnp-secure-mode", checkUPnPSecureMode},
+		{"frps-open", checkFrps},
 	})
 }
 

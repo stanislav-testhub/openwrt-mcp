@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -229,4 +230,41 @@ func TestNetBirdKeepsOnlyKnownFields(t *testing.T) {
 	got := body(t, "netbird")
 	mustNotContain(t, got, "canary-key")
 	wantAll(t, got, "Management: Connected", "Peers count: 2/3 Connected")
+}
+
+func TestWave2SecondBatchNeverPrintsSecrets(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "cloudflared", "frpc", "frps", "collectd", "swanctl")
+	f.on("pidof cloudflared", "1\n")
+	f.on("uci -q show cloudflared", "cloudflared.config=cloudflared\ncloudflared.config.enabled='1'\ncloudflared.config.token='canary-tunnel-token'\n")
+	f.on("pidof frpc", "2\n")
+	f.on("uci -q show frpc", "frpc.main=frpc\nfrpc.main.server_addr='frp.example.com'\nfrpc.main.server_port='7000'\nfrpc.main.token='canary-frp'\nfrpc.@conf[0]=conf\n")
+	f.on("pidof frps", "")
+	f.on("uci -q show frps", "frps.main=frps\nfrps.main.dashboard_port='7500'\nfrps.main.dashboard_pwd='canary-dash'\n")
+	f.on("pidof collectd", "3\n")
+	f.on("uci -q show luci_statistics", "luci_statistics.collectd_rrdtool=statistics\nluci_statistics.collectd_rrdtool.DataDir='/tmp/rrd'\nluci_statistics.collectd_cpu=statistics\nluci_statistics.collectd_cpu.enable='1'\nluci_statistics.collectd_ping=statistics\nluci_statistics.collectd_ping.enable='0'\n")
+	f.on("pidof charon", "4\n")
+	f.on("swanctl --list-sas", "site: #1, ESTABLISHED, IKEv2, canary-spi\n  net: #1, reqid 1, INSTALLED, TUNNEL\n")
+	all := ""
+	for _, s := range []string{"cloudflared", "frpc", "frps", "collectd", "swanctl"} {
+		all += body(t, s) + "\n"
+	}
+	mustNotContain(t, all, "canary")
+	wantAll(t, all, "tunnel token: set (not shown)", "server: frp.example.com:7000", "proxies: 1", "token: not set (any client may connect)", "password set",
+		"data directory: /tmp/rrd, in RAM, lost on reboot", "plugins enabled (1): cpu", "IKE SAs established: 1", "child SAs installed: 1")
+}
+
+func TestAuditFlagsAnFrpServerWithoutAToken(t *testing.T) {
+	f, root := wave1Router(t)
+	installAddonConfig(t, root, "frps")
+	f.on("ubus call rc list", `{"frps":{"enabled":true,"running":true,"start":99,"stop":1}}`)
+	f.on("uci -q show frps", "frps.main=frps\n")
+	if auditFindings(context.Background()).byID("frps-open") == nil {
+		t.Error("token-less frps not flagged")
+	}
+	f.on("uci -q show frps", "frps.main=frps\nfrps.main.token='x'\n")
+	if auditFindings(context.Background()).byID("frps-open") != nil {
+		t.Error("frps with a token flagged")
+	}
 }

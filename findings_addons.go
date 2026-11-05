@@ -289,3 +289,31 @@ func checkDNSBlockers(sn *snapshot) ([]finding, error) {
 		"more than one DNS blocker is enabled at boot: they rewrite the same dnsmasq files",
 		strings.Join(on, ", ")+" enabled")}, nil
 }
+
+func init() {
+	findingHints["frps-open"] = findingHint{"service_list detail=frps shows the token and dashboard state; set a token with uci_apply (dry_run first) or stop frps", docSecure}
+}
+
+func checkFrps(sn *snapshot) ([]finding, error) {
+	if !addonInstalled("frps") {
+		return nil, nil
+	}
+	t, err := sn.getUCI("frps")
+	if err != nil {
+		return nil, err
+	}
+	rc, err := sn.getRC()
+	if err != nil {
+		return nil, err
+	}
+	if e, ok := rc["frps"]; !ok || !e.Enabled {
+		return nil, nil
+	}
+	var out []finding
+	if t.get("main", "token") == "" {
+		out = append(out, newFinding("frps-open", sevHigh,
+			"frps has no token: anyone who reaches its port can register a proxy and open a path into the LAN",
+			"frps.main.token is empty"))
+	}
+	return out, nil
+}
