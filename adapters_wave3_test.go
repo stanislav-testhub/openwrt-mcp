@@ -197,3 +197,18 @@ func TestWave4Passwall2AndNikkiUseUpstreamNames(t *testing.T) {
 	all := body(t, "passwall2") + "\n" + body(t, "nikki")
 	wantAll(t, all, "remote DNS protocol: tcp", "nft table passwall2: loaded", "nft table nikki: loaded", "TCP mode: redirect")
 }
+
+// youtubeUnblock, read from its openwrt branch (package 1.3.1): no table of its own, a chain in
+// inet fw4 (537-youtubeUnblock.nft), the UCI section youtubeUnblock.youtubeUnblock with conf_strat,
+// queue_num and packet_mark, and one anonymous section per profile (its domain lists are not read).
+func TestWave4YoutubeUnblockUsesItsFw4ChainAndUCISection(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "youtubeUnblock")
+	f.on("pidof youtubeUnblock", "13\n")
+	f.on("nft list chain inet fw4 youtubeUnblock", "table inet fw4 {\n\tchain youtubeUnblock {\n\t}\n}\n")
+	f.on("uci -q show youtubeUnblock", "youtubeUnblock.youtubeUnblock=youtubeUnblock\nyoutubeUnblock.youtubeUnblock.conf_strat='ui_flags'\nyoutubeUnblock.youtubeUnblock.packet_mark='32768'\nyoutubeUnblock.youtubeUnblock.queue_num='537'\nyoutubeUnblock.@section[0]=section\nyoutubeUnblock.@section[0].name='canary-profile'\nyoutubeUnblock.@section[0].sni_domains='canary.example'\n")
+	got := body(t, "youtubeUnblock")
+	wantAll(t, got, "youtubeUnblock: running, pid 13", "nft chain youtubeUnblock in fw4: loaded", "config strategy: ui_flags", "queue number: 537", "packet mark: 32768", "sections: 1")
+	mustNotContain(t, got, "canary")
+}

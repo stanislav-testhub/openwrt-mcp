@@ -17,6 +17,7 @@ type stack struct {
 	config  string      // UCI config name ("" if none is read)
 	procs   []string    // process names that mean the stack runs
 	tables  []string    // nft tables "family name" to look for
+	chains  []string    // nft chains "family table chain" to look for (a stack that lives inside fw4)
 	flags   [][3]string // section, option, label: printed as the raw short value
 	counts  [][2]string // section type, label: how many such sections exist
 	secrets [][3]string // section, option, label: printed as set / not set
@@ -33,6 +34,17 @@ func (st stack) read(ctx context.Context) string {
 			lines = append(lines, "nft table "+name+": loaded")
 		} else {
 			lines = append(lines, "nft table "+name+": not loaded")
+		}
+	}
+	for _, c := range st.chains {
+		f := strings.Fields(c)
+		if len(f) != 3 {
+			continue
+		}
+		if _, err := run(ctx, defaultCmdTimeout, "nft", "list", "chain", f[0], f[1], f[2]); err == nil {
+			lines = append(lines, "nft chain "+f[2]+" in "+f[1]+": loaded")
+		} else {
+			lines = append(lines, "nft chain "+f[2]+" in "+f[1]+": not loaded")
 		}
 	}
 	if st.config == "" {
@@ -65,6 +77,6 @@ var wave4 = map[string]stack{
 	"passwall":       {config: "passwall", procs: []string{"xray", "sing-box"}, tables: []string{"inet passwall"}, flags: [][3]string{{"@global[0]", "enabled", "enabled in config"}, {"@global[0]", "dns_mode", "DNS mode"}}, counts: [][2]string{{"nodes", "nodes"}, {"shunt_rules", "shunt rules"}}},
 	"passwall2":      {config: "passwall2", procs: []string{"xray", "sing-box"}, tables: []string{"inet passwall2"}, flags: [][3]string{{"@global[0]", "enabled", "enabled in config"}, {"@global[0]", "remote_dns_protocol", "remote DNS protocol"}}, counts: [][2]string{{"nodes", "nodes"}, {"shunt_rules", "shunt rules"}}},
 	"nikki":          {config: "nikki", procs: []string{"mihomo"}, tables: []string{"inet nikki"}, flags: [][3]string{{"config", "enabled", "enabled in config"}, {"proxy", "tcp_mode", "TCP mode"}}, counts: [][2]string{{"subscription", "subscriptions"}}},
-	"youtubeUnblock": {procs: []string{"youtubeUnblock"}, tables: []string{"inet youtubeUnblock"}},
+	"youtubeUnblock": {config: "youtubeUnblock", procs: []string{"youtubeUnblock"}, chains: []string{"inet fw4 youtubeUnblock"}, flags: [][3]string{{"youtubeUnblock", "conf_strat", "config strategy"}, {"youtubeUnblock", "queue_num", "queue number"}, {"youtubeUnblock", "packet_mark", "packet mark"}}, counts: [][2]string{{"section", "sections"}}},
 	"homeproxy":      {config: "homeproxy", procs: []string{"sing-box"}, flags: [][3]string{{"config", "routing_mode", "routing mode"}, {"dns", "dns_strategy", "DNS strategy"}}, counts: [][2]string{{"node", "nodes"}}},
 }

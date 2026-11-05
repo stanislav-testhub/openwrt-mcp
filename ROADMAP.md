@@ -911,7 +911,7 @@ wave: `query` for adblock, mwan3, pbr, verbs for ddns/pbr/UPnP, the exposure vie
 
 ### 9.6 Wave 4 (best effort): proxy and circumvention stacks
 
-**Status (unreleased):** L1 status adapters for OpenClash, zapret, v2rayA, passwall, passwall2, nikki, youtubeUnblock and homeproxy are built (`adapter_wave4.go`), table-driven and fixture-tested. Checked 2026-11-05 against each project's default config and init scripts (not run): passwall2 has no `dns_mode` (now `remote_dns_protocol`) and nikki's nft table `nikki` is now read; youtubeUnblock's layout could not be read. `net_diag action=dns_path` names the process behind a dnsmasq upstream no add-on claims (read from /proc), so these stacks need no port table; they have no findings.
+**Status (unreleased):** L1 status adapters for OpenClash, zapret, v2rayA, passwall, passwall2, nikki, youtubeUnblock and homeproxy are built (`adapter_wave4.go`), table-driven and fixture-tested. Checked 2026-11-05 against each project's default config and init scripts (not run): passwall2 has no `dns_mode` (now `remote_dns_protocol`) and nikki's nft table `nikki` is now read; youtubeUnblock was read from the `openwrt` branch of its repository (its chain lives in `inet fw4`, not a table of its own). `net_diag action=dns_path` names the process behind a dnsmasq upstream no add-on claims (read from /proc), so these stacks need no port table; they have no findings.
 
 - **Ships.** Status-only adapters, in order of GitHub stars: OpenClash, zapret, v2rayA (official feed), passwall and
   passwall2, nikki, youtubeUnblock and homeproxy. They hold the most credentials and change the fastest: node links

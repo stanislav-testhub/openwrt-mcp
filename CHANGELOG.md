@@ -19,6 +19,9 @@ Added
     for go-sdk (v1.8.0 has none).
   - Wave 4 adapters compared with the projects' own default configs and init scripts: passwall2 reads `remote_dns_protocol` (it has no
     `dns_mode`), nikki reads its nft table. README add-on table lists the version checked for each.
+  - youtubeUnblock was read from the `openwrt` branch of its repository: it has no nft table of its own (a chain `youtubeUnblock` in `inet fw4`), and its UCI
+    section is `youtubeUnblock.youtubeUnblock` (`conf_strat`, `queue_num`, `packet_mark`) with one `section` per profile; the adapter now reads those. OpenClash's
+    `dashboard_password` and `config_subscribe` were confirmed in its init script and LuCI model.
 
 - **Last tails of waves 2 and 3.**
   - `system_status history=1h|6h|24h|7d` (ROADMAP 7.5): load, CPU, memory, temperatures and the five busiest interfaces from collectd's
