@@ -152,6 +152,7 @@ func healthFindings(ctx context.Context) *findingsRun {
 		{"sqm-qosify", checkSQMQosify},
 		{"unbound-port", checkUnboundPort},
 		{"dns-blockers", checkDNSBlockers},
+		{"acme", checkACME},
 	})
 }
 

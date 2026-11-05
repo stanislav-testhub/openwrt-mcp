@@ -317,3 +317,110 @@ func checkFrps(sn *snapshot) ([]finding, error) {
 	}
 	return out, nil
 }
+
+// ---------------------------------------------------------------- wave 3
+
+func init() {
+	for id, h := range map[string]findingHint{
+		"smb-guest-writable":  {"service_list detail=samba4 (or ksmbd) lists each share; turn guest_ok off or make the share read-only with uci_apply (dry_run first)", ""},
+		"rpc-open":            {"service_list detail=transmission (or aria2) shows the RPC bind and secret; bind it to loopback or require a login with uci_apply (dry_run first)", docSecure},
+		"mosquitto-anonymous": {"service_list detail=mosquitto shows the listeners; set allow_anonymous false with a password_file, or bind the listener to loopback", ""},
+		"acme-expiring":       {"service_list detail=acme shows each certificate; logread with pattern=acme for why renewal fails", ""},
+	} {
+		findingHints[id] = h
+	}
+}
+
+func checkSMBShares(sn *snapshot) ([]finding, error) {
+	var out []finding
+	for _, c := range []struct{ cfg, typ string }{{"samba4", "sambashare"}, {"ksmbd", "share"}} {
+		if !addonInstalled(c.cfg) {
+			continue
+		}
+		t, err := sn.getUCI(c.cfg)
+		if err != nil {
+			return nil, err
+		}
+		for _, s := range t.sectionsOfType(c.typ) {
+			if smbGuest(t, s) && !smbReadOnly(t, s) {
+				out = append(out, newFinding("smb-guest-writable", sevHigh,
+					"the share "+clip(t.get(s, "name"), 40)+" is writable by anyone on the network, no login needed",
+					fmt.Sprintf("%s.%s: guest_ok, not read_only", c.cfg, s)))
+			}
+		}
+	}
+	return out, nil
+}
+
+func checkRPC(sn *snapshot) ([]finding, error) {
+	var out []finding
+	if addonInstalled("transmission") {
+		t, err := sn.getUCI("transmission")
+		if err != nil {
+			return nil, err
+		}
+		bind := t.get("transmission", "rpc_bind_address")
+		if (bind == "" || bind == "0.0.0.0" || bind == "::") && !uciFlag(t.get("transmission", "rpc_authentication_required"), false) && uciFlag(t.get("transmission", "enabled"), false) {
+			out = append(out, newFinding("rpc-open", sevHigh,
+				"the Transmission RPC answers on every address with no login",
+				"transmission.rpc_bind_address "+pick(bind != "", bind, "(default all)")+", rpc_authentication_required off"))
+		}
+	}
+	if addonInstalled("aria2") {
+		t, err := sn.getUCI("aria2")
+		if err != nil {
+			return nil, err
+		}
+		if uciFlag(t.get("main", "enabled"), false) && uciFlag(t.get("main", "rpc_listen_all"), false) && t.get("main", "rpc_secret") == "" {
+			out = append(out, newFinding("rpc-open", sevHigh,
+				"the aria2 RPC answers on every address with no secret", "aria2.main: rpc_listen_all on, rpc_secret empty"))
+		}
+	}
+	return out, nil
+}
+
+func checkMosquittoAnonymous(sn *snapshot) ([]finding, error) {
+	d := confDirectives(mosquittoConf, "listener", "allow_anonymous")
+	if d == nil {
+		return nil, nil
+	}
+	v := d["allow_anonymous"]
+	if len(v) == 0 || !strings.EqualFold(v[len(v)-1], "true") {
+		return nil, nil
+	}
+	for _, l := range d["listener"] {
+		f := strings.Fields(l)
+		if len(f) == 1 || (len(f) > 1 && f[1] != "127.0.0.1" && f[1] != "::1" && f[1] != "localhost") {
+			return []finding{newFinding("mosquitto-anonymous", sevHigh,
+				"Mosquitto accepts anonymous clients on a listener that is not bound to loopback",
+				"allow_anonymous true, listener "+clip(l, 40))}, nil
+		}
+	}
+	return nil, nil
+}
+
+func checkACME(sn *snapshot) ([]finding, error) {
+	if !addonInstalled("acme") {
+		return nil, nil
+	}
+	t, err := sn.getUCI("acme")
+	if err != nil {
+		return nil, err
+	}
+	var out []finding
+	for _, s := range t.sectionsOfType("cert") {
+		if !uciFlag(t.get(s, "enabled"), true) {
+			continue
+		}
+		if days, ok := certDaysLeft(sn.ctx, t.list(s, "domains")); ok && days < 14 {
+			sev := sevMedium
+			if days < 0 {
+				sev = sevHigh
+			}
+			out = append(out, newFinding("acme-expiring", sev,
+				fmt.Sprintf("the certificate for %s %s", clip(t.list(s, "domains")[0], 60), pick(days < 0, "has expired", fmt.Sprintf("expires in %d days", days))),
+				fmt.Sprintf("acme.%s: %d days left", clip(s, 30), days)))
+		}
+	}
+	return out, nil
+}

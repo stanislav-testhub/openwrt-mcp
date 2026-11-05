@@ -28,6 +28,9 @@ func auditFindings(ctx context.Context) *findingsRun {
 		{"ttyd", checkTTYD},
 		{"upnp-secure-mode", checkUPnPSecureMode},
 		{"frps-open", checkFrps},
+		{"smb-shares", checkSMBShares},
+		{"rpc-open", checkRPC},
+		{"mosquitto-anonymous", checkMosquittoAnonymous},
 	})
 }
 

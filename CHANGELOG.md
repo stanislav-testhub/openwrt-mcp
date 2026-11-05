@@ -3,6 +3,11 @@
 ## Unreleased
 
 Added
+- **Wave 3 adapters, first batch (ROADMAP 9.5):** `samba4`, `ksmbd` (shares, guest access, writable), `transmission`, `aria2`,
+  `minidlna`, `mosquitto` and `tor` (only known directives of their config files), `acme` (days left per certificate, from
+  `openssl x509 -enddate` on a path built from a validated domain) and `nut-monitor` (four UPS fields via `upsc`).
+  Passwords, RPC secrets and bridge lines are never printed. Findings: audit `smb-guest-writable`, `rpc-open`,
+  `mosquitto-anonymous`; doctor `acme-expiring`.
 - **Wave 2 adapters, second batch:** `strongswan` (as `ipsec`/`swanctl`: IKE and child SA counts), `cloudflared`, `frpc`, `frps`
   and `collectd` (luci-app-statistics: data directory, RAM or flash, enabled plugins). Tokens and passwords show only as "set".
   Audit finding `frps-open`: frps enabled with no token.

@@ -603,6 +603,10 @@ func readOnlyCommand(a []string) bool {
 		return len(a) > 1 && a[1] == "version"
 	case "tc": // the sqm adapter reads qdisc statistics
 		return len(a) > 3 && a[1] == "-s" && a[2] == "qdisc" && a[3] == "show"
+	case "openssl": // the acme adapter reads a certificate's end date
+		return len(a) == 6 && a[1] == "x509" && a[2] == "-noout" && a[3] == "-enddate" && a[4] == "-in"
+	case "upsc":
+		return len(a) == 2
 	case "swanctl":
 		return len(a) == 2 && a[1] == "--list-sas"
 	case "zerotier-cli":
