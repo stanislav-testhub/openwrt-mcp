@@ -218,8 +218,8 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 24180 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg)
-	catalogueProseBudget = 12950 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 24400 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196)
+	catalogueProseBudget = 13130 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
@@ -227,7 +227,7 @@ const (
 // carries a nested request with its own options; wg_new_client has nine parameters, one of
 // which (reveal) keeps a private key out of the conversation by default; uci_get reads, shows history and
 // searches references, each with its own parameter.
-var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700, "net_diag": 1700, "uci_get": 1650}
+var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700, "net_diag": 1900, "uci_get": 1650}
 
 func TestCatalogueStaysWithinBudget(t *testing.T) {
 	cs := connectClient(t, testServer(t, ""), "c")
@@ -396,7 +396,8 @@ func TestAnnotationsAgreeWithThePresets(t *testing.T) {
 	cs := connectClient(t, testServer(t, ""), "c")
 	unscopedReadonly := map[string]bool{}
 	for _, b := range presets["readonly"] {
-		if len(b.scopes) == 1 && b.scopes[0] == "*" {
+		// net_diag is granted on its routine actions (netDiagRoutine), not on "*": throughput and capture are not in the preset.
+		if len(b.scopes) == 1 && b.scopes[0] == "*" || strings.Join(b.scopes, " ") == strings.Join(netDiagRoutine, " ") {
 			for _, tool := range b.tools {
 				unscopedReadonly[tool] = true
 			}
@@ -602,6 +603,10 @@ func readOnlyCommand(a []string) bool {
 		return len(a) > 1 && a[1] == "status"
 	case "sing-box":
 		return len(a) > 1 && a[1] == "version"
+	case "iperf3": // throughput: it sends traffic over the link under test, and changes nothing on the router
+		return contains(a, "-c") && contains(a, "-J")
+	case "tcpdump": // capture: listens, writes nothing (no -w)
+		return !contains(a, "-w") && !contains(a, "-z") && !contains(a, "-C")
 	case "tc": // the sqm adapter reads qdisc statistics
 		return len(a) > 3 && a[1] == "-s" && a[2] == "qdisc" && a[3] == "show"
 	case "openssl": // the acme adapter reads a certificate's end date

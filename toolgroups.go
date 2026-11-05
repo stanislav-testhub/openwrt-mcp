@@ -117,7 +117,7 @@ var scopeHints = map[string]string{
 	"ubus_call":          "object.method, e.g. network.interface.dump  system.board  hostapd.*.get_clients",
 	"exec":               "the program, exactly as called (argv[0]), e.g. ls  cat  /usr/bin/openwrt-mcp",
 	"system_status":      "doctor  audit (the plain overview needs no limit)",
-	"net_diag":           "action or action.target, e.g. ping.1.1.1.1  traffic.br-lan  route  wifi_survey.*",
+	"net_diag":           "action or action.target, e.g. ping.1.1.1.1  traffic.br-lan  route  wifi_survey.*  capture.br-lan  throughput.<server>",
 	"uci_get":            "config.section.option, e.g. network.lan  wireless.*  dhcp.@dnsmasq[0].*  or refs for the name search",
 	"uci_apply":          "config.section.option, e.g. network.lan  wireless.*  dhcp.@dnsmasq[0].*",
 	"service_list":       "service.detail, e.g. dnsmasq.detail  *.detail",

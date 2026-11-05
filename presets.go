@@ -33,6 +33,10 @@ var readonlyUbus = []string{
 	"service.list", "rc.list", "dnsmasq.metrics", "uci.configs", "uci.changes", "log.read",
 }
 
+// netDiagRoutine is every net_diag action except throughput (it loads the link) and capture (it reads other
+// people's traffic): those two need a grant that names them.
+var netDiagRoutine = []string{"ping*", "traceroute*", "nslookup*", "route*", "rule*", "neigh*", "wifi_survey*", "traffic*", "usage*", "dns_path*", "path*"}
+
 var presets = map[string][]presetPolicy{
 	// Reads everything useful, changes nothing. uci_get '*' includes secrets (Wi-Fi keys), as
 	// any config read on OpenWrt does.
@@ -40,7 +44,7 @@ var presets = map[string][]presetPolicy{
 		{tools: []string{"system_status", "logread", "network_clients", "firewall_show", "service_list",
 			"pkg_query", "pkg_config_diff", "wg_list_clients", "uci_get"}, scopes: []string{"*"}},
 		{tools: []string{"ubus_call"}, scopes: readonlyUbus},
-		{tools: []string{"net_diag"}, scopes: []string{"*"}},
+		{tools: []string{"net_diag"}, scopes: netDiagRoutine},
 		{tools: []string{"sysupgrade"}, scopes: []string{"list", "test", "check"}},
 	},
 	// readonly plus every change that is simulated, rollback-armed, or narrowly reversible.
@@ -54,7 +58,7 @@ var presets = map[string][]presetPolicy{
 			"uci_apply", "uci_confirm", "uci_rollback", "pkg_change",
 			"pkg_config_resolve", "wg_new_client", "wg_remove_client"}, scopes: []string{"*"}},
 		{tools: []string{"ubus_call"}, scopes: readonlyUbus},
-		{tools: []string{"net_diag"}, scopes: []string{"*"}},
+		{tools: []string{"net_diag"}, scopes: netDiagRoutine},
 		{tools: []string{"sysupgrade"}, scopes: []string{"list", "test", "check", "backup"}},
 	},
 }

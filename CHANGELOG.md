@@ -51,6 +51,15 @@ Fixed
   system password. It says "system login prompt".
 
 Added
+- **`net_diag action=throughput` and `action=capture` (ROADMAP 9.8).** `throughput` runs `iperf3 -c <target> -J` once up and once down
+  (3 s each by default, 5 s at most) and reports Mbit/s and retransmits; a server error is shown as the line's result. `capture`
+  runs `tcpdump` on one interface (it must exist in `/proc/net/dev`) with `-c 2000`, a 128-byte snap length and a deadline of at most
+  10 s, and returns a summary: packet count, protocols, TCP resets, top senders by bytes, DNS names asked (untrusted text, as before).
+  A raw packet never enters the transcript. The filter is checked word by word against `host net port portrange src dst tcp udp icmp
+  icmp6 ip ip6 arp and or not` plus numbers, addresses and CIDR networks; parentheses, byte offsets, names and options are refused.
+  A missing binary is reported by name. Neither action is in `@readonly` or `@operator` (those presets now list the other net_diag
+  actions instead of `*`), so each needs a grant such as `capture.br-lan` or `throughput.*`. The catalogue grows by `filter` and the
+  two actions (+196 bytes; budgets raised to 24,400, 13,130 and 1,900 for net_diag).
 - **Fixture capture and scrubbing (ROADMAP 9.2).** `make capture SVC=banip ROUTER=root@...` runs the read-only commands listed in
   `testdata/capture/<svc>.cmds` on a router, pipes each output through `openwrt-mcp scrub` (built only with `-tags capture`, so the
   router binary does not grow) and saves it under `testdata/captured/<svc>/`. The scrubber rewrites addresses outside

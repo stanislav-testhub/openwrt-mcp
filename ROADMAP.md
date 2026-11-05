@@ -931,6 +931,8 @@ wave: `query` for adblock, mwan3, pbr, verbs for ddns/pbr/UPnP, the exposure vie
 
 ### 9.8 Diagnostic tools
 
+**Status (unreleased):** `throughput` and `capture` are built and fixture-tested (filter allow-list, caps, packet-cap ending, missing binary, presets). Not run against a real iperf3 or tcpdump; the tcpdump line formats are matched from memory of its output. They are offered by name at call time, not hidden from the schema when the binary is absent.
+
 - **Problem.** iperf3 and tcpdump are in the measured top 100 of every branch that has room for add-ons, and owners
   install them to answer "is it the Wi-Fi or the WAN" and "what is this device doing". Today the agent needs `exec`
   for both.
