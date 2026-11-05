@@ -177,3 +177,30 @@ func TestPbrOnItsRealServiceDataWithAPolicyItCouldNotApply(t *testing.T) {
 		"lan-host-wan: via wan")
 	mustNotContain(t, got, "lan-host-wan: via wan, NOTE", "Plex/Emby Local Server: via wan, NOTE")
 }
+
+// query on the real pbr data (24.10.8 VM, two policies of its own) and the stock mwan3 rules.
+func TestPbrQueryOnItsRealPolicies(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on("uci -q show pbr", captured(t, "pbr-active", "02.txt"))
+	if got := queryOut(t, "pbr", "192.168.1.50"); !strings.Contains(got, "policy lan-host-wan: src_addr contains 192.168.1.50, via wan") {
+		t.Errorf("src:\n%s", got)
+	}
+	if got := queryOut(t, "pbr", "198.51.100.2"); !strings.Contains(got, "policy to-quad9-wg: dest_addr contains 198.51.100.2, via wg0") {
+		t.Errorf("dest:\n%s", got)
+	}
+	got := queryOut(t, "pbr", "10.1.2.3")
+	wantAll(t, got, "no pbr policy lists 10.1.2.3 in src_addr or dest_addr")
+	mustNotContain(t, got, "policy lan-host-wan", "policy to-quad9-wg")
+}
+
+func TestMwan3QueryOnItsRealStockRules(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on("uci -q show mwan3", captured(t, "mwan3", "01.txt"))
+	f.on(`ubus call mwan3 status {"section":"policies"}`, captured(t, "mwan3", "03.txt"))
+	got := queryOut(t, "mwan3", "8.8.8.8")
+	wantAll(t, got, "as destination: rule default_rule_v4 (dest_ip 0.0.0.0/0) uses policy balanced", "members now: wan 100%",
+		"not evaluated: 1 rule without an address")
+	if got6 := queryOut(t, "mwan3", "2606:4700::1111"); !strings.Contains(got6, "rule default_rule_v6 (dest_ip ::/0)") {
+		t.Errorf("v6:\n%s", got6)
+	}
+}

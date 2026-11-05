@@ -167,28 +167,31 @@ sanitised and marked untrusted.
 | tailscale | state, tailnet DNS suffix, this node's addresses, advertised routes, exit node, health, peers (online, direct or relayed, traffic) | GL-MT6000, 25.12 |
 | AdGuard Home | running, listen addresses, protection and filtering switches, upstreams (scheme and host only), bootstrap, filter list and rule counts, whether dnsmasq forwards to it | GL-MT6000, 25.12 |
 | podkop | version, sing-box running, nft table, dnsmasq path, settings, one line per section (type, interface, community lists, size of dynamic lists) | GL-MT6000, 25.12 |
-| adblock | `query=<domain>`: blocked by the merged list, or allowlisted. Status: procd instance, status, version, blocked domain count, active feeds, DNS backend, last run (from `/var/run/adblock/adblock.runtime.json`) | fixture-tested |
-| adblock-fast | `query=<domain>`: blocked by which list, or allowlisted. Status: procd service data: status, the package's stats line, error and warning codes (not their info text), config summary | stopped/failed states verified on 24.10.8 (VM, adblock-fast 1.2.4-r4); running state fixture-tested |
-| banIP | `query=<ip>`: which active sets hold it. Status: version, element count, active feeds, WAN interfaces (warns when none), last run | stopped/failed states verified on 24.10.8 (VM, banip 1.5.6-r7); running state fixture-tested |
-| ddns | per section: domain, provider, registered address, WAN address from netifd, age of the last update; warns on a stale record and on a WAN address in 100.64.0.0/10 | fixture-tested |
-| unbound | running, listen port, DHCP link, DNSSEC validator, recursive or forwarding, cache statistics when `unbound-control` works, whether dnsmasq forwards to it | fixture-tested |
-| stubby | listen addresses, upstream hosts with their TLS names (pinsets never printed), whether dnsmasq forwards to it | fixture-tested |
-| smartdns | listen port, redirect mode, upstream servers as host only, whether dnsmasq forwards to it | fixture-tested |
-| watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird | rules, instances and role, profile set or not, interfaces and classes, uplink count, networks and addresses, management and peer counts; no keys, ids or names | fixture-tested |
-| ipsec/swanctl (strongSwan), cloudflared, frpc, frps, collectd | SA counts, token and password set or not, server and proxy count, data directory (RAM or flash) and enabled plugins | fixture-tested |
-| samba4, ksmbd, transmission, aria2, minidlna, mosquitto, tor, acme, nut-monitor | shares and guest access, RPC bind and auth, listeners and anonymous access, Tor ports, certificate days left, UPS status; secrets only as set or not | fixture-tested |
-| wifischedule, vnstat, hd-idle, keepalived, lldpd, nlbwmon | schedules, tracked interfaces, disks and idle timers, VRRP config (not live state), ports with a neighbour, database path and whether it is in RAM | fixture-tested |
+| adblock | `query=<domain>`: blocked by the merged list, or allowlisted. Status: procd instance, status, version, blocked domain count, active feeds, DNS backend, last run (from `/var/run/adb_runtime.json`) | after a real run on 24.10.8 (VM, adblock 4.4.2-r4, 187,749 domains), status and `query` |
+| adblock-fast | `query=<domain>`: blocked by which list, or allowlisted. Status: procd service data: status, the package's stats line, error and warning codes (not their info text), config summary | 24.10.8 and 25.12.6 (VMs, adblock-fast 1.2.4-r4): failed, running with 239,581 domains, `query` |
+| banIP | `query=<ip>`: which active sets hold it. Status: version, element count, active feeds, WAN interfaces (warns when none), last run | 24.10.8 (banip 1.5.6-r7) and 25.12.6 (1.9.1) VMs: disabled, running, `query`, `unban` |
+| ddns | per section: domain, provider, registered address, WAN address from netifd, age of the last update; warns on a stale record and on a WAN address in 100.64.0.0/10 | 24.10.8 (VM, ddns-scripts 2.8.2): stock config and a real update |
+| unbound | running, listen port, DHCP link, DNSSEC validator, recursive or forwarding, cache statistics when `unbound-control` works, whether dnsmasq forwards to it | 24.10.8 and 25.12.6 VMs at stock config |
+| stubby | listen addresses, upstream hosts with their TLS names (pinsets never printed), whether dnsmasq forwards to it | 24.10.8 and 25.12.6 VMs at stock config |
+| smartdns | listen port, redirect mode, upstream servers as host only, whether dnsmasq forwards to it | 24.10.8 and 25.12.6 VMs at stock config |
+| watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird | rules, instances and role, profile set or not, interfaces and classes, uplink count, networks and addresses, management and peer counts; no keys, ids or names | 24.10.8 and 25.12.6 VMs at stock config: installed, not connected to a peer or a login |
+| ipsec/swanctl (strongSwan), cloudflared, frpc, frps, collectd | SA counts, token and password set or not, server and proxy count, data directory (RAM or flash) and enabled plugins | collectd on GL-MT6000 (25.12); strongSwan, cloudflared, frpc and frps on 24.10.8 and 25.12.6 VMs at stock config (no tunnel up) |
+| samba4, ksmbd, transmission, aria2, minidlna, mosquitto, tor, acme, nut-monitor | shares and guest access, RPC bind and auth, listeners and anonymous access, Tor ports, certificate days left, UPS status; secrets only as set or not | samba4 on GL-MT6000 (25.12); tor on GL-MT6000 and VMs; ksmbd, transmission, aria2, minidlna, mosquitto, acme on 24.10.8 and 25.12.6 VMs at stock config; nut-monitor fixture-tested |
+| wifischedule, vnstat, hd-idle, keepalived, lldpd, nlbwmon | schedules, tracked interfaces, disks and idle timers, VRRP config (not live state), ports with a neighbour, database path and whether it is in RAM | nlbwmon and lldpd on GL-MT6000 (25.12); the others on 24.10.8 and 25.12.6 VMs at stock config |
 | openclash, zapret, v2raya, passwall, passwall2, nikki, youtubeUnblock, homeproxy | **best effort**: processes, nft table loaded, mode flags, node and subscription counts; no names, links or secrets | fixture-tested |
-| https-dns-proxy | instances: resolver host only (no path, so no NextDNS id), listen address and port, bootstrap set or not; whether dnsmasq forwards to a local proxy port | fixture-tested |
-| miniupnpd | settings (warns when secure mode is off) and the live mappings: protocol, external port, client, description (marked untrusted) | fixture-tested |
-| mwan3 | per interface: status, link, tracking state, track IPs up, time online; per policy: members and weights, warns when no member is online (from `ubus call mwan3 status`) | fixture-tested |
-| pbr | gateways with routing table, fwmark and priority, error and warning codes, settings incl. firewall mask, policy names and interfaces (not their addresses or domains) | fixture-tested |
-| sqm | per queue: interface, rates, qdisc, script, live packets, drops and backlog from `tc -s`; warns when flow offloading bypasses the shaper | fixture-tested |
-| ttyd | per instance: port, interface (warns when it listens on every interface), whether a credential is set (never its value), TLS, read-only | fixture-tested |
+| https-dns-proxy | instances: resolver host only (no path, so no NextDNS id), listen address and port, bootstrap set or not; whether dnsmasq forwards to a local proxy port | 24.10.8 and 25.12.6 (VMs), running with two instances |
+| miniupnpd | settings (warns when secure mode is off) and the live mappings: protocol, external port, client, description (marked untrusted) | 24.10.8 (VM, 2.3.9): a real mapping made with `upnpc`; 25.12.6 stock |
+| mwan3 | per interface: status, link, tracking state, track IPs up, time online; per policy: members and weights, warns when no member is online (from `ubus call mwan3 status`). `query=<ip>`: the first rule whose `dest_ip` or `src_ip` holds it, its policy and the policy's members now | 24.10.8 (VM, mwan3 2.11.16-r5), stock config |
+| pbr | gateways with routing table, fwmark and priority, error and warning codes, settings incl. firewall mask, policy names and interfaces (not their addresses or domains); policies whose interface has no gateway are marked. `query=<ip>`: the policies whose `src_addr` or `dest_addr` hold it, and their interface | 24.10.8 and 25.12.6 (VMs, pbr 1.2.2-r20): a policy that built nft rules, and one pbr rejected |
+| sqm | per queue: interface, rates, qdisc, script, live packets, drops and backlog from `tc -s`; warns when flow offloading bypasses the shaper | 24.10.8 (VM) |
+| ttyd | per instance: port, interface (warns when it listens on every interface), whether a credential is set (never its value), TLS, read-only | GL-MT6000, 25.12 |
 
 "Fixture-tested" means the parser is tested against inputs written from the add-on's upstream source (its init script, rpcd
-plugin or runtime file), not against a capture from a router: none of these add-ons is installed on the verification router
-yet. They move to "verified" when each has run on one (ROADMAP 9.7).
+plugin or runtime file), not against a capture from a router. Everything else was run on a real OpenWrt (ROADMAP 9.7; the
+captures are in `testdata/captured/`): the GL-MT6000 (25.12.6, read-only), and 24.10.8 (opkg) and 25.12.6 (apk) x86 VMs. "Stock
+config" means installed and started with the package's default settings, so a state that needs a peer or a login (a connected
+VPN, a travelmate uplink, an SMB login) is not covered. The wave 4 proxy adapters other than podkop are not in the official
+feed and stay fixture-tested.
 
 Deliberately not read: AdGuard Home's web API (it needs the UI login), podkop's `proxy_string`, selector and outbound
 settings, and the user's domain and subnet lists.

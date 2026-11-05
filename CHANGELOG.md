@@ -113,6 +113,12 @@ Added
   Not verified: a pbr policy that routes a client's traffic out of a second uplink, the states that need a
     peer or a login (a tailscale peer that is online, netbird, zerotier, openvpn, strongSwan, frp, a Wi-Fi uplink for travelmate), samba4, nut, the wave 4 proxies (homeproxy, nikki, openclash, passwall, podkop, zapret, youtubeUnblock: not in the official
     feed; podkop is verified on the GL-MT6000), a login to samba4 or a client on transmission.
+- **`query=<ip>` for pbr and mwan3 (ROADMAP 9.1 tail).** `service_list detail=pbr query=1.2.3.4` lists the policies whose `src_addr` or
+  `dest_addr` hold the address (single addresses, CIDRs, `!` negation, space or comma lists) with their interface, protocol and ports;
+  entries that are names, sets or MACs are counted as "not evaluated". `detail=mwan3 query=...` names the first rule whose `dest_ip` or
+  `src_ip` holds it, the rule's policy and the policy's members now, and counts the rules that select by port only. It reads the uci rules,
+  not the kernel's decision. Tested on the real pbr policies and the stock mwan3 rules from the VMs.
+- **README add-on table** now says where each add-on was verified (GL-MT6000, 24.10.8 VM, 25.12.6 VM, stock config or a real state).
 - **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
   same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
   names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a

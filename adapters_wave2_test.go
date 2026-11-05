@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 	"strings"
 	"testing"
 )
@@ -280,4 +281,32 @@ func TestCollectdWithoutLuciStatisticsIsNotAFault(t *testing.T) {
 	out := body(t, "collectd")
 	wantAll(t, out, "collectd: running", "no luci_statistics config: luci-app-statistics is not installed")
 	mustNotContain(t, out, "unreadable")
+}
+
+func TestIPSpecMatchHandlesCIDRsNegationAndNames(t *testing.T) {
+	cases := []struct {
+		spec    []string
+		ip      string
+		match   bool
+		unknown int
+	}{
+		{[]string{"192.168.1.0/24"}, "192.168.1.9", true, 0},
+		{[]string{"192.168.1.0/24"}, "192.168.2.9", false, 0},
+		{[]string{"10.0.0.1 10.0.0.2"}, "10.0.0.2", true, 0},
+		{[]string{"10.0.0.1,10.0.0.2"}, "10.0.0.3", false, 0},
+		{[]string{"!192.168.1.5"}, "192.168.1.6", true, 0},
+		{[]string{"!192.168.1.5"}, "192.168.1.5", false, 0},
+		{[]string{"192.168.1.0/24 !192.168.1.5"}, "192.168.1.5", false, 0},
+		{[]string{"example.com", "10.1.1.1"}, "10.1.1.1", true, 1},
+		{[]string{"example.com", "@set"}, "10.1.1.1", false, 2},
+		{[]string{"2001:db8::/32"}, "2001:db8::1", true, 0},
+		{[]string{"2001:db8::/32"}, "10.1.1.1", false, 0},
+		{nil, "10.1.1.1", false, 0},
+	}
+	for _, c := range cases {
+		m, u := ipSpecMatch(c.spec, net.ParseIP(c.ip))
+		if m != c.match || u != c.unknown {
+			t.Errorf("ipSpecMatch(%q, %s) = %v, %d; want %v, %d", c.spec, c.ip, m, u, c.match, c.unknown)
+		}
+	}
 }
