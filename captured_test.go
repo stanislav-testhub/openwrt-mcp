@@ -137,3 +137,43 @@ func TestAdblockQueryOnItsRealListLocationAndFormat(t *testing.T) {
 		t.Errorf("not blocked:\n%s", got)
 	}
 }
+
+// miniupnpd 2.3.9-r1 on the 24.10.8 VM with one real mapping made by upnpc (miniupnpc 2.2.8) over
+// UPnP IGD. miniupnpd refuses mappings while the WAN address is private, so the VM had external_ip set to
+// a public-looking address; the lease file format is what a real mapping produces.
+func TestUPnPOnItsRealUCIAndLeaseFileWithAMapping(t *testing.T) {
+	f, root := wave1Router(t)
+	f.on("pidof miniupnpd", "901\n")
+	f.on("uci -q show upnpd", captured(t, "upnp-active", "01.txt"))
+	writeFixture(t, root, "var/run/miniupnpd.leases", captured(t, "upnp-active", "02.txt"))
+	got := strings.Join(detail(t, "miniupnpd"), "\n")
+	wantAll(t, got, "settings: enabled, protocols UPnP+NAT-PMP, internal lan", "secure mode on", "mappings (1):", "TCP 8080 -> 192.168.1.1:8080 (miniupnpc)")
+	mustNotContain(t, got, "WARNING")
+}
+
+// ddns-scripts 2.8.2-r68 on the 24.10.8 VM after a real update: a custom update_url answered by a local
+// receiver, lookup_host that does not resolve. The .ip file is empty then (it holds the DNS answer, not
+// what the provider was told), the .update file still records the update.
+func TestDDNSOnItsRealStateFilesAfterAnUpdate(t *testing.T) {
+	f, root := wave1Router(t)
+	f.on("pidof dynamic_dns_updater.sh", "1201\n")
+	f.on("uci -q show ddns", captured(t, "ddns-active", "01.txt"))
+	f.on("ubus call network.interface.lan status", `{"up":true,"ipv4-address":[{"address":"192.168.1.1","mask":24}]}`)
+	writeFixture(t, root, "var/run/ddns/lab.ip", captured(t, "ddns-active", "02.txt"))
+	writeFixture(t, root, "var/run/ddns/lab.update", captured(t, "ddns-active", "03.txt"))
+	got := strings.Join(detail(t, "ddns"), "\n")
+	wantAll(t, got, "lab: enabled, lab.example.com, custom update URL, IPv4", "registered unknown, WAN 192.168.1.1, last update ")
+	mustNotContain(t, got, "WARNING", "no update recorded", "127.0.0.1:18080")
+}
+
+// pbr 1.2.2-r20 on the 24.10.8 VM with two policies of its own: one via wan (it produced a real nft rule
+// and a mark chain), one via wg0, which pbr has no gateway for and reported as errorPolicyUnknownInterface.
+func TestPbrOnItsRealServiceDataWithAPolicyItCouldNotApply(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on(`ubus call service list {"name":"pbr"}`, captured(t, "pbr-active", "01.txt"))
+	f.on("uci -q show pbr", captured(t, "pbr-active", "02.txt"))
+	got := strings.Join(detail(t, "pbr"), "\n")
+	wantAll(t, got, "errors: errorPolicyUnknownInterface", "to-quad9-wg: via wg0, NOTE: pbr has no gateway for this interface, so the policy is not applied",
+		"lan-host-wan: via wan")
+	mustNotContain(t, got, "lan-host-wan: via wan, NOTE", "Plex/Emby Local Server: via wan, NOTE")
+}

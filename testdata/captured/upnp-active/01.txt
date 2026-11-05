@@ -1,0 +1,27 @@
+# uci -q show upnpd
+upnpd.config=upnpd
+upnpd.config.enabled='1'
+upnpd.config.enable_natpmp='1'
+upnpd.config.enable_upnp='1'
+upnpd.config.secure_mode='1'
+upnpd.config.log_output='0'
+upnpd.config.download='1024'
+upnpd.config.upload='512'
+upnpd.config.internal_iface='lan'
+upnpd.config.port='5000'
+upnpd.config.upnp_lease_file='/var/run/miniupnpd.leases'
+upnpd.config.igdv1='1'
+upnpd.config.uuid='918a8c4d-c174-4dd8-8bda-064a35ec7b65'
+upnpd.config.external_ip='198.51.100.1'
+upnpd.@perm_rule[0]=perm_rule
+upnpd.@perm_rule[0].action='allow'
+upnpd.@perm_rule[0].ext_ports='1024-65535'
+upnpd.@perm_rule[0].int_addr='0.0.0.0/0'
+upnpd.@perm_rule[0].int_ports='1024-65535'
+upnpd.@perm_rule[0].comment='Allow high ports'
+upnpd.@perm_rule[1]=perm_rule
+upnpd.@perm_rule[1].action='deny'
+upnpd.@perm_rule[1].ext_ports='0-65535'
+upnpd.@perm_rule[1].int_addr='0.0.0.0/0'
+upnpd.@perm_rule[1].int_ports='0-65535'
+upnpd.@perm_rule[1].comment='Default deny'

@@ -8,7 +8,7 @@ import (
 )
 
 // ddns-scripts keeps one set of files per section in its run directory: <section>.ip is the
-// address the provider was last told, <section>.update the router uptime of the last
+// address DNS returns for lookup_host (empty when the lookup fails, even after a good update), <section>.update the router uptime of the last
 // successful update. Together with the WAN address netifd reports they answer "did my dynamic
 // DNS update". The section's username, password, token and update URL are never read.
 

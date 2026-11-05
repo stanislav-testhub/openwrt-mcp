@@ -1,0 +1,2 @@
+# cat /var/run/ddns/lab.dat
+good 192.168.1.100

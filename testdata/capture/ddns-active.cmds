@@ -1,0 +1,4 @@
+uci -q show ddns
+cat /var/run/ddns/lab.ip
+cat /var/run/ddns/lab.update
+cat /var/run/ddns/lab.dat

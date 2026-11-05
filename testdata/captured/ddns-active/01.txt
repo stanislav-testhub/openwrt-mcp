@@ -1,0 +1,18 @@
+# uci -q show ddns
+ddns.global=ddns
+ddns.global.ddns_dateformat='%F %R'
+ddns.global.ddns_loglines='250'
+ddns.global.upd_privateip='1'
+ddns.lab=service
+ddns.lab.enabled='1'
+ddns.lab.update_url='http://192.168.1.1:18080/cgi-bin/upd?host=[DOMAIN]&ip=[IP]'
+ddns.lab.domain='lab.example.com'
+ddns.lab.lookup_host='lab.example.com'
+ddns.lab.use_ipv6='0'
+ddns.lab.interface='lan'
+ddns.lab.ip_source='network'
+ddns.lab.ip_network='lan'
+ddns.lab.use_https='0'
+ddns.lab.check_interval='5'
+ddns.lab.force_interval='1'
+ddns.lab.force_unit='hours'

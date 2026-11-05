@@ -1,0 +1,2 @@
+# cat /var/run/ddns/lab.update
+61905

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -37,7 +38,28 @@ func readPBR(ctx context.Context) string {
 	if err != nil {
 		return strings.Join(append(lines, "pbr config unreadable: "+clip(err.Error(), 160)), "\n")
 	}
-	return strings.Join(append(lines, pbrConfig(tree)...), "\n")
+	var unknown map[string]bool // set only when pbr itself said a policy names an interface it has no gateway for
+	if slices.Contains(dataCodes(data, "errors"), "errorPolicyUnknownInterface") {
+		unknown = map[string]bool{"ignore": true}
+		for _, g := range pbrGatewayNames(data) {
+			unknown[g] = true
+		}
+	}
+	return strings.Join(append(lines, pbrConfig(tree, unknown)...), "\n")
+}
+
+// pbrGatewayNames are the interfaces pbr built a routing table for.
+func pbrGatewayNames(data map[string]json.RawMessage) []string {
+	var gws []struct {
+		Name string `json:"name"`
+	}
+	var names []string
+	if raw, ok := data["gateways"]; ok && json.Unmarshal(raw, &gws) == nil {
+		for _, g := range gws {
+			names = append(names, g.Name)
+		}
+	}
+	return names
 }
 
 func pbrGateways(data map[string]json.RawMessage) []string {
@@ -61,7 +83,7 @@ func pbrGateways(data map[string]json.RawMessage) []string {
 	return lines
 }
 
-func pbrConfig(t *uciTree) []string {
+func pbrConfig(t *uciTree, known map[string]bool) []string {
 	on := uciFlag(t.get("config", "enabled"), false)
 	parts := []string{pick(on, "enabled", "disabled")}
 	if v := clip(t.get("config", "resolver_set"), 30); v != "" {
@@ -88,8 +110,13 @@ func pbrConfig(t *uciTree) []string {
 		if name == "" {
 			name = clip(p, 40)
 		}
-		lines = append(lines, fmt.Sprintf("  %s: via %s%s", name, pick(t.get(p, "interface") != "", clip(t.get(p, "interface"), 30), "(no interface)"),
-			pick(uciFlag(t.get(p, "enabled"), true), "", ", disabled")))
+		on := uciFlag(t.get(p, "enabled"), true)
+		iface := t.get(p, "interface")
+		note := ""
+		if known != nil && on && iface != "" && !known[iface] {
+			note = ", NOTE: pbr has no gateway for this interface, so the policy is not applied"
+		}
+		lines = append(lines, fmt.Sprintf("  %s: via %s%s%s", name, pick(iface != "", clip(iface, 30), "(no interface)"), pick(on, "", ", disabled"), note))
 	}
 	return lines
 }

@@ -94,10 +94,21 @@ Added
       `adblock-broken` check never saw the status. Both paths are read now.
     - `query` looked for the list at `/tmp/adb_list.overall` and expected `server=/name/` lines. The list is in dnsmasq's conf dir (named
       in the runtime file's `run_directories`) and holds `local=/name/` lines. Both are read now; a name is reported as blocked.
-  Not verified: a pbr policy that routes traffic, a UPnP mapping, a ddns update, the states that need a
-    peer or a login (a connected tailscale, netbird, zerotier, openvpn, strongSwan, frp, a Wi-Fi uplink for travelmate), samba4 (did not
-    fit on the VM), nut, the wave 4 proxies (homeproxy, nikki, openclash, passwall, podkop, zapret, youtubeUnblock: not in the official
-    feed), the GL-MT6000.
+  - Seventh pass, 24.10.8 VM, the three tails from the earlier lists, each with a real state (captures in `testdata/captured/`):
+    - **UPnP:** a real mapping made with `upnpc` (miniupnpc 2.2.8). miniupnpd refuses mappings while the WAN address is private
+      ("Port forwarding is impossible"), so the VM got `external_ip` set to a public-looking address. The adapter lists it correctly; no change.
+    - **ddns:** a real update (ddns-scripts 2.8.2, custom `update_url` to a receiver on the VM; `upd_privateip` is needed for a private
+      address). The adapter showed the right state. Only a comment was wrong: `<section>.ip` holds the DNS answer for `lookup_host`
+      (empty when it does not resolve), not what the provider was told; the adapter's wording and the stale check were already right.
+    - **pbr:** a policy via `wan` built a real nft rule and mark chain. A policy via `wg0` (no gateway) made pbr report
+      `errorPolicyUnknownInterface` with the policy name only in `info`, which the adapter does not print; the policy list now says
+      "pbr has no gateway for this interface, so the policy is not applied" on the policy that names it.
+  - GL-MT6000 (25.12.6, the live router; read-only through the MCP, the running build is older than this tree): `podkop` 0.7.22, `tailscale`
+    1.104.1 (running, 2 peers offline), AdGuard Home and `ttyd` answered correctly; the doctor found `tor` down. The cause was not an adapter
+    fault: `DataDirectory /srv/tor` and no `/srv` on the router.
+  Not verified: a pbr policy that routes a client's traffic out of a second uplink, the states that need a
+    peer or a login (a tailscale peer that is online, netbird, zerotier, openvpn, strongSwan, frp, a Wi-Fi uplink for travelmate), samba4, nut, the wave 4 proxies (homeproxy, nikki, openclash, passwall, podkop, zapret, youtubeUnblock: not in the official
+    feed; podkop is verified on the GL-MT6000), this tree's build on the GL-MT6000 (samba4, collectd, irqbalance, nlbwmon adapters).
 - **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
   same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
   names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a
