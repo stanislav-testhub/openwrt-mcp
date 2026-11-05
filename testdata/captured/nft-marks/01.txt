@@ -1,0 +1,530 @@
+# nft -t list ruleset
+table ip mangle {
+	chain mwan3_ifaces_in {
+		meta mark & 0x00003f00 == 0x00000000 counter packets 418 bytes 39889 jump mwan3_iface_in_wan
+	}
+
+	chain mwan3_custom_ipv4 {
+		xt match "set" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_connected_ipv4 {
+		xt match "set" counter packets 1187 bytes 1922863 xt target "MARK"
+	}
+
+	chain mwan3_dynamic_ipv4 {
+		xt match "set" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_rules {
+		ip protocol tcp xt match "multiport" meta mark & 0x00003f00 == 0x00000000 counter packets 15 bytes 900 jump mwan3_rule_https
+		meta mark & 0x00003f00 == 0x00000000 counter packets 186 bytes 14848 jump mwan3_policy_balanced
+	}
+
+	chain mwan3_hook {
+		meta mark & 0x00003f00 == 0x00000000 counter packets 11503 bytes 8978232 xt target "CONNMARK"
+		meta mark & 0x00003f00 == 0x00000000 counter packets 427 bytes 40657 jump mwan3_ifaces_in
+		meta mark & 0x00003f00 == 0x00000000 counter packets 374 bytes 37477 jump mwan3_custom_ipv4
+		meta mark & 0x00003f00 == 0x00000000 counter packets 374 bytes 37477 jump mwan3_connected_ipv4
+		meta mark & 0x00003f00 == 0x00000000 counter packets 201 bytes 15748 jump mwan3_dynamic_ipv4
+		meta mark & 0x00003f00 == 0x00000000 counter packets 201 bytes 15748 jump mwan3_rules
+		counter packets 14842 bytes 9816190 xt target "CONNMARK"
+		meta mark & 0x00003f00 != 0x00003f00 counter packets 2201 bytes 2003606 jump mwan3_custom_ipv4
+		meta mark & 0x00003f00 != 0x00003f00 counter packets 2201 bytes 2003606 jump mwan3_connected_ipv4
+		meta mark & 0x00003f00 != 0x00003f00 counter packets 1187 bytes 102472 jump mwan3_dynamic_ipv4
+	}
+
+	chain PREROUTING {
+		type filter hook prerouting priority mangle; policy accept;
+		counter packets 8814 bytes 8548248 jump mwan3_hook
+	}
+
+	chain OUTPUT {
+		type route hook output priority mangle; policy accept;
+		counter packets 6028 bytes 1267942 jump mwan3_hook
+	}
+
+	chain mwan3_policy_wan_only {
+		meta mark & 0x00003f00 == # Warning: table ip mangle is managed by iptables-nft, do not touch!
+0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_policy_wanb_only {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_policy_balanced {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 58 bytes 4393 xt target "MARK"
+	}
+
+	chain mwan3_policy_wan_wanb {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_policy_wanb_wan {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_rule_https {
+		meta mark & 0x00003f00 == 0x00000000 counter packets 15 bytes 900 jump mwan3_policy_balanced
+		meta mark & 0x0000fc00 != 0x0000fc00 counter packets 15 bytes 900 xt target "SET"
+		meta mark & 0x0000fc00 != 0x0000fc00 counter packets 15 bytes 900 xt target "SET"
+	}
+
+	chain mwan3_iface_in_wan {
+		iifname "eth1" xt match "set" meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+		iifname "eth1" xt match "set" meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 12 bytes 720 xt target "MARK"
+		iifname "eth1" xt match "set" meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+		iifname "eth1" meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+}
+table ip6 mangle {
+	chain mwan3_ifaces_in {
+	}
+
+	chain mwan3_custom_ipv6 {
+		xt match "set" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_connected_ipv6 {
+		xt match "set" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_dynamic_ipv6 {
+		xt match "set" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_rules {
+		meta l4proto tcp xt match "multiport" meta mark & 0x00003f00 == 0x00000000 counter packets 0 bytes 0 jump mwan3_rule_https
+		meta mark# Warning: table ip6 mangle is managed by iptables-nft, do not touch!
+ & 0x00003f00 == 0x00000000 counter packets 230 bytes 26341 jump mwan3_policy_balanced
+	}
+
+	chain mwan3_hook {
+		meta l4proto ipv6-icmp xt match "icmp6" counter packets 41 bytes 2296 return
+		meta l4proto ipv6-icmp xt match "icmp6" counter packets 35 bytes 5600 return
+		meta l4proto ipv6-icmp xt match "icmp6" counter packets 46 bytes 3312 return
+		meta l4proto ipv6-icmp xt match "icmp6" counter packets 2 bytes 128 return
+		meta l4proto ipv6-icmp xt match "icmp6" counter packets 0 bytes 0 return
+		meta mark & 0x00003f00 == 0x00000000 counter packets 1043 bytes 175293 xt target "CONNMARK"
+		meta mark & 0x00003f00 == 0x00000000 counter packets 230 bytes 26341 jump mwan3_ifaces_in
+		meta mark & 0x00003f00 == 0x00000000 counter packets 230 bytes 26341 jump mwan3_custom_ipv6
+		meta mark & 0x00003f00 == 0x00000000 counter packets 230 bytes 26341 jump mwan3_connected_ipv6
+		meta mark & 0x00003f00 == 0x00000000 counter packets 230 bytes 26341 jump mwan3_dynamic_ipv6
+		meta mark & 0x00003f00 == 0x00000000 counter packets 230 bytes 26341 jump mwan3_rules
+		counter packets 1140 bytes 184328 xt target "CONNMARK"
+		meta mark & 0x00003f00 != 0x00003f00 counter packets 1140 bytes 184328 jump mwan3_custom_ipv6
+		meta mark & 0x00003f00 != 0x00003f00 counter packets 1140 bytes 184328 jump mwan3_connected_ipv6
+		meta mark & 0x00003f00 != 0x00003f00 counter packets 1140 bytes 184328 jump mwan3_dynamic_ipv6
+	}
+
+	chain PREROUTING {
+		type filter hook prerouting priority mangle; policy accept;
+		counter packets 627 bytes 95964 jump mwan3_hook
+	}
+
+	chain OUTPUT {
+		type route hook output priority mangle; policy accept;
+		counter packets 637 bytes 99700 jump mwan3_hook
+	}
+
+	chain mwan3_policy_wan_only {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_policy_wanb_only {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_policy_balanced {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 87 bytes 8817 xt target "MARK"
+	}
+
+	chain mwan3_policy_wan_wanb {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_policy_wanb_wan {
+		meta mark & 0x00003f00 == 0x00000000 xt match "comment" counter packets 0 bytes 0 xt target "MARK"
+	}
+
+	chain mwan3_rule_https {
+		meta mark & 0x00003f00 == 0x00000000 counter packets 0 bytes 0 jump mwan3_policy_balanced
+		meta mark & 0x0000fc00 != 0x0000fc00 counter packets 0 bytes 0 xt target "SET"
+		meta mark & 0x0000fc00 != 0x0000fc00 counter packets 0 bytes 0 xt target "SET"
+	}
+}
+table inet https_dns_proxy_notrack {
+	chain raw_output {
+		type filter hook output priority raw; policy accept;
+		meta l4proto { tcp, udp } th dport { 5053, 5054 } ip daddr 127.0.0.0/8 notrack
+		meta l4proto { tcp, udp } th sport { 5053, 5054 } ip saddr 127.0.0.0/8 notrack
+	}
+}
+table inet banIP {
+	limit loglimit {
+		rate 10/second
+	}
+
+	counter cnt_icmpflood {
+		packets 0 bytes 0
+	}
+
+	counter cnt_udpflood {
+		packets 0 bytes 0
+	}
+
+	counter cnt_synflood {
+		packets 0 bytes 0
+	}
+
+	counter cnt_tcpinvalid {
+		packets 0 bytes 0
+	}
+
+	counter cnt_ctinvalid {
+		packets 0 bytes 0
+	}
+
+	counter cnt_bcp38 {
+		packets 0 bytes 0
+	}
+
+	set allowlist.v4MAC {
+		type ether_addr . ipv4_addr
+		policy memory
+		flags interval
+	}
+
+	set allowlist.v6MAC {
+		type ether_addr . ipv6_addr
+		policy memory
+		flags interval
+	}
+
+	set allowlist.v4 {
+		type ipv4_addr
+		policy memory
+		flags interval
+		auto-merge
+	}
+
+	set allowlist.v6 {
+		type ipv6_addr
+		policy memory
+		flags interval
+		auto-merge
+	}
+
+	set tor.v4 {
+		type ipv4_addr
+		policy memory
+		flags interval
+		auto-merge
+	}
+
+	set blocklist.v4MAC {
+		type ether_addr . ipv4_addr
+		policy memory
+		flags interval
+	}
+
+	set blocklist.v6MAC {
+		type ether_addr . ipv6_addr
+		policy memory
+		flags interval
+	}
+
+	set blocklist.v4 {
+		type ipv4_addr
+		policy memory
+		flags interval,timeout
+		auto-merge
+	}
+
+	set blocklist.v6 {
+		type ipv6_addr
+		policy memory
+		flags interval,timeout
+		auto-merge
+	}
+
+	set doh.v4 {
+		type ipv4_addr
+		policy memory
+		flags interval
+		auto-merge
+	}
+
+	chain pre-routing {
+		type filter hook prerouting priority -175; policy accept;
+		iifname != "eth1" accept
+		ct state invalid counter name "cnt_ctinvalid" drop
+		meta nfproto . meta l4proto { ipv4 . icmp, ipv6 . ipv6-icmp } limit rate over 25/second burst 5 packets counter name "cnt_icmpflood" drop
+		meta l4proto udp ct state new limit rate over 100/second burst 5 packets counter name "cnt_udpflood" drop
+		tcp flags & (fin | syn | rst | ack) == syn limit rate over 10/second burst 5 packets counter name "cnt_synflood" drop
+		tcp flags & (fin | syn) == fin | syn counter name "cnt_tcpinvalid" drop
+		tcp flags & (syn | rst) == syn | rst counter name "cnt_tcpinvalid" drop
+		tcp flags & (fin | syn | rst | psh | ack | urg) < fin counter name "cnt_tcpinvalid" drop
+		tcp flags & (fin | syn | rst | psh | ack | urg) == fin | psh | urg counter name "cnt_tcpinvalid" drop
+	}
+
+	chain wan-input {
+		type filter hook input priority -100; policy accept;
+		ct state established,related accept
+		iifname != "eth1" accept
+		meta nfproto ipv4 udp sport 67-68 udp dport 67-68 accept
+		meta nfproto ipv6 udp sport 547 udp dport 546 accept
+		icmpv6 type { nd-router-advert, nd-neighbor-solicit, nd-neighbor-advert } ip6 hoplimit 255 accept
+		jump _inbound
+	}
+
+	chain wan-forward {
+		type filter hook forward priority -100; policy accept;
+		iifname != "eth1" accept
+		ct state established,related accept
+		jump _inbound
+	}
+
+	chain lan-forward {
+		type filter hook forward priority -100; policy accept;
+		ct state established,related accept
+		oifname != "eth1" accept
+		jump _outbound
+	}
+
+	chain _inbound {
+		ip saddr @allowlist.v4 counter packets 49 bytes 2940 accept
+		ip6 saddr @allowlist.v6 counter packets 0 bytes 0 accept
+		ip saddr @tor.v4 counter packets 0 bytes 0 drop
+		ip saddr @blocklist.v4 counter packets 0 bytes 0 drop
+		ip6 saddr @blocklist.v6 counter packets 0 bytes 0 drop
+	}
+
+	chain _outbound {
+		ether saddr . ip saddr @allowlist.v4MAC counter packets 0 bytes 0 accept
+		ether saddr . ip6 saddr @allowlist.v6MAC counter packets 0 bytes 0 accept
+		ip daddr @allowlist.v4 counter packets 0 bytes 0 accept
+		ip6 daddr @allowlist.v6 counter packets 0 bytes 0 accept
+		ip daddr @tor.v4 counter packets 0 bytes 0 goto _reject
+		ether saddr . ip saddr @blocklist.v4MAC counter packets 0 bytes 0 goto _reject
+		ether saddr . ip6 saddr @blocklist.v6MAC counter packets 0 bytes 0 goto _reject
+		ip daddr @blocklist.v4 counter packets 0 bytes 0 goto _reject
+		ip6 daddr @blocklist.v6 counter packets 0 bytes 0 goto _reject
+		meta l4proto { tcp, udp } th dport { 80, 443 } ip daddr @doh.v4 counter packets 0 bytes 0 goto _reject
+	}
+
+	chain _reject {
+		iifname != "eth1" meta l4proto tcp reject with tcp reset
+		reject with icmpx host-unreachable
+	}
+}
+table inet fw4 {
+	chain input {
+		type filter hook input priority filter; policy drop;
+		iif "lo" accept comment "!fw4: Accept traffic from loopback"
+		ct state vmap { established : accept, related : accept } comment "!fw4: Handle inbound flows"
+		tcp flags & (fin | syn | rst | ack) == syn jump syn_flood comment "!fw4: Rate limit TCP syn packets"
+		iifname "br-lan" jump input_lan comment "!fw4: Handle lan IPv4/IPv6 input traffic"
+		iifname { "eth1", "eth2" } jump input_wan comment "!fw4: Handle wan IPv4/IPv6 input traffic"
+		jump handle_reject
+	}
+
+	chain forward {
+		type filter hook forward priority filter; policy drop;
+		ct state vmap { established : accept, related : accept } comment "!fw4: Handle forwarded flows"
+		iifname "br-lan" jump forward_lan comment "!fw4: Handle lan IPv4/IPv6 forward traffic"
+		iifname { "eth1", "eth2" } jump forward_wan comment "!fw4: Handle wan IPv4/IPv6 forward traffic"
+		jump upnp_forward comment "Hook into miniupnpd forwarding chain"
+		jump handle_reject
+	}
+
+	chain output {
+		type filter hook output priority filter; policy accept;
+		oif "lo" accept comment "!fw4: Accept traffic towards loopback"
+		ct state vmap { established : accept, related : accept } comment "!fw4: Handle outbound flows"
+		oifname "br-lan" jump output_lan comment "!fw4: Handle lan IPv4/IPv6 output traffic"
+		oifname { "eth1", "eth2" } jump output_wan comment "!fw4: Handle wan IPv4/IPv6 output traffic"
+	}
+
+	chain prerouting {
+		type filter hook prerouting priority filter; policy accept;
+		iifname "br-lan" jump helper_lan comment "!fw4: Handle lan IPv4/IPv6 helper assignment"
+	}
+
+	chain handle_reject {
+		meta l4proto tcp reject with tcp reset comment "!fw4: Reject TCP traffic"
+		reject comment "!fw4: Reject any other traffic"
+	}
+
+	chain syn_flood {
+		limit rate 25/second burst 50 packets return comment "!fw4: Accept SYN packets below rate-limit"
+		drop comment "!fw4: Drop excess packets"
+	}
+
+	chain input_lan {
+		udp dport 5353 counter packets 0 bytes 0 accept comment "!fw4: ubus:umdns[instance1] rule 0"
+		ct status dnat accept comment "!fw4: Accept port redirections"
+		jump accept_from_lan
+	}
+
+	chain output_lan {
+		jump accept_to_lan
+	}
+
+	chain forward_lan {
+		tcp dport 53 counter packets 0 bytes 0 jump handle_reject comment "!fw4: ubus:adblock-fast[*] rule 0"
+		udp dport 53 counter packets 0 bytes 0 jump handle_reject comment "!fw4: ubus:adblock-fast[*] rule 0"
+		tcp dport 853 counter packets 0 bytes 0 jump handle_reject comment "!fw4: ubus:adblock-fast[*] rule 1"
+		udp dport 853 counter packets 0 bytes 0 jump handle_reject comment "!fw4: ubus:adblock-fast[*] rule 1"
+		tcp dport 853 counter packets 0 bytes 0 jump handle_reject comment "!fw4: ubus:https-dns-proxy[instance1] rule 1"
+		udp dport 853 counter packets 0 bytes 0 jump handle_reject comment "!fw4: ubus:https-dns-proxy[instance1] rule 1"
+		jump accept_to_wan comment "!fw4: Accept lan to wan forwarding"
+		ct status dnat accept comment "!fw4: Accept port forwards"
+		jump accept_to_lan
+	}
+
+	chain helper_lan {
+	}
+
+	chain accept_from_lan {
+		iifname "br-lan" counter packets 1741 bytes 563548 accept comment "!fw4: accept lan IPv4/IPv6 traffic"
+	}
+
+	chain accept_to_lan {
+		oifname "br-lan" counter packets 2103 bytes 596660 accept comment "!fw4: accept lan IPv4/IPv6 traffic"
+	}
+
+	chain input_wan {
+		meta nfproto ipv4 udp dport 68 counter packets 0 bytes 0 accept comment "!fw4: Allow-DHCP-Renew"
+		icmp type echo-request counter packets 0 bytes 0 accept comment "!fw4: Allow-Ping"
+		meta nfproto ipv4 meta l4proto igmp counter packets 0 bytes 0 accept comment "!fw4: Allow-IGMP"
+		meta nfproto ipv6 udp dport 546 counter packets 0 bytes 0 accept comment "!fw4: Allow-DHCPv6"
+		ip6 saddr fe80::/10 icmpv6 type . icmpv6 code { mld-listener-query . 0, mld-listener-report . 0, mld-listener-done . 0, mld2-listener-report . 0 } counter packets 0 bytes 0 accept comment "!fw4: Allow-MLD"
+		icmpv6 type { destination-unreachable, time-exceeded, echo-request, echo-reply, nd-router-solicit, nd-router-advert } limit rate 1000/second burst 5 packets counter packets 4 bytes 224 accept comment "!fw4: Allow-ICMPv6-Input"
+		icmpv6 type . icmpv6 code { packet-too-big . 0, parameter-problem . 0, nd-neighbor-solicit . 0, nd-neighbor-advert . 0, parameter-problem . 1 } limit rate 1000/second burst 5 packets counter packets 0 bytes 0 accept comment "!fw4: Allow-ICMPv6-Input"
+		tcp dport 22 counter packets 12 bytes 720 accept comment "!fw4: ssh-wan"
+		jump reject_from_wan
+	}
+
+	chain output_wan {
+		jump accept_to_wan
+	}
+
+	chain forward_wan {
+		icmpv6 type { destination-unreachable, time-exceeded, echo-request, echo-reply } limit rate 1000/second burst 5 packets counter packets 0 bytes 0 accept comment "!fw4: Allow-ICMPv6-Forward"
+		icmpv6 type . icmpv6 code { packet-too-big . 0, parameter-problem . 0, parameter-problem . 1 } limit rate 1000/second burst 5 packets counter packets 0 bytes 0 accept comment "!fw4: Allow-ICMPv6-Forward"
+		meta l4proto esp counter packets 0 bytes 0 jump accept_to_lan comment "!fw4: Allow-IPSec-ESP"
+		udp dport 500 counter packets 0 bytes 0 jump accept_to_lan comment "!fw4: Allow-ISAKMP"
+		jump drop_to_wan
+	}
+
+	chain accept_to_wan {
+		meta nfproto ipv4 oifname { "eth1", "eth2" } ct state invalid counter packets 0 bytes 0 drop comment "!fw4: Prevent NAT leakage"
+		oifname { "eth1", "eth2" } counter packets 407 bytes 33860 accept comment "!fw4: accept wan IPv4/IPv6 traffic"
+	}
+
+	chain reject_from_wan {
+		iifname { "eth1", "eth2" } counter packets 0 bytes 0 jump handle_reject comment "!fw4: reject wan IPv4/IPv6 traffic"
+	}
+
+	chain drop_to_wan {
+		oifname { "eth1", "eth2" } counter packets 0 bytes 0 drop comment "!fw4: drop wan IPv4/IPv6 traffic"
+	}
+
+	chain dstnat {
+		type nat hook prerouting priority dstnat; policy accept;
+		jump pbr_dstnat
+		iifname "br-lan" jump dstnat_lan comment "!fw4: Handle lan IPv4/IPv6 dstnat traffic"
+		jump upnp_prerouting comment "Hook into miniupnpd prerouting chain"
+	}
+
+	chain srcnat {
+		type nat hook postrouting priority srcnat; policy accept;
+		oifname { "eth1", "eth2" } jump srcnat_wan comment "!fw4: Handle wan IPv4/IPv6 srcnat traffic"
+		jump upnp_postrouting comment "Hook into miniupnpd postrouting chain"
+	}
+
+	chain dstnat_lan {
+		tcp dport 53 counter packets 0 bytes 0 redirect to :53 comment "!fw4: ubus:https-dns-proxy[instance1] redirect 0"
+		udp dport 53 counter packets 0 bytes 0 redirect to :53 comment "!fw4: ubus:https-dns-proxy[instance1] redirect 0"
+	}
+
+	chain srcnat_wan {
+		meta nfproto ipv4 masquerade comment "!fw4: Masquerade IPv4 wan traffic"
+	}
+
+	chain raw_prerouting {
+		type filter hook prerouting priority raw; policy accept;
+	}
+
+	chain raw_output {
+		type filter hook output priority raw; policy accept;
+	}
+
+	chain mangle_prerouting {
+		type filter hook prerouting priority mangle; policy accept;
+		jump pbr_prerouting
+	}
+
+	chain mangle_postrouting {
+		type filter hook postrouting priority mangle; policy accept;
+		oifname { "eth1", "eth2" } tcp flags & (fin | syn | rst) == syn tcp option maxseg size set rt mtu comment "!fw4: Zone wan IPv4/IPv6 egress MTU fixing"
+	}
+
+	chain mangle_input {
+		type filter hook input priority mangle; policy accept;
+	}
+
+	chain mangle_output {
+		type route hook output priority mangle; policy accept;
+		jump pbr_output
+	}
+
+	chain mangle_forward {
+		type filter hook forward priority mangle; policy accept;
+		iifname { "eth1", "eth2" } tcp flags & (fin | syn | rst) == syn tcp option maxseg size set rt mtu comment "!fw4: Zone wan IPv4/IPv6 ingress MTU fixing"
+		jump pbr_forward
+	}
+
+	chain upnp_forward {
+	}
+
+	chain upnp_prerouting {
+	}
+
+	chain upnp_postrouting {
+	}
+
+	chain pbr_dstnat {
+	}
+
+	chain pbr_forward {
+		meta mark & 0x00ff0000 != 0x00000000 return
+	}
+
+	chain pbr_output {
+		meta mark & 0x00ff0000 != 0x00000000 return
+	}
+
+	chain pbr_prerouting {
+		meta mark & 0x00ff0000 != 0x00000000 return
+		ip saddr 192.168.1.50 goto pbr_mark_0x030000 comment "client via wan2"
+		ip daddr 198.51.100.1 goto pbr_mark_0x010000 comment "udp dns via wan"
+	}
+
+	chain pbr_mark_0x010000 {
+		meta mark set meta mark & 0xff01ffff | 0x00010000
+		return
+	}
+
+	chain pbr_mark_0x020000 {
+		meta mark set meta mark & 0xff02ffff | 0x00020000
+		return
+	}
+
+	chain pbr_mark_0x030000 {
+		meta mark set meta mark & 0xff03ffff | 0x00030000
+		return
+	}
+}

@@ -66,9 +66,15 @@ func upnpSettings(t *uciTree) []string {
 	return lines
 }
 
-func upnpLeases(text string) []string {
-	var maps []string
-	total := 0
+type upnpLease struct {
+	proto        string
+	eport, iport int
+	ip, desc     string
+}
+
+// parseUPnPLeases reads the lease file; the description is the client's choice, so it is clipped.
+func parseUPnPLeases(text string) []upnpLease {
+	var out []upnpLease
 	for _, l := range strings.Split(text, "\n") {
 		f := strings.SplitN(strings.TrimSpace(l), ":", 6)
 		if len(f) < 5 || (f[0] != "TCP" && f[0] != "UDP") {
@@ -79,17 +85,28 @@ func upnpLeases(text string) []string {
 		if e1 != nil || e2 != nil || eport < 1 || eport > 65535 || iport < 1 || iport > 65535 || !validIP(f[2]) {
 			continue
 		}
-		total++
-		if len(maps) == upnpMaxLeases {
-			continue
-		}
-		m := fmt.Sprintf("  %s %d -> %s:%d", f[0], eport, f[2], iport)
+		m := upnpLease{proto: f[0], eport: eport, iport: iport, ip: f[2]}
 		if len(f) == 6 {
-			if d := clip(f[5], 40); d != "" {
-				m += " (" + d + ")"
-			}
+			m.desc = sanitizeText(clip(f[5], 40))
 		}
-		maps = append(maps, m)
+		out = append(out, m)
+	}
+	return out
+}
+
+func upnpLeases(text string) []string {
+	var maps []string
+	all := parseUPnPLeases(text)
+	total := len(all)
+	for i, m := range all {
+		if i == upnpMaxLeases {
+			break
+		}
+		line := fmt.Sprintf("  %s %d -> %s:%d", m.proto, m.eport, m.ip, m.iport)
+		if m.desc != "" {
+			line += " (" + m.desc + ")"
+		}
+		maps = append(maps, line)
 	}
 	if total == 0 {
 		return []string{"mappings (0)"}

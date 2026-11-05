@@ -218,7 +218,7 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 25700 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74)
+	catalogueBudgetBytes = 26450 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose)
 	catalogueProseBudget = 13200 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
@@ -586,6 +586,9 @@ func readOnlyCommand(a []string) bool {
 	case "ip":
 		return contains(a, "show") || (len(a) > 4 && a[2] == "route" && a[3] == "get") // path: the kernel's routing decision
 	case "nft":
+		if len(a) > 2 && a[1] == "-t" { // terse: the mark map lists the ruleset without set elements
+			a = append([]string{a[0]}, a[2:]...)
+		}
 		return len(a) > 1 && (a[1] == "list" || (a[1] == "get" && len(a) > 2 && a[2] == "element")) // get element: the banIP query
 	case "ndsctl":
 		return len(a) == 2 && (a[1] == "status" || a[1] == "json")

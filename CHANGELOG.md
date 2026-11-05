@@ -3,6 +3,19 @@
 ## Unreleased
 
 Added
+- **Exposure, mark owners, structured status, wave 4 checked.**
+  - `wan-exposure` now lists UPnP mappings next to the forwards and, for each reachable port, the process behind it (inode in `/proc/net`
+    matched to `/proc/<pid>/fd`) and whether it asks for a login (dropbear, uhttpd, ttyd, smbd/ksmbd, transmission, aria2, mosquitto,
+    miniupnpd, dnsmasq). The finding is high when a reachable listener accepts clients with no login.
+  - `net_diag action=path` reads `nft -t list ruleset` and names the add-on behind each fwmark (mwan3, pbr, tailscale, podkop, wave 4
+    tables): bits, written values, and warnings for a shared value, partly overlapping bits and a whole-mark write. Taken from a real
+    mwan3 2.12.0 and pbr 1.2.2 ruleset (25.12.6 VM, `nft-marks`); mwan3's MARK value is hidden by iptables-nft, so only its mask shows.
+    tailscale and podkop forms are synthetic.
+  - `system_status` (status mode) and `service_list` (listing) return `structuredContent` too; the text stays. The Tasks extension waits
+    for go-sdk (v1.8.0 has none).
+  - Wave 4 adapters compared with the projects' own default configs and init scripts: passwall2 reads `remote_dns_protocol` (it has no
+    `dns_mode`), nikki reads its nft table. README add-on table lists the version checked for each.
+
 - **Last tails of waves 2 and 3.**
   - `system_status history=1h|6h|24h|7d` (ROADMAP 7.5): load, CPU, memory, temperatures and the five busiest interfaces from collectd's
     RRD files, as now, average and maximum, a trend of 6 to 8 slices and the volume an interface carried. Needs luci-app-statistics

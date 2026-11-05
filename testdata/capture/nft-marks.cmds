@@ -1,0 +1,3 @@
+# commands the mark map reads (nft marks of mwan3, pbr, tailscale, podkop)
+nft -t list ruleset
+ip -4 rule show

@@ -41,6 +41,7 @@ var (
 	strT  = map[string]any{"type": "string"}
 	intT  = map[string]any{"type": "integer"}
 	boolT = map[string]any{"type": "boolean"}
+	objL  = map[string]any{"type": "object"}
 	strsT = map[string]any{"type": "array", "items": strT}
 )
 
@@ -66,5 +67,13 @@ var outputSchemas = map[string]any{
 			"name": strT, "public_key": strT, "allowed_ips": strsT, "endpoint": strT, "handshake_unix": intT,
 			"rx_bytes": intT, "tx_bytes": intT, "in_uci": boolT, "in_kernel": boolT, "psk": boolT, "section": strT,
 		})),
+	}),
+	// Nested objects are left loose to keep the catalogue inside its byte budget (TestCatalogueStaysWithinBudget).
+	"system_status": objT([]string{"outstanding"}, map[string]any{
+		"board": objL, "uptime_s": intT, "load": arrT(map[string]any{"type": "number"}), "memory_mib": objL, "conntrack": objL,
+		"temperatures": arrT(objL), "interfaces": arrT(objL), "radios": arrT(objL), "outstanding": strsT,
+	}),
+	"service_list": objT([]string{"services"}, map[string]any{
+		"services": arrT(objT([]string{"name"}, map[string]any{"name": strT, "enabled": boolT, "running": boolT})), "add_ons": strsT,
 	}),
 }

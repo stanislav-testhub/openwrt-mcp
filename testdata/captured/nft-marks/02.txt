@@ -1,0 +1,13 @@
+# ip -4 rule show
+0:	from all lookup local
+1001:	from all iif eth1 lookup 1
+2001:	from all fwmark 0x100/0x3f00 lookup 1
+2061:	from all fwmark 0x3d00/0x3f00 blackhole
+2062:	from all fwmark 0x3e00/0x3f00 unreachable
+3001:	from all fwmark 0x100/0x3f00 unreachable
+29997:	from all lookup main suppress_prefixlength 1
+29998:	from all fwmark 0x30000/0xff0000 lookup pbr_wan2
+29999:	from all fwmark 0x20000/0xff0000 lookup pbr_wwan
+30000:	from all fwmark 0x10000/0xff0000 lookup pbr_wan
+32766:	from all lookup main
+32767:	from all lookup default

@@ -112,8 +112,10 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 		return "", "", invalid("mode must be status, doctor or audit, not %q", in.Mode)
 	}
 	var b strings.Builder
+	sd := statusData{Outstanding: []string{}}
 	var board ubusBoard
 	if err := runJSON(ctx, &board, "ubus", "call", "system", "board"); err == nil {
+		sd.Board = &statusBoard{sanitizeText(board.Model), board.BoardName, sanitizeText(board.Release.Description), board.Kernel, sanitizeText(board.Hostname)}
 		fmt.Fprintf(&b, "%s (%s) -- %s, kernel %s, host %s\n", board.Model, board.BoardName,
 			board.Release.Description, board.Kernel, board.Hostname)
 	} else {
@@ -126,6 +128,13 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 		for i, l := range si.Load {
 			load[i] = fmt.Sprintf("%.2f", float64(l)/65536)
 		}
+		sd.UptimeS, sd.Load = si.Uptime, make([]float64, len(si.Load))
+		for i, l := range si.Load {
+			sd.Load[i] = float64(l) / 65536
+		}
+		sd.MemoryMiB = &statusMem{si.Memory.Total >> 20, si.Memory.Available >> 20}
+		sd.OverlayKiB = &statusMem{si.Root.Total >> 10, si.Root.Avail >> 10}
+		sd.TmpKiB = &statusMem{si.Tmp.Total >> 10, si.Tmp.Avail >> 10}
 		fmt.Fprintf(&b, "uptime %s, load %s\n", (time.Duration(si.Uptime) * time.Second).String(), strings.Join(load, " "))
 		fmt.Fprintf(&b, "memory %d/%d MiB available; overlay %d/%d MiB free; /tmp %d/%d MiB free\n",
 			si.Memory.Available>>20, si.Memory.Total>>20, si.Root.Avail>>10, si.Root.Total>>10,
@@ -133,10 +142,16 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 	}
 	if t := temperatures(); t != "" {
 		b.WriteString("temperatures: " + t + "\n")
+		sd.Temperatures = temperatureReadings()
 	}
 	if c, err := readSys("/proc/sys/net/netfilter/nf_conntrack_count"); err == nil {
 		m, _ := readSys("/proc/sys/net/netfilter/nf_conntrack_max")
 		fmt.Fprintf(&b, "conntrack %s/%s\n", strings.TrimSpace(c), strings.TrimSpace(m))
+		cn, e1 := strconv.Atoi(strings.TrimSpace(c))
+		cm, e2 := strconv.Atoi(strings.TrimSpace(m))
+		if e1 == nil && e2 == nil {
+			sd.Conntrack = &statusConntrack{cn, cm}
+		}
 	}
 
 	if ifs, err := interfaceDump(ctx); err == nil {
@@ -165,6 +180,16 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 			}
 			fmt.Fprintf(&b, "  %-12s %-9s %-10s %s %s%s%s\n", i.Interface, i.Proto, i.Device, state,
 				strings.Join(addrs, " "), gw, errs)
+			si := statusIface{Name: i.Interface, Proto: i.Proto, Device: i.Device, Up: i.Up, UptimeS: i.Uptime, Addresses: addrs}
+			for _, r := range i.Route {
+				if r.Mask == 0 && (r.Target == "0.0.0.0" || r.Target == "::") {
+					si.DefaultVia, si.Metric = r.Nexthop, i.Metric
+				}
+			}
+			for _, e := range i.Errors {
+				si.Errors = append(si.Errors, e.Code)
+			}
+			sd.Interfaces = append(sd.Interfaces, si)
 		}
 	} else {
 		fmt.Fprintf(&b, "interfaces: %v\n", err)
@@ -197,6 +222,11 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 				ssids = append(ssids, fmt.Sprintf("%s=%q(%s)", i.Ifname, i.Config.SSID, i.Config.Mode))
 			}
 			fmt.Fprintf(&b, "  %s %s %s\n", r, state, strings.Join(ssids, " "))
+			sr := statusRadio{Name: r, State: state}
+			for _, i := range st.Interfaces {
+				sr.SSIDs = append(sr.SSIDs, statusSSID{i.Ifname, sanitizeText(i.Config.SSID), i.Config.Mode})
+			}
+			sd.Radios = append(sd.Radios, sr)
 		}
 	}
 
@@ -204,30 +234,40 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 	n := 0
 	if out, err := uncommitted(ctx, ""); err == nil && out != "" {
 		fmt.Fprintf(&b, "  uncommitted uci changes (not ours):\n    %s\n", strings.ReplaceAll(out, "\n", "\n    "))
+		sd.Outstanding = append(sd.Outstanding, "uncommitted uci changes")
 		n++
 	}
 	if p := s.pendingSummary(); p != "" {
 		fmt.Fprintf(&b, "  uci_apply awaiting confirmation: %s\n", p)
+		sd.Outstanding = append(sd.Outstanding, "uci_apply awaiting confirmation: "+sanitizeText(p))
 		n++
 	}
 	for _, r := range activePermitAll(s.cfg(), time.Now()) {
 		fmt.Fprintf(&b, "  PERMIT ALL: %q has full root access until %s\n", r.Client, r.Expires)
+		sd.Outstanding = append(sd.Outstanding, fmt.Sprintf("PERMIT ALL: %q has full root access until %s", r.Client, r.Expires))
 		n++
 	}
 	if files := findNewConfigs(); len(files) > 0 {
 		fmt.Fprintf(&b, "  %d %s config file(s) awaiting review (pkg_config_diff)\n", len(files), currentPkgManager().newConfigSuffix())
+		sd.Outstanding = append(sd.Outstanding, fmt.Sprintf("%d %s config file(s) awaiting review", len(files), currentPkgManager().newConfigSuffix()))
 		n++
 	}
 	if n == 0 {
 		b.WriteString("  nothing\n")
 	}
+	setStructured(ctx, sd)
 	return b.String(), "system status", nil
 }
 
-// temperatures reads hwmon sensors, which on OpenWrt name themselves (cpu_thermal,
+type tempReading struct {
+	Sensor  string  `json:"sensor"`
+	Celsius float64 `json:"celsius"`
+}
+
+// temperatureReadings reads hwmon sensors, which on OpenWrt name themselves (cpu_thermal,
 // mt7915_phy0, ...), falling back to the thermal zones.
-func temperatures() string {
-	var out []string
+func temperatureReadings() []tempReading {
+	var out []tempReading
 	hw, _ := filepath.Glob(sysPath("/sys/class/hwmon/hwmon*"))
 	sort.Strings(hw)
 	for _, h := range hw {
@@ -237,11 +277,11 @@ func temperatures() string {
 			continue
 		}
 		if v, err := strconv.Atoi(strings.TrimSpace(string(t))); err == nil {
-			out = append(out, fmt.Sprintf("%s %.1fC", strings.TrimSpace(string(name)), float64(v)/1000))
+			out = append(out, tempReading{strings.TrimSpace(string(name)), float64(v) / 1000})
 		}
 	}
 	if len(out) > 0 {
-		return strings.Join(out, ", ")
+		return out
 	}
 	zones, _ := filepath.Glob(sysPath("/sys/class/thermal/thermal_zone*"))
 	for _, z := range zones {
@@ -251,8 +291,16 @@ func temperatures() string {
 			continue
 		}
 		if v, err := strconv.Atoi(strings.TrimSpace(string(t))); err == nil {
-			out = append(out, fmt.Sprintf("%s %.1fC", strings.TrimSpace(string(typ)), float64(v)/1000))
+			out = append(out, tempReading{strings.TrimSpace(string(typ)), float64(v) / 1000})
 		}
+	}
+	return out
+}
+
+func temperatures() string {
+	var out []string
+	for _, r := range temperatureReadings() {
+		out = append(out, fmt.Sprintf("%s %.1fC", r.Sensor, r.Celsius))
 	}
 	return strings.Join(out, ", ")
 }
@@ -313,16 +361,20 @@ func serviceList(ctx context.Context, in serviceListIn) (string, string, error) 
 	}
 	var b strings.Builder
 	b.WriteString(serviceHeader() + "\n")
+	sl := serviceListData{Services: []serviceRowData{}}
 	for _, name := range sortedKeys(m) {
 		if in.Filter != "" && !strings.Contains(name, in.Filter) {
 			continue
 		}
 		b.WriteString(serviceRow(name, m[name]) + "\n")
+		sl.Services = append(sl.Services, serviceRowData{name, m[name].Enabled, m[name].Running, m[name].Start, m[name].Stop})
 	}
 	b.WriteString("\n(\"stopped\" is also what one-shot init scripts without a procd instance report)")
 	if here := adaptersHere(m); len(here) > 0 {
 		b.WriteString("\nAdd-on status (service_list detail=NAME): " + strings.Join(here, ", "))
+		sl.AddOns = here
 	}
+	setStructured(ctx, sl)
 	return b.String(), "listed services", nil
 }
 
@@ -828,4 +880,76 @@ func sanitize(s string) string {
 func jsonCompact(v any) string {
 	b, _ := json.Marshal(v)
 	return string(b)
+}
+
+// Structured forms (ROADMAP 5.5) of system_status in status mode and of the service_list listing.
+// Doctor, audit, history and a service's detail stay text.
+
+type statusBoard struct {
+	Model     string `json:"model"`
+	BoardName string `json:"board_name"`
+	Release   string `json:"release"`
+	Kernel    string `json:"kernel"`
+	Hostname  string `json:"hostname"`
+}
+
+type statusMem struct {
+	Total int64 `json:"total"`
+	Free  int64 `json:"free"`
+}
+
+type statusConntrack struct {
+	Count int `json:"count"`
+	Max   int `json:"max"`
+}
+
+type statusIface struct {
+	Name       string   `json:"name"`
+	Proto      string   `json:"proto,omitempty"`
+	Device     string   `json:"device,omitempty"`
+	Up         bool     `json:"up"`
+	UptimeS    int64    `json:"uptime_s,omitempty"`
+	Addresses  []string `json:"addresses,omitempty"`
+	DefaultVia string   `json:"default_via,omitempty"`
+	Metric     int      `json:"metric,omitempty"`
+	Errors     []string `json:"errors,omitempty"`
+}
+
+type statusSSID struct {
+	Ifname string `json:"ifname"`
+	SSID   string `json:"ssid"`
+	Mode   string `json:"mode"`
+}
+
+type statusRadio struct {
+	Name  string       `json:"name"`
+	State string       `json:"state"`
+	SSIDs []statusSSID `json:"ssids,omitempty"`
+}
+
+type statusData struct {
+	Board        *statusBoard     `json:"board,omitempty"`
+	UptimeS      int64            `json:"uptime_s,omitempty"`
+	Load         []float64        `json:"load,omitempty"`
+	MemoryMiB    *statusMem       `json:"memory_mib,omitempty"`
+	OverlayKiB   *statusMem       `json:"overlay_kib,omitempty"`
+	TmpKiB       *statusMem       `json:"tmp_kib,omitempty"`
+	Temperatures []tempReading    `json:"temperatures,omitempty"`
+	Conntrack    *statusConntrack `json:"conntrack,omitempty"`
+	Interfaces   []statusIface    `json:"interfaces,omitempty"`
+	Radios       []statusRadio    `json:"radios,omitempty"`
+	Outstanding  []string         `json:"outstanding"`
+}
+
+type serviceRowData struct {
+	Name    string `json:"name"`
+	Enabled bool   `json:"enabled"`
+	Running bool   `json:"running"`
+	Start   int    `json:"start"`
+	Stop    int    `json:"stop"`
+}
+
+type serviceListData struct {
+	Services []serviceRowData `json:"services"`
+	AddOns   []string         `json:"add_ons,omitempty"`
 }

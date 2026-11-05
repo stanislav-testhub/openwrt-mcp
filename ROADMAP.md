@@ -624,7 +624,7 @@ code release. Where the build differs from the text below:
 
 ### 5.5 Structured output
 
-**Status (unreleased):** built for `network_clients` and `wg_list_clients` (`structured.go`); `system_status`, `service_list` and the rest stay text. No version gating of the schemas yet.
+**Status (unreleased):** built for `network_clients` and `wg_list_clients` (`structured.go`); `system_status` (status mode) and `service_list` (the listing) are built too, with loose nested schemas to stay near the byte budget (+740); doctor, audit, history and a detail stay text. No version gating of the schemas yet.
 
 *Moved to 1.7.*
 
@@ -658,7 +658,7 @@ code release. Where the build differs from the text below:
 
 *Moved to 1.7.*
 
-**Status (unreleased):** the progress heartbeat is built (`progress.go`); the Tasks extension is not.
+**Status (unreleased):** the progress heartbeat is built (`progress.go`); the Tasks extension is not: go-sdk v1.8.0, the latest release, has no Tasks support, so it waits for the SDK.
 
 - **Ships.** MCP progress notifications for `pkg_change` commit, `sysupgrade` test and `traceroute`, and the Tasks
   extension where the client supports it.
@@ -888,11 +888,11 @@ wave: `query` for adblock, mwan3, pbr, verbs for ddns/pbr/UPnP, the exposure vie
   - `net_diag action=dns_path`: who answers DNS, hop by hop, with the blocker at each hop. It flags two blockers or
     two daemons on port 53.
   - **Exposure** in the security audit: built as the `wan-exposure` finding (sockets on every address crossed with WAN rules and
-    forwards). Not built: UPnP leases in the same view, and whether each listener needs authentication.
+    forwards). UPnP leases are listed beside the forwards, and each reachable listener names its process (from /proc) and whether it asks for a login (dropbear, uhttpd, ttyd, smbd/ksmbd, transmission, aria2, mosquitto, miniupnpd, dnsmasq); the finding turns high when one answers with none. Other processes carry no note.
 
 ### 9.4 Wave 2 (v1.8): resolvers, QoS, VPN and remote access
 
-**Status (unreleased):** unbound, stubby and smartdns L1 adapters, `net_diag action=dns_path` and `action=path` (neighbour, unmarked route, mark map with overlap warning, pbr hits) are built and fixture-tested. Also built: watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird (L1). Findings built: sqm-qosify-both, unbound-port-clash, dns-two-blockers. Also built: strongSwan, cloudflared, frpc/frps, collectd, audit finding frps-open. Built since: `system_status history=` for collectd (7.5) and the `irq-one-cpu` finding. Not built: the other wave 2 findings; the path view does not simulate nftables marking (mwan3, tailscale, podkop).
+**Status (unreleased):** unbound, stubby and smartdns L1 adapters, `net_diag action=dns_path` and `action=path` (neighbour, unmarked route, mark map with overlap warning, pbr hits) are built and fixture-tested. Also built: watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird (L1). Findings built: sqm-qosify-both, unbound-port-clash, dns-two-blockers. Also built: strongSwan, cloudflared, frpc/frps, collectd, audit finding frps-open. Built since: `system_status history=` for collectd (7.5) and the `irq-one-cpu` finding. Not built: the other wave 2 findings; `net_diag action=path` now reads `nft -t list ruleset` and names the add-on behind each mark (mwan3, pbr, tailscale, podkop and the wave 4 tables) and warns on shared values, partly overlapping bits and whole-mark writes. mwan3 goes through iptables-nft, so only its mask is visible (checked on a real 25.12.6 VM, `testdata/captured/nft-marks`); tailscale and podkop forms are synthetic. It still does not say which rule matches one client, except pbr policies.
 
 - **Ships.** unbound, stubby, smartdns, nextdns, qosify, watchcat, travelmate, OpenVPN, ZeroTier, NetBird,
   strongSwan, cloudflared and frp; luci-app-statistics (collectd), which absorbs 7.5; an irqbalance doctor finding.
@@ -911,7 +911,7 @@ wave: `query` for adblock, mwan3, pbr, verbs for ddns/pbr/UPnP, the exposure vie
 
 ### 9.6 Wave 4 (best effort): proxy and circumvention stacks
 
-**Status (unreleased):** L1 status adapters for OpenClash, zapret, v2rayA, passwall, passwall2, nikki, youtubeUnblock and homeproxy are built (`adapter_wave4.go`), table-driven and fixture-tested. They do not yet feed the mark map or DNS path owners, have no findings, and were not checked against the projects themselves.
+**Status (unreleased):** L1 status adapters for OpenClash, zapret, v2rayA, passwall, passwall2, nikki, youtubeUnblock and homeproxy are built (`adapter_wave4.go`), table-driven and fixture-tested. Checked 2026-11-05 against each project's default config and init scripts (not run): passwall2 has no `dns_mode` (now `remote_dns_protocol`) and nikki's nft table `nikki` is now read; youtubeUnblock's layout could not be read. They do not yet feed the DNS path owners and have no findings.
 
 - **Ships.** Status-only adapters, in order of GitHub stars: OpenClash, zapret, v2rayA (official feed), passwall and
   passwall2, nikki, youtubeUnblock and homeproxy. They hold the most credentials and change the fastest: node links

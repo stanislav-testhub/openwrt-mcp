@@ -63,8 +63,8 @@ var wave4 = map[string]stack{
 	"zapret":         {procs: []string{"nfqws", "tpws"}, tables: []string{"inet zapret"}},
 	"v2raya":         {config: "v2raya", procs: []string{"v2raya"}, flags: [][3]string{{"config", "enabled", "enabled in config"}, {"config", "address", "API address"}}},
 	"passwall":       {config: "passwall", procs: []string{"xray", "sing-box"}, tables: []string{"inet passwall"}, flags: [][3]string{{"@global[0]", "enabled", "enabled in config"}, {"@global[0]", "dns_mode", "DNS mode"}}, counts: [][2]string{{"nodes", "nodes"}, {"shunt_rules", "shunt rules"}}},
-	"passwall2":      {config: "passwall2", procs: []string{"xray", "sing-box"}, tables: []string{"inet passwall2"}, flags: [][3]string{{"@global[0]", "enabled", "enabled in config"}, {"@global[0]", "dns_mode", "DNS mode"}}, counts: [][2]string{{"nodes", "nodes"}, {"shunt_rules", "shunt rules"}}},
-	"nikki":          {config: "nikki", procs: []string{"mihomo"}, flags: [][3]string{{"config", "enabled", "enabled in config"}, {"proxy", "tcp_mode", "TCP mode"}}, counts: [][2]string{{"subscription", "subscriptions"}}},
+	"passwall2":      {config: "passwall2", procs: []string{"xray", "sing-box"}, tables: []string{"inet passwall2"}, flags: [][3]string{{"@global[0]", "enabled", "enabled in config"}, {"@global[0]", "remote_dns_protocol", "remote DNS protocol"}}, counts: [][2]string{{"nodes", "nodes"}, {"shunt_rules", "shunt rules"}}},
+	"nikki":          {config: "nikki", procs: []string{"mihomo"}, tables: []string{"inet nikki"}, flags: [][3]string{{"config", "enabled", "enabled in config"}, {"proxy", "tcp_mode", "TCP mode"}}, counts: [][2]string{{"subscription", "subscriptions"}}},
 	"youtubeUnblock": {procs: []string{"youtubeUnblock"}, tables: []string{"inet youtubeUnblock"}},
 	"homeproxy":      {config: "homeproxy", procs: []string{"sing-box"}, flags: [][3]string{{"config", "routing_mode", "routing mode"}, {"dns", "dns_strategy", "DNS strategy"}}, counts: [][2]string{{"node", "nodes"}}},
 }

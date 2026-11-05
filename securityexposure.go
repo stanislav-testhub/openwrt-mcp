@@ -20,10 +20,16 @@ type listener struct {
 	port  int
 }
 
+// socket is a listener with the inode that ties it to a process.
+type socket struct {
+	listener
+	inode string
+}
+
 // anyAddressListeners reads the TCP and UDP sockets bound to the wildcard address from /proc/net.
-func anyAddressListeners() ([]listener, error) {
+func anyAddressListeners() ([]socket, error) {
 	seen := map[listener]bool{}
-	var out []listener
+	var out []socket
 	readAny := false
 	for _, f := range []struct{ file, proto, state string }{
 		{"/proc/net/tcp", "tcp", "0A"}, {"/proc/net/tcp6", "tcp", "0A"},
@@ -53,7 +59,11 @@ func anyAddressListeners() ([]listener, error) {
 			l := listener{f.proto, int(n)}
 			if !seen[l] {
 				seen[l] = true
-				out = append(out, l)
+				inode := ""
+				if len(fl) > 9 {
+					inode = fl[9]
+				}
+				out = append(out, socket{l, inode})
 			}
 		}
 	}
@@ -170,25 +180,40 @@ func checkExposure(sn *snapshot) ([]finding, error) {
 			orDefault(fw.get(sec, "dest_port"), fw.get(sec, "src_dport")), trunc(orDefault(fw.get(sec, "name"), sec), 40)))
 	}
 
-	var reachable, held []string
-	for _, l := range listeners {
+	forwards = append(forwards, upnpForwards(sn)...)
+
+	owners := map[string]string{}
+	if len(listeners) > 0 {
+		owners = socketOwners()
+	}
+	var reachable, held, noLogin []string
+	for _, sk := range listeners {
+		l := sk.listener
 		label := fmt.Sprintf("%s/%d", l.proto, l.port)
-		switch {
-		case len(openZones) > 0:
-			reachable = append(reachable, label+" (zone "+strings.Join(openZones, ",")+" accepts all input)")
-			continue
-		}
-		hit := false
+		why := ""
 		for _, a := range accepts {
 			if a.covers(l) {
-				reachable = append(reachable, label+" (rule "+fmt.Sprintf("%q", trunc(a.name, 40))+pick(a.only != "", ", only from "+trunc(a.only, 40), "")+")")
-				hit = true
+				why = "rule " + fmt.Sprintf("%q", trunc(a.name, 40)) + pick(a.only != "", ", only from "+trunc(a.only, 40), "")
 				break
 			}
 		}
-		if !hit {
-			held = append(held, label)
+		if len(openZones) > 0 {
+			why = "zone " + strings.Join(openZones, ",") + " accepts all input"
 		}
+		if why == "" {
+			held = append(held, label)
+			continue
+		}
+		entry := label + " (" + why
+		if comm := owners[sk.inode]; comm != "" && sk.inode != "" && sk.inode != "0" {
+			if note, login := listenerAuth(sn, comm, l.port); note != "" {
+				entry += "; " + note
+				if !login {
+					noLogin = append(noLogin, label)
+				}
+			}
+		}
+		reachable = append(reachable, entry+")")
 	}
 
 	if len(reachable) == 0 && len(forwards) == 0 {
@@ -221,7 +246,7 @@ func checkExposure(sn *snapshot) ([]finding, error) {
 		for _, a := range accepts {
 			used := false
 			for _, l := range listeners {
-				used = used || a.covers(l)
+				used = used || a.covers(l.listener)
 			}
 			dhcpClient := len(a.ports) == 1 && (a.ports[0] == "68" || a.ports[0] == "546") // the stock rules; nothing listens on purpose
 			if !used && len(a.ports) > 0 && !dhcpClient {
@@ -232,7 +257,12 @@ func checkExposure(sn *snapshot) ([]finding, error) {
 			ev = append(ev, "accepted but nothing listens now: "+capList(idle))
 		}
 	}
-	return []finding{newFinding("wan-exposure", sevInfo, msg, strings.Join(ev, "; "))}, nil
+	sev := sevInfo
+	if len(noLogin) > 0 {
+		sev = sevHigh
+		msg += "; " + capList(noLogin) + " answers with no login"
+	}
+	return []finding{newFinding("wan-exposure", sev, msg, strings.Join(ev, "; "))}, nil
 }
 
 func capList(items []string) string {
@@ -240,4 +270,29 @@ func capList(items []string) string {
 		return strings.Join(items, ", ")
 	}
 	return strings.Join(items[:maxExposureItems], ", ") + fmt.Sprintf(" and %d more", len(items)-maxExposureItems)
+}
+
+// upnpForwards lists the mappings UPnP made on the router's behalf: they face the internet as
+// surely as a port forward, but no firewall section shows them.
+func upnpForwards(sn *snapshot) []string {
+	if !addonInstalled("upnpd") {
+		return nil
+	}
+	t, err := sn.getUCI("upnpd")
+	if err != nil || !uciFlag(t.get("config", "enabled"), true) {
+		return nil
+	}
+	text, err := readSys(runtimePath(t.get("config", "upnp_lease_file"), upnpLeaseFile))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, m := range parseUPnPLeases(text) {
+		line := fmt.Sprintf("UPnP %s %d -> %s:%d", strings.ToLower(m.proto), m.eport, m.ip, m.iport)
+		if m.desc != "" {
+			line += " (" + m.desc + ")"
+		}
+		out = append(out, line)
+	}
+	return out
 }

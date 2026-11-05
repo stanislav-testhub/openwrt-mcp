@@ -180,3 +180,20 @@ func TestWave4StacksReportStatusAndNeverNodesOrSecrets(t *testing.T) {
 	wantAll(t, all, "xray: running, pid 10", "nft table passwall: loaded", "DNS mode: tcp", "nodes: 1", "shunt rules: 1", "mode: fake-ip", "dashboard secret: set (not shown)",
 		"subscriptions: 1", "nft table zapret: not loaded", "routing mode: bypass_mainland_china")
 }
+
+// Option and table names taken from the upstream default configs and init scripts (passwall2
+// 26.11.3, nikki 1.26.2), which differ from passwall: passwall2 has no dns_mode, nikki loads inet nikki.
+func TestWave4Passwall2AndNikkiUseUpstreamNames(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "passwall2", "nikki")
+	f.on("pidof xray", "")
+	f.on("pidof sing-box", "")
+	f.on("nft list table inet passwall2", "table inet passwall2 {}\n")
+	f.on("uci -q show passwall2", "passwall2.@global[0]=global\npasswall2.@global[0].enabled='1'\npasswall2.@global[0].remote_dns_protocol='tcp'\n")
+	f.on("pidof mihomo", "12\n")
+	f.on("nft list table inet nikki", "table inet nikki {}\n")
+	f.on("uci -q show nikki", "nikki.config=config\nnikki.config.enabled='1'\nnikki.proxy=proxy\nnikki.proxy.tcp_mode='redirect'\n")
+	all := body(t, "passwall2") + "\n" + body(t, "nikki")
+	wantAll(t, all, "remote DNS protocol: tcp", "nft table passwall2: loaded", "nft table nikki: loaded", "TCP mode: redirect")
+}

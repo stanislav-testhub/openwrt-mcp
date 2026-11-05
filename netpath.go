@@ -193,17 +193,26 @@ func pathDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 	lines = append(lines, "unmarked traffic: "+route())
 	rules, _ := run(ctx, defaultCmdTimeout, "ip", "-4", "rule", "show")
 	ms, overlaps := markMap(rules)
+	nftOut, _ := run(ctx, defaultCmdTimeout, "nft", "-t", "list", "ruleset")
+	owners := parseMarkOwners(nftOut)
 	if len(ms) == 0 {
 		lines = append(lines, "no fwmark routing rules: every packet takes the route above")
 	} else {
 		lines = append(lines, fmt.Sprintf("mark map (%d fwmark rules):", len(ms)))
 		for _, m := range ms {
-			lines = append(lines, fmt.Sprintf("  prio %s: mark %s/%s -> table %s", m.prio, m.mark, m.mask, m.table))
+			who := ruleOwners(m, owners)
+			lines = append(lines, fmt.Sprintf("  prio %s: mark %s/%s -> table %s%s", m.prio, m.mark, m.mask, m.table, pick(who != "", " ("+who+")", "")))
+		}
+		for _, u := range owners {
+			lines = append(lines, "  nftables "+u.describe())
+		}
+		for _, c := range markConflicts(owners) {
+			lines = append(lines, "WARNING: "+c)
 		}
 		for _, o := range overlaps {
 			lines = append(lines, "WARNING: overlapping mask bits: "+o)
 		}
-		lines = append(lines, "which mark a packet gets is decided by nftables (pbr, mwan3, tailscale); this view shows where each mark leads and which pbr policies name this client")
+		lines = append(lines, "which mark a packet gets is decided by nftables (pbr, mwan3, tailscale, podkop); the owners above come from the chain each rule sits in, and the view does not say which rule matches this client except for pbr policies")
 	}
 	if tree, err := uciShow(ctx, "pbr", false); err == nil {
 		for _, s := range tree.sectionsOfType("policy") {
