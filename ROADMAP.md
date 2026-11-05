@@ -905,6 +905,8 @@ wave: `query` for adblock, mwan3, pbr, the verb layer, findings for adblock, ban
 
 ### 9.6 Wave 4 (best effort): proxy and circumvention stacks
 
+**Status (unreleased):** L1 status adapters for OpenClash, zapret, v2rayA, passwall, passwall2, nikki, youtubeUnblock and homeproxy are built (`adapter_wave4.go`), table-driven and fixture-tested. They do not yet feed the mark map or DNS path owners, have no findings, and were not checked against the projects themselves.
+
 - **Ships.** Status-only adapters, in order of GitHub stars: OpenClash, zapret, v2rayA (official feed), passwall and
   passwall2, nikki, youtubeUnblock and homeproxy. They hold the most credentials and change the fastest: node links
   never print, node names are untrusted text, and an adapter is dropped rather than kept broken. Each feeds the DNS

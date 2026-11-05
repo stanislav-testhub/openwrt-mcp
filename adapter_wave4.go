@@ -1,0 +1,70 @@
+package main
+
+import (
+	"context"
+	"fmt"
+	"strings"
+)
+
+// Wave 4 (best effort, ROADMAP 9.6): proxy and circumvention stacks from community feeds. They
+// change fast and hold the most credentials (node links, subscription URLs, API secrets), so the
+// adapters are status only: which processes run, whether the stack's nft table is loaded, a few
+// fixed config flags, and how many nodes or subscriptions are configured. Names, links and
+// secrets are never read into the output. Built from each project's documented layout, not run
+// against the project; they are dropped rather than patched when upstream changes.
+
+type stack struct {
+	config  string      // UCI config name ("" if none is read)
+	procs   []string    // process names that mean the stack runs
+	tables  []string    // nft tables "family name" to look for
+	flags   [][3]string // section, option, label: printed as the raw short value
+	counts  [][2]string // section type, label: how many such sections exist
+	secrets [][3]string // section, option, label: printed as set / not set
+}
+
+func (st stack) read(ctx context.Context) string {
+	var lines []string
+	for _, p := range st.procs {
+		lines = append(lines, running(ctx, p))
+	}
+	for _, t := range st.tables {
+		fam, name, _ := strings.Cut(t, " ")
+		if _, err := run(ctx, defaultCmdTimeout, "nft", "list", "table", fam, name); err == nil {
+			lines = append(lines, "nft table "+name+": loaded")
+		} else {
+			lines = append(lines, "nft table "+name+": not loaded")
+		}
+	}
+	if st.config == "" {
+		return strings.Join(lines, "\n")
+	}
+	tree, err := uciShow(ctx, st.config, false)
+	if err != nil {
+		return strings.Join(append(lines, st.config+" config unreadable: "+clip(err.Error(), 160)), "\n")
+	}
+	for _, f := range st.flags {
+		if v := tree.get(f[0], f[1]); v != "" && reVersion.MatchString(v) {
+			lines = append(lines, f[2]+": "+v)
+		} else {
+			lines = append(lines, f[2]+": not set")
+		}
+	}
+	for _, c := range st.counts {
+		lines = append(lines, fmt.Sprintf("%s: %d", c[1], len(tree.sectionsOfType(c[0]))))
+	}
+	for _, s := range st.secrets {
+		lines = append(lines, s[2]+": "+pick(tree.get(s[0], s[1]) != "", "set (not shown)", "not set"))
+	}
+	return strings.Join(lines, "\n")
+}
+
+var wave4 = map[string]stack{
+	"openclash":      {config: "openclash", procs: []string{"clash"}, flags: [][3]string{{"config", "enable", "enabled in config"}, {"config", "en_mode", "mode"}}, counts: [][2]string{{"config_subscribe", "subscriptions"}}, secrets: [][3]string{{"config", "dashboard_password", "dashboard secret"}}},
+	"zapret":         {procs: []string{"nfqws", "tpws"}, tables: []string{"inet zapret"}},
+	"v2raya":         {config: "v2raya", procs: []string{"v2raya"}, flags: [][3]string{{"config", "enabled", "enabled in config"}, {"config", "address", "API address"}}},
+	"passwall":       {config: "passwall", procs: []string{"xray", "sing-box"}, tables: []string{"inet passwall"}, flags: [][3]string{{"@global[0]", "enabled", "enabled in config"}, {"@global[0]", "dns_mode", "DNS mode"}}, counts: [][2]string{{"nodes", "nodes"}, {"shunt_rules", "shunt rules"}}},
+	"passwall2":      {config: "passwall2", procs: []string{"xray", "sing-box"}, tables: []string{"inet passwall2"}, flags: [][3]string{{"@global[0]", "enabled", "enabled in config"}, {"@global[0]", "dns_mode", "DNS mode"}}, counts: [][2]string{{"nodes", "nodes"}, {"shunt_rules", "shunt rules"}}},
+	"nikki":          {config: "nikki", procs: []string{"mihomo"}, flags: [][3]string{{"config", "enabled", "enabled in config"}, {"proxy", "tcp_mode", "TCP mode"}}, counts: [][2]string{{"subscription", "subscriptions"}}},
+	"youtubeUnblock": {procs: []string{"youtubeUnblock"}, tables: []string{"inet youtubeUnblock"}},
+	"homeproxy":      {config: "homeproxy", procs: []string{"sing-box"}, flags: [][3]string{{"config", "routing_mode", "routing mode"}, {"dns", "dns_strategy", "DNS strategy"}}, counts: [][2]string{{"node", "nodes"}}},
+}

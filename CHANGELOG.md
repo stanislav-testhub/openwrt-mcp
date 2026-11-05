@@ -3,6 +3,11 @@
 ## Unreleased
 
 Added
+- **Wave 4, best effort (ROADMAP 9.6):** status-only adapters for `openclash`, `zapret`, `v2raya`, `passwall`, `passwall2`, `nikki`,
+  `youtubeUnblock` and `homeproxy` (podkop shipped in 1.5). Running processes, whether the stack's nft table is loaded, a few
+  fixed config flags and node or subscription counts. Node names, links, subscription URLs and secrets are never read into the
+  output. Built from each project's documented layout and not run against the projects; to be dropped rather than patched
+  if upstream changes.
 - **Wave 3 adapters, second batch:** `wifischedule`, `vnstat`, `hd-idle`, `keepalived` (configured state only), `lldpd` (ports with a
   neighbour; neighbour names not printed) and `nlbwmon` (database path, RAM or flash). Doctor finding `stats-db-in-ram`.
 - **Five more prompts (ROADMAP 3.8, 9.5):** `block-ads`, `multi-wan`, `vpn-policy-routing`, `expose-service-safely`, `remote-access`.

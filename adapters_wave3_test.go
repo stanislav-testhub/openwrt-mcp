@@ -155,3 +155,28 @@ func TestDoctorFlagsTheTrafficDatabaseInRAM(t *testing.T) {
 		t.Error("a database on a disk is flagged")
 	}
 }
+
+// Wave 4 (best effort): status only, no names, links or secrets.
+func TestWave4StacksReportStatusAndNeverNodesOrSecrets(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "passwall", "openclash", "zapret", "homeproxy")
+	f.on("pidof xray", "10\n")
+	f.on("pidof sing-box", "")
+	f.on("nft list table inet passwall", "table inet passwall {}\n")
+	f.on("uci -q show passwall", "passwall.@global[0]=global\npasswall.@global[0].enabled='1'\npasswall.@global[0].dns_mode='tcp'\npasswall.n1=nodes\npasswall.n1.remarks='canary-node-name'\npasswall.n1.address='canary.example'\npasswall.s1=shunt_rules\n")
+	f.on("pidof clash", "11\n")
+	f.on("uci -q show openclash", "openclash.config=openclash\nopenclash.config.enable='1'\nopenclash.config.en_mode='fake-ip'\nopenclash.config.dashboard_password='canary-dash'\nopenclash.@config_subscribe[0]=config_subscribe\nopenclash.@config_subscribe[0].address='https://canary.example/sub?token=x'\n")
+	f.on("pidof nfqws", "")
+	f.on("pidof tpws", "")
+	f.on("nft list table inet zapret", "")
+	f.fail("nft list table inet zapret", "no such table")
+	f.on("uci -q show homeproxy", "homeproxy.config=homeproxy\nhomeproxy.config.routing_mode='bypass_mainland_china'\nhomeproxy.n1=node\nhomeproxy.n1.label='canary-label'\n")
+	all := ""
+	for _, s := range []string{"passwall", "openclash", "zapret", "homeproxy"} {
+		all += body(t, s) + "\n"
+	}
+	mustNotContain(t, all, "canary", "token=")
+	wantAll(t, all, "xray: running, pid 10", "nft table passwall: loaded", "DNS mode: tcp", "nodes: 1", "shunt rules: 1", "mode: fake-ip", "dashboard secret: set (not shown)",
+		"subscriptions: 1", "nft table zapret: not loaded", "routing mode: bypass_mainland_china")
+}

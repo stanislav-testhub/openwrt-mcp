@@ -178,6 +178,7 @@ sanitised and marked untrusted.
 | ipsec/swanctl (strongSwan), cloudflared, frpc, frps, collectd | SA counts, token and password set or not, server and proxy count, data directory (RAM or flash) and enabled plugins | fixture-tested |
 | samba4, ksmbd, transmission, aria2, minidlna, mosquitto, tor, acme, nut-monitor | shares and guest access, RPC bind and auth, listeners and anonymous access, Tor ports, certificate days left, UPS status; secrets only as set or not | fixture-tested |
 | wifischedule, vnstat, hd-idle, keepalived, lldpd, nlbwmon | schedules, tracked interfaces, disks and idle timers, VRRP config (not live state), ports with a neighbour, database path and whether it is in RAM | fixture-tested |
+| openclash, zapret, v2raya, passwall, passwall2, nikki, youtubeUnblock, homeproxy | **best effort**: processes, nft table loaded, mode flags, node and subscription counts; no names, links or secrets | fixture-tested |
 | https-dns-proxy | instances: resolver host only (no path, so no NextDNS id), listen address and port, bootstrap set or not; whether dnsmasq forwards to a local proxy port | fixture-tested |
 | miniupnpd | settings (warns when secure mode is off) and the live mappings: protocol, external port, client, description (marked untrusted) | fixture-tested |
 | mwan3 | per interface: status, link, tracking state, track IPs up, time online; per policy: members and weights, warns when no member is online (from `ubus call mwan3 status`) | fixture-tested |
