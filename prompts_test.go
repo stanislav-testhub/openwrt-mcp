@@ -15,7 +15,8 @@ import (
 // following it cannot fail on a missing tool or a refused call, for a client holding the
 // @readonly preset, which is who will use them first.
 
-var specPrompts = []string{"router-health", "who-is-online", "secure-my-router", "wifi-doctor", "upgrade-plan"}
+var specPrompts = []string{"router-health", "who-is-online", "secure-my-router", "wifi-doctor", "upgrade-plan",
+	"block-ads", "multi-wan", "vpn-policy-routing", "expose-service-safely", "remote-access"}
 
 func TestPromptsAreListedAndReturnOneUserMessage(t *testing.T) {
 	cs := connectClient(t, testServer(t, ""), "c")

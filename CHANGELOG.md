@@ -3,6 +3,8 @@
 ## Unreleased
 
 Added
+- **Five more prompts (ROADMAP 3.8, 9.5):** `block-ads`, `multi-wan`, `vpn-policy-routing`, `expose-service-safely`, `remote-access`.
+  Text only, read tools only, each ends in a proposal. Tests keep them inside the `@readonly` preset.
 - **Wave 3 adapters, first batch (ROADMAP 9.5):** `samba4`, `ksmbd` (shares, guest access, writable), `transmission`, `aria2`,
   `minidlna`, `mosquitto` and `tor` (only known directives of their config files), `acme` (days left per certificate, from
   `openssl x509 -enddate` on a path built from a validated domain) and `nut-monitor` (four UPS fields via `upsc`).
