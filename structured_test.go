@@ -152,3 +152,26 @@ func TestSystemStatusAndServiceListReturnDataAndKeepTheText(t *testing.T) {
 		t.Errorf("doctor returned structured content: %v", res.StructuredContent)
 	}
 }
+
+// pkg_query installed and upgradable return a list in structuredContent as well; the other
+// actions are free text and stay text only.
+func TestPkgQueryListsReturnDataAndKeepTheText(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	f.on("apk list --installed", "dnsmasq-full-2.91-r1 x86_64 {feeds/base/dnsmasq} (GPL-2.0) [installed]\nluci-26.270.72870~a24d1f2 noarch {feeds/luci/luci} (Apache-2.0) [upgradable from: luci-26.268.1-r2]\n")
+	f.on("apk list --upgradable", "luci-26.270.72870~a24d1f2 noarch {feeds/luci/luci} (Apache-2.0) [upgradable from: luci-26.268.1-r2]\n")
+	f.on("apk info", "x\n")
+	cs := connectClient(t, testServer(t, grantAll()), "c")
+	res := callRaw(t, cs, "pkg_query", map[string]any{"action": "installed"})
+	if res.IsError {
+		t.Fatalf("%+v", res)
+	}
+	if txt := res.Content[0].(*mcp.TextContent).Text; !strings.Contains(txt, "dnsmasq-full-2.91-r1") || !strings.Contains(txt, "(2 packages)") {
+		t.Errorf("text: %s", txt)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	wantAll(t, string(b), `"total":2`, `"name":"dnsmasq-full"`, `"version":"2.91-r1"`, `"name":"luci"`, `"upgradable_from":"luci-26.268.1-r2"`)
+	if res := callRaw(t, cs, "pkg_query", map[string]any{"action": "info", "package": "dnsmasq"}); res.StructuredContent != nil {
+		t.Errorf("a free-text action returned data: %v", res.StructuredContent)
+	}
+}

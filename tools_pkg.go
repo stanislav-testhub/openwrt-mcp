@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -98,7 +99,43 @@ func pkgQuery(ctx context.Context, in pkgQueryIn) (string, string, error) {
 	if strings.TrimSpace(out) == "" && err == nil {
 		out = "(nothing)"
 	}
-	return pre + pagePkgOutput(out, compact, in.Offset), strings.Join(argv, " "), err
+	paged := pagePkgOutput(out, compact, in.Offset)
+	if compact && err == nil {
+		setStructured(ctx, pkgListData(paged))
+	}
+	return pre + paged, strings.Join(argv, " "), err
+}
+
+var (
+	rePkgListLine = regexp.MustCompile(`^([^\s\[\]()]+)(?: \[upgradable from: ([^\]]+)\])?$`)
+	rePkgVersion  = regexp.MustCompile(`^(.+?)-(\d[^\s]*)$`)
+	rePkgTotal    = regexp.MustCompile(`^\((\d+) packages\)$`)
+)
+
+// pkgListData is the structured form of one page of a compacted installed or upgradable list:
+// "name-version" and "[upgradable from: name-version]" lines, plus the "(N packages)" trailer.
+func pkgListData(page string) map[string]any {
+	pkgs := []map[string]string{}
+	total := 0
+	for _, l := range strings.Split(page, "\n") {
+		if m := rePkgTotal.FindStringSubmatch(l); m != nil {
+			total, _ = strconv.Atoi(m[1])
+			continue
+		}
+		m := rePkgListLine.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		e := map[string]string{"name": m[1]}
+		if v := rePkgVersion.FindStringSubmatch(m[1]); v != nil {
+			e["name"], e["version"] = v[1], v[2]
+		}
+		if m[2] != "" {
+			e["upgradable_from"] = m[2]
+		}
+		pkgs = append(pkgs, e)
+	}
+	return map[string]any{"total": total, "packages": pkgs}
 }
 
 // pagePkgOutput returns one page of a long result. A compacted list ends with its "(N packages)"

@@ -73,6 +73,9 @@ var outputSchemas = map[string]any{
 		"board": objL, "uptime_s": intT, "load": arrT(map[string]any{"type": "number"}), "memory_mib": objL, "conntrack": objL,
 		"temperatures": arrT(objL), "interfaces": arrT(objL), "radios": arrT(objL), "outstanding": strsT,
 	}),
+	"pkg_query": objT([]string{"packages"}, map[string]any{
+		"total": intT, "packages": arrT(objT([]string{"name"}, map[string]any{"name": strT, "version": strT, "upgradable_from": strT})),
+	}),
 	"service_list": objT([]string{"services"}, map[string]any{
 		"services": arrT(objT([]string{"name"}, map[string]any{"name": strT, "enabled": boolT, "running": boolT})), "add_ons": strsT,
 	}),
