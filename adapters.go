@@ -75,14 +75,21 @@ var adapters = []adapter{
 	{service: "https-dns-proxy", read: readHTTPSDNSProxy},
 	{service: "miniupnpd", untrusted: "UPnP lease descriptions", read: readUPnP},
 	{service: "mwan3", read: readMwan3},
+	{service: "netbird", read: readNetBird},
+	{service: "nextdns", read: readNextDNS},
+	{service: "openvpn", read: readOpenVPN},
 	{service: "pbr", read: readPBR},
 	{service: "podkop", read: readPodkop},
+	{service: "qosify", read: readQosify},
 	{service: "smartdns", read: readSmartDNS},
 	{service: "sqm", read: readSQM},
 	{service: "stubby", read: readStubby},
 	{service: "tailscale", untrusted: "tailnet host names", read: readTailscale},
+	{service: "travelmate", read: readTravelmate},
 	{service: "ttyd", read: readTTYD},
 	{service: "unbound", read: readUnbound},
+	{service: "watchcat", read: readWatchcat},
+	{service: "zerotier", read: readZeroTier},
 }
 
 func adapterFor(service string) (adapter, bool) {

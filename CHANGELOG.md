@@ -6,6 +6,9 @@ Added
 - **Wave 2 resolvers (ROADMAP 9.4): `service_list detail=unbound|stubby|smartdns`.** Listen port, upstream hosts (never URLs or
   pinsets), DNSSEC mode, cache statistics when `unbound-control` answers, and whether dnsmasq forwards to the resolver.
   Fixture-tested, not yet run on hardware.
+- **Wave 2 adapters from config and one fixed read:** `watchcat`, `openvpn`, `nextdns`, `qosify`, `travelmate`, `zerotier`
+  (`zerotier-cli listnetworks`, network names not printed) and `netbird` (`netbird status`, five known fields only).
+  Key files, auth files, profile ids and SSIDs are never printed. Fixture-tested.
 - **`net_diag action=dns_path`.** Who answers DNS, hop by hop: dnsmasq, its forwarders matched to the add-on that owns
   each local port, and the enabled blockers. Warns on more than one blocker and on two daemons wanting port 53.
 - **`net_diag action=path src=<client IP|MAC> target=<IPv4>`.** The client's neighbour entry, the kernel's unmarked route,

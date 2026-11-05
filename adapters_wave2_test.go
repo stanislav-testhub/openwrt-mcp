@@ -136,3 +136,97 @@ func TestPathRejectsAnUnknownClientAndANameTarget(t *testing.T) {
 		t.Error("name target accepted")
 	}
 }
+
+// ---------------------------------------------------------------- UCI-driven wave 2 adapters
+
+func addRC(f *fakeRouter, names ...string) {
+	var parts []string
+	for _, n := range names {
+		parts = append(parts, `"`+n+`":{"enabled":true,"running":true,"start":50,"stop":4}`)
+	}
+	f.on("ubus call rc list", "{"+strings.Join(parts, ",")+"}")
+}
+
+func body(t *testing.T, svc string) string {
+	t.Helper()
+	return strings.Join(detailBody(t, listServices(t, serviceListIn{Detail: svc})), "\n")
+}
+
+func wantAll(t *testing.T, got string, ws ...string) {
+	t.Helper()
+	for _, w := range ws {
+		if !strings.Contains(got, w) {
+			t.Errorf("missing %q in:\n%s", w, got)
+		}
+	}
+}
+
+func TestWatchcatListsRules(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "watchcat")
+	f.on("pidof watchcat.sh", "30\n")
+	f.on("uci -q show watchcat", "watchcat.@watchcat[0]=watchcat\nwatchcat.@watchcat[0].mode='ping_reboot'\nwatchcat.@watchcat[0].pinghosts='192.168.1.1'\nwatchcat.@watchcat[0].period='6h'\nwatchcat.@watchcat[1]=watchcat\nwatchcat.@watchcat[1].mode='run_script'\nwatchcat.@watchcat[1].script='/root/canary-script.sh'\n")
+	got := body(t, "watchcat")
+	mustNotContain(t, got, "canary-script")
+	wantAll(t, got, "rules (2):", "ping_reboot, period 6h, ping 192.168.1.1", "run_script, runs a script")
+}
+
+func TestOpenVPNShowsRoleAndNeverTheKeyFiles(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "openvpn")
+	f.on("ubus call service list", `{"openvpn":{"instances":{"office":{"running":true}}}}`)
+	f.on("uci -q show openvpn", "openvpn.office=openvpn\nopenvpn.office.enabled='1'\nopenvpn.office.client='1'\nopenvpn.office.proto='udp'\nopenvpn.office.dev='tun0'\nopenvpn.office.remote='vpn.example.com 1194'\nopenvpn.office.key='/etc/openvpn/canary.key'\nopenvpn.office.auth_user_pass='/etc/openvpn/canary.auth'\nopenvpn.office.redirect_gateway='def1'\nopenvpn.srv=openvpn\nopenvpn.srv.enabled='0'\n")
+	got := body(t, "openvpn")
+	mustNotContain(t, got, "canary")
+	wantAll(t, got, "an instance is running", "office, enabled, client, udp, dev tun0, remote vpn.example.com, redirects the default route", "srv, disabled, server")
+}
+
+func TestNextDNSMasksTheProfileAndChecksTheWiring(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "nextdns")
+	f.on("pidof nextdns", "41\n")
+	f.on("uci -q show nextdns", "nextdns.main=nextdns\nnextdns.main.enabled='1'\nnextdns.main.config='abc123canary'\nnextdns.main.listen='127.0.0.1:5342'\n")
+	f.on("uci -q get dhcp.@dnsmasq[0].server", "127.0.0.1#5342\n")
+	got := body(t, "nextdns")
+	mustNotContain(t, got, "abc123canary")
+	wantAll(t, got, "profile: set (id not shown)", "dnsmasq forwards to it: yes")
+}
+
+func TestQosifyAndTravelmateSummaries(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "qosify", "travelmate")
+	f.on("pidof qosify", "51\n")
+	f.on("uci -q show qosify", "qosify.wan=interface\nqosify.wan.name='wan'\nqosify.wan.bandwidth_up='20mbit'\nqosify.wan.bandwidth_down='100mbit'\nqosify.c1=class\n")
+	f.on("pidof travelmate.sh", "")
+	f.on("uci -q show travelmate", "travelmate.global=travelmate\ntravelmate.global.trm_enabled='1'\ntravelmate.@uplink[0]=uplink\ntravelmate.@uplink[0].ssid='canary-ssid'\n")
+	wantAll(t, body(t, "qosify"), "wan: enabled, up 20mbit, down 100mbit", "classes: 1")
+	tm := body(t, "travelmate")
+	mustNotContain(t, tm, "canary-ssid")
+	wantAll(t, tm, "travelmate.sh: not running", "configured uplinks: 1")
+}
+
+func TestZeroTierDoesNotPrintNetworkNames(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "zerotier")
+	f.on("pidof zerotier-one", "60\n")
+	f.on("zerotier-cli listnetworks", "200 listnetworks <nwid> <name> <mac> <status> <type> <dev> <ZT assigned ips>\n200 listnetworks 8056c2e21c000001 canary name aa:bb:cc:dd:ee:ff OK PRIVATE ztabc 10.147.17.5/24\n")
+	got := body(t, "zerotier")
+	mustNotContain(t, got, "canary")
+	wantAll(t, got, "networks (1):", "8056c2e21c000001: OK, PRIVATE, dev ztabc, addresses 10.147.17.5/24")
+}
+
+func TestNetBirdKeepsOnlyKnownFields(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "netbird")
+	f.on("pidof netbird", "70\n")
+	f.on("netbird status", "Daemon version: 0.30.1\nManagement: Connected\nSignal: Connected\nSetup key: canary-key\nNetBird IP: 100.64.0.5/16\nPeers count: 2/3 Connected\n")
+	got := body(t, "netbird")
+	mustNotContain(t, got, "canary-key")
+	wantAll(t, got, "Management: Connected", "Peers count: 2/3 Connected")
+}

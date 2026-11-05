@@ -174,6 +174,7 @@ sanitised and marked untrusted.
 | unbound | running, listen port, DHCP link, DNSSEC validator, recursive or forwarding, cache statistics when `unbound-control` works, whether dnsmasq forwards to it | fixture-tested |
 | stubby | listen addresses, upstream hosts with their TLS names (pinsets never printed), whether dnsmasq forwards to it | fixture-tested |
 | smartdns | listen port, redirect mode, upstream servers as host only, whether dnsmasq forwards to it | fixture-tested |
+| watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird | rules, instances and role, profile set or not, interfaces and classes, uplink count, networks and addresses, management and peer counts; no keys, ids or names | fixture-tested |
 | https-dns-proxy | instances: resolver host only (no path, so no NextDNS id), listen address and port, bootstrap set or not; whether dnsmasq forwards to a local proxy port | fixture-tested |
 | miniupnpd | settings (warns when secure mode is off) and the live mappings: protocol, external port, client, description (marked untrusted) | fixture-tested |
 | mwan3 | per interface: status, link, tracking state, track IPs up, time online; per policy: members and weights, warns when no member is online (from `ubus call mwan3 status`) | fixture-tested |
