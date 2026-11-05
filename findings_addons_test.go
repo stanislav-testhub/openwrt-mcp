@@ -199,3 +199,20 @@ func TestDoctorFlagsBrokenFilteringAndRouting(t *testing.T) {
 		}
 	}
 }
+
+// On the GL-MT6000 /etc/config/mwan3 outlived the package: the config is there, the ubus object is not.
+// That is not a fault to report and not a check that could not run.
+func TestDoctorIgnoresMwan3WhenOnlyItsConfigIsLeftBehind(t *testing.T) {
+	f, root := wave1Router(t)
+	installAddonConfig(t, root, "mwan3")
+	f.fail(`ubus call mwan3 status`, "Command failed: Not found")
+	r := healthFindings(context.Background())
+	if ids := findingIDs(r); strings.Contains(ids, "mwan3") {
+		t.Errorf("findings: %v", ids)
+	}
+	for _, n := range r.skipped {
+		if strings.Contains(n, "mwan3") {
+			t.Errorf("mwan3 reported as not checked: %q", n)
+		}
+	}
+}

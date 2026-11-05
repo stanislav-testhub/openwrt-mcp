@@ -157,6 +157,9 @@ func checkMwan3(sn *snapshot) ([]finding, error) {
 		Interfaces map[string]mwan3Iface `json:"interfaces"`
 	}
 	if err := runJSON(sn.ctx, &ifs, "ubus", "call", "mwan3", "status", `{"section":"interfaces"}`); err != nil {
+		if strings.Contains(err.Error(), "Not found") {
+			return nil, nil // the package is gone and only its /etc/config/mwan3 is left (the ubus object comes from the package)
+		}
 		return nil, err
 	}
 	var pol struct {

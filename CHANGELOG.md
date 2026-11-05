@@ -106,9 +106,13 @@ Added
   - GL-MT6000 (25.12.6, the live router; read-only through the MCP, the running build is older than this tree): `podkop` 0.7.22, `tailscale`
     1.104.1 (running, 2 peers offline), AdGuard Home and `ttyd` answered correctly; the doctor found `tor` down. The cause was not an adapter
     fault: `DataDirectory /srv/tor` and no `/srv` on the router.
+  - Eighth pass, this tree deployed to the GL-MT6000 (25.12.6, read-only checks afterwards): samba4 (3 shares, login required), collectd,
+    nlbwmon (database in RAM: the doctor's `stats-db-in-ram` finding is right), tor (TransPort/DNSPort on the TorNet bridge), transmission,
+    lldpd and the audit's new checks answered on real data. One fault: `/etc/config/mwan3` outlived the package, so the doctor listed
+    "not checked: mwan3 (... Not found)". A missing `mwan3` ubus object now means "not installed" and is skipped silently.
   Not verified: a pbr policy that routes a client's traffic out of a second uplink, the states that need a
     peer or a login (a tailscale peer that is online, netbird, zerotier, openvpn, strongSwan, frp, a Wi-Fi uplink for travelmate), samba4, nut, the wave 4 proxies (homeproxy, nikki, openclash, passwall, podkop, zapret, youtubeUnblock: not in the official
-    feed; podkop is verified on the GL-MT6000), this tree's build on the GL-MT6000 (samba4, collectd, irqbalance, nlbwmon adapters).
+    feed; podkop is verified on the GL-MT6000), a login to samba4 or a client on transmission.
 - **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
   same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
   names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a
