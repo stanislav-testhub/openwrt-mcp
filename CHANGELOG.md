@@ -13,6 +13,9 @@ Added
     tailscale and podkop forms were read off a real GL-MT6000 ruleset and rewritten by hand for the tests: podkop's whole-mark write
     with `counter` after it, its `podkop_remark` chain inside fw4, an exact `meta mark 0x...` match and the OR form were not recognised
     before; a partial bit overlap is now reported only when the written values can collide.
+  - `net_diag action=path` names the nftables rules that write a mark and can catch the given client: its address, the target and the incoming
+    interface are evaluated against each rule, a rule in a chain reached by `jump` or `goto` takes its callers' verdict, and named sets are
+    asked with `nft get element`. Ports, protocols and connection state are not evaluated; mwan3's marks stay hidden by iptables-nft.
   - `net_diag action=dns_path` names the process behind a dnsmasq upstream no add-on claims (from /proc), which covers the DNS port of
     the wave 4 proxy stacks without a port table.
   - `system_status` (status mode) and `service_list` (listing) return `structuredContent` too; the text stays. The Tasks extension waits

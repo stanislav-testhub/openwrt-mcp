@@ -216,7 +216,25 @@ func pathDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 		for _, o := range overlaps {
 			lines = append(lines, "WARNING: overlapping mask bits: "+o)
 		}
-		lines = append(lines, "which mark a packet gets is decided by nftables (pbr, mwan3, tailscale, podkop); the owners above come from the chain each rule sits in, and the view does not say which rule matches this client except for pbr policies")
+		yes, maybe := clientMarkRules(ctx, nftOut, ip, dev, in.Target)
+		for i, l := range yes {
+			if i == 8 {
+				lines = append(lines, fmt.Sprintf("  ... and %d more", len(yes)-8))
+				break
+			}
+			lines = append(lines, "nftables rule that catches this client: "+l)
+		}
+		for i, l := range maybe {
+			if i == 4 {
+				lines = append(lines, fmt.Sprintf("  ... and %d more", len(maybe)-4))
+				break
+			}
+			lines = append(lines, "nftables rule that may catch this client (not decidable from the listing): "+l)
+		}
+		if len(yes)+len(maybe) == 0 {
+			lines = append(lines, "no nftables rule of pbr, tailscale, podkop or a wave 4 stack writes a mark for this client; mwan3's marks are not visible (iptables-nft)")
+		}
+		lines = append(lines, "rules are matched on this client's address, the target address and the incoming interface; ports, protocols and connection state are not evaluated")
 	}
 	if tree, err := uciShow(ctx, "pbr", false); err == nil {
 		for _, s := range tree.sectionsOfType("policy") {
