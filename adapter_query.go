@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -72,13 +73,13 @@ func queryAdblockFast(ctx context.Context, domain string) string {
 	return strings.Join(lines, "\n")
 }
 
-// blockedName is the domain a list line blocks: `server=/name/` (with no upstream), `address=/name/...` or a hosts
+// blockedName is the domain a list line blocks: `server=/name/` or `local=/name/` (with no upstream), `address=/name/...` or a hosts
 // line `127.0.0.1 name` (`:: name` for IPv6). "" for anything else.
 func blockedName(line string) string {
-	for _, p := range []string{"server=/", "address=/"} {
+	for _, p := range []string{"server=/", "local=/", "address=/"} {
 		if rest, ok := strings.CutPrefix(line, p); ok {
 			name, upstream, _ := strings.Cut(rest, "/")
-			if p == "server=/" && upstream != "" {
+			if p != "address=/" && upstream != "" {
 				return "" // `server=/name/#` or `/1.2.3.4` forwards the name: an exception, not a block
 			}
 			return name
@@ -126,6 +127,22 @@ const (
 	adblockAllowlist = "/etc/adblock/adblock.allowlist"
 )
 
+var adblockDNSDir = regexp.MustCompile(`dns: (/[^,\s]+)`)
+
+// adblockListPath is where the merged list is. adblock 4.4 writes it into dnsmasq's own conf dir
+// (named in the runtime file's run_directories) as `local=/name/` lines; older layouts used /tmp.
+func adblockListPath() string {
+	if m, err := readRuntime(adblockRuntime()); err == nil {
+		if sub := adblockDNSDir.FindStringSubmatch(m.str("run_directories")); sub != nil {
+			p := strings.TrimRight(sub[1], "/") + "/adb_list.overall"
+			if _, err := os.Stat(sysPath(p)); err == nil {
+				return p
+			}
+		}
+	}
+	return adblockList
+}
+
 func queryAdblock(ctx context.Context, domain string) string {
 	chain := domainChain(domain)
 	var lines []string
@@ -139,10 +156,11 @@ func queryAdblock(ctx context.Context, domain string) string {
 			}
 		}
 	}
-	hit, ok := scanBlockList(adblockList, chain)
+	list := adblockListPath()
+	hit, ok := scanBlockList(list, chain)
 	switch {
 	case !ok:
-		return "no block list is loaded (adblock has not produced " + adblockList + " since boot); status: service_list detail=adblock"
+		return "no block list is loaded (adblock has not produced " + list + " since boot); status: service_list detail=adblock"
 	case hit != "":
 		lines = append(lines, fmt.Sprintf("blocked: %s matches an entry for %s in the merged list", domain, hit))
 	case len(lines) == 0:

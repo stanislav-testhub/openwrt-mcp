@@ -47,13 +47,23 @@ func (m runtimeJSON) list(key string) []string {
 	return out
 }
 
-const (
-	adblockRuntime = "/var/run/adblock/adblock.runtime.json"
-	maxFeedNames   = 16
-)
+const maxFeedNames = 16
+
+// adblock 4.4 (24.10) writes /var/run/adb_runtime.json and calls its version adblock_version;
+// the second path is the layout the first version of this adapter assumed.
+var adblockRuntimeFiles = []string{"/var/run/adb_runtime.json", "/var/run/adblock/adblock.runtime.json"}
+
+func adblockRuntime() string {
+	for _, f := range adblockRuntimeFiles {
+		if _, err := readSys(f); err == nil {
+			return f
+		}
+	}
+	return adblockRuntimeFiles[0]
+}
 
 func readAdblock(ctx context.Context) string {
-	return readFilterRuntime(ctx, "adblock", adblockRuntime, "adblock_status", "blocked_domains", "blocked domains", "dns_backend")
+	return readFilterRuntime(ctx, "adblock", adblockRuntime(), "adblock_status", "blocked_domains", "blocked domains", "dns_backend")
 }
 
 func feedLine(feeds []string) string {
@@ -85,7 +95,7 @@ func readFilterRuntime(ctx context.Context, name, file, statusKey, countKey, cou
 		return strings.Join(append(lines, "output not recognised: no "+statusKey+" in the runtime file ("+name+" "+m.str("frontend_ver")+")"), "\n")
 	}
 	head := "status: " + status
-	if v := firstOf(m.str("frontend_ver"), m.str("version"), m.str("backend_ver")); v != "" { // banIP 1.5 says "version", 1.9 keeps "backend_ver"
+	if v := firstOf(m.str("frontend_ver"), m.str("adblock_version"), m.str("version"), m.str("backend_ver")); v != "" { // banIP 1.5 says "version", 1.9 keeps "backend_ver"
 		head += ", " + name + " " + v
 	}
 	lines = append(lines, head)

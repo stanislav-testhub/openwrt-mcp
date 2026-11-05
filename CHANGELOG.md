@@ -88,7 +88,13 @@ Added
       "16 list sources configured"; it now says how many are enabled and that none means nothing to download.
     - Confirmed unchanged on apk: the banIP runtime path (`/var/run/banIP/banIP.runtime.json`), `query` and `unban`, mwan3, pbr, ddns,
       https-dns-proxy, UPnP, sqm and the 17 wave 2/3 adapters above; the audit and doctor read `apk` correctly (`apk-new`).
-  Not verified: adblock (classic) after a run, a pbr policy that routes traffic, a UPnP mapping, a ddns update, the states that need a
+  - Sixth pass, 24.10.8 VM, **classic adblock 4.4.2-r4 after a real run** (adguard feed, 187,749 domains). It was wrong in two places:
+    - The status read `/var/run/adblock/adblock.runtime.json`; adblock 4.4 writes `/var/run/adb_runtime.json` and keeps its version in
+      `adblock_version`. On a real router `service_list detail=adblock` said "has not run since boot" even after a run, and the audit's
+      `adblock-broken` check never saw the status. Both paths are read now.
+    - `query` looked for the list at `/tmp/adb_list.overall` and expected `server=/name/` lines. The list is in dnsmasq's conf dir (named
+      in the runtime file's `run_directories`) and holds `local=/name/` lines. Both are read now; a name is reported as blocked.
+  Not verified: a pbr policy that routes traffic, a UPnP mapping, a ddns update, the states that need a
     peer or a login (a connected tailscale, netbird, zerotier, openvpn, strongSwan, frp, a Wi-Fi uplink for travelmate), samba4 (did not
     fit on the VM), nut, the wave 4 proxies (homeproxy, nikki, openclash, passwall, podkop, zapret, youtubeUnblock: not in the official
     feed), the GL-MT6000.

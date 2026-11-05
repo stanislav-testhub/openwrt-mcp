@@ -110,3 +110,30 @@ func TestAdblockFastOnItsReal25ServiceDataWithNothingEnabled(t *testing.T) {
 	got := strings.Join(detail(t, "adblock-fast"), "\n")
 	wantAll(t, got, "status: failed", "errors: errorNothingToDo, errorOhSnap", "16 list sources configured, none enabled, so there is nothing to download")
 }
+
+// adblock 4.4.2-r4 on the 24.10.8 VM after a real run of the adguard feed (187,749 domains). The
+// runtime file there is /var/run/adb_runtime.json and the version key is adblock_version.
+func TestAdblockOnItsRealRuntimeFileAfterARun(t *testing.T) {
+	f, root := wave1Router(t)
+	f.on(`ubus call service list {"name":"adblock"}`, `{}`)
+	writeFixture(t, root, "var/run/adb_runtime.json", captured(t, "adblock-active", "02.txt"))
+	got := strings.Join(detail(t, "adblock"), "\n")
+	wantAll(t, got, "status: enabled, adblock 4.4.2-r4", "blocked domains: 187 749", "feeds (1): adguard",
+		"dns_backend: dnsmasq (2.93-r1)", "last run: mode: restart")
+	mustNotContain(t, got, "output not recognised", "not readable")
+}
+
+// The merged list of adblock 4.4.2 sits in dnsmasq's conf dir, named in run_directories, and holds
+// `local=/name/` lines (the list here was cut to the entries the test asks about).
+func TestAdblockQueryOnItsRealListLocationAndFormat(t *testing.T) {
+	f, root := wave1Router(t)
+	f.on(`ubus call service list {"name":"adblock"}`, `{}`)
+	writeFixture(t, root, "var/run/adb_runtime.json", captured(t, "adblock-active", "02.txt"))
+	writeFixture(t, root, "tmp/dnsmasq.cfg01411c.d/adb_list.overall", "local=/marketing.example/\nlocal=/doubleclick.net/\n")
+	if got := queryOut(t, "adblock", "stats.doubleclick.net"); !strings.Contains(got, "blocked: stats.doubleclick.net matches an entry for doubleclick.net") {
+		t.Errorf("blocked:\n%s", got)
+	}
+	if got := queryOut(t, "adblock", "openwrt.org"); !strings.Contains(got, "not blocked: openwrt.org") {
+		t.Errorf("not blocked:\n%s", got)
+	}
+}

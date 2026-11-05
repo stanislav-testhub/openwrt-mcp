@@ -486,7 +486,7 @@ func enabledAtBoot(sn *snapshot, name string) bool {
 func checkAdblockBroken(sn *snapshot) ([]finding, error) {
 	var out []finding
 	if addonInstalled("adblock") && enabledAtBoot(sn, "adblock") {
-		if m, err := readRuntime(adblockRuntime); err == nil {
+		if m, err := readRuntime(adblockRuntime()); err == nil {
 			if st := m.str("adblock_status"); st == "error" || st == "paused" {
 				out = append(out, newFinding("adblock-broken", sevMedium, "adblock is "+st+": nothing is being filtered", "adblock_status "+st))
 			}
