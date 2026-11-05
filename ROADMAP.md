@@ -862,6 +862,8 @@ server's most-requested packages, and from issue activity in `openwrt/packages` 
 
 ### 9.2 Fixture capture and scrubbing
 
+**Status (unreleased):** the scrubber, `make capture` with per-service manifests (banip, adblock, adblock-fast, mwan3) and the two hygiene tests are built. Adapters do not yet declare their commands themselves, so the manifests are kept by hand; no real capture has been taken, so every adapter state is still synthetic.
+
 - **Ships.** Adapters declare every command they run. `make capture SVC=<svc>` runs exactly those on a router and
   saves the outputs; a scrubber rewrites addresses, host names, MACs and secrets, and a test rejects fixtures that
   still hold a private address outside `192.168.1.0/24` or a known secret pattern.

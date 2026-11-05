@@ -13,6 +13,10 @@ test:
 build-arm64: test
 	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 $(GO) build -trimpath -ldflags="-s -w" -o openwrt-mcp.arm64 .
 
+# Fixtures from a real router: make capture SVC=banip ROUTER=root@192.168.1.1 [HOSTS=name,name]
+capture:
+	./capture.sh $(SVC) $(HOSTS)
+
 build stage install:
 	./install.sh $@
 
@@ -22,4 +26,4 @@ uninstall:
 clean:
 	rm -f openwrt-mcp openwrt-mcp.* *.bin
 
-.PHONY: test build-arm64 build stage install uninstall clean
+.PHONY: capture test build-arm64 build stage install uninstall clean

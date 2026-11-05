@@ -355,9 +355,15 @@ func main() {
 		fmt.Printf("openwrt-mcp %s\n", version)
 
 	default:
+		if fn, ok := extraCommands[args[0]]; ok {
+			os.Exit(fn(args[1:]))
+		}
 		die("unknown command %q", args[0])
 	}
 }
+
+// extraCommands holds commands that exist only in special builds (scrub_cmd.go, -tags capture).
+var extraCommands = map[string]func(args []string) int{}
 
 // checkScopes refuses a scope that would be stored but could never match: a comma (tools are
 // comma-separated, scopes are space-separated), a quote (it would end the UCI value) or a

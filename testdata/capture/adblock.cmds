@@ -1,0 +1,3 @@
+uci -q show adblock
+cat /var/run/adblock/adblock.runtime.json
+cat /etc/adblock/adblock.allowlist

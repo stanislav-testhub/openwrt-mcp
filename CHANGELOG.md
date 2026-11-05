@@ -51,6 +51,14 @@ Fixed
   system password. It says "system login prompt".
 
 Added
+- **Fixture capture and scrubbing (ROADMAP 9.2).** `make capture SVC=banip ROUTER=root@...` runs the read-only commands listed in
+  `testdata/capture/<svc>.cmds` on a router, pipes each output through `openwrt-mcp scrub` (built only with `-tags capture`, so the
+  router binary does not grow) and saves it under `testdata/captured/<svc>/`. The scrubber rewrites addresses outside
+  `192.168.1.0/24` to stable stand-ins (private to `192.168.1.100+`, public to `198.51.100.x`, IPv6 to `2001:db8::n`), MACs to
+  `02:00:00:00:00:nn`, listed host names, WireGuard-shaped keys, bearer tokens and secret UCI options; it refuses to write a result that
+  still fails the hygiene check. Two tests: manifests may name read-only commands only, and every checked-in file under `testdata/`
+  holds no private address outside the lab subnet, no unlisted MAC and no key-shaped value. Known limit: a four-part version string
+  such as `1.2.3.4` is taken for an address. No real capture exists yet; the existing adapter fixtures stay marked synthetic.
 - **`service_list detail=NAME query=VALUE` (ROADMAP 9.1, query layer).** One bounded lookup per add-on, validated by kind before
   anything runs. adblock-fast: `query=<domain>` says whether the name (or a parent domain) is in the loaded block list and in
   which one, or whether `allowed_domain` exempts it. banIP: `query=<ip>` asks each active set of the address's family
