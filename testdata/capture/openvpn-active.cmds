@@ -1,0 +1,4 @@
+# commands the openvpn adapter reads: procd state, the config and the status file the init script asks for
+ubus call service list '{"name":"openvpn"}'
+uci -q show openvpn
+cat /var/run/openvpn.srv.status

@@ -325,10 +325,11 @@ func checkFrps(sn *snapshot) ([]finding, error) {
 		return nil, nil
 	}
 	var out []finding
-	if t.get("main", "token") == "" {
+	sec := frpCommon(t)
+	if t.get(sec, "token") == "" {
 		out = append(out, newFinding("frps-open", sevHigh,
 			"frps has no token: anyone who reaches its port can register a proxy and open a path into the LAN",
-			"frps.main.token is empty"))
+			"frps."+sec+".token is empty"))
 	}
 	return out, nil
 }

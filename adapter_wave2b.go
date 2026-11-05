@@ -21,16 +21,55 @@ func readStrongSwan(ctx context.Context) string {
 	if err != nil {
 		return strings.Join(append(lines, "swanctl does not answer: "+clip(firstLine(strings.TrimSpace(out+" "+err.Error())), 120)), "\n")
 	}
+	var sas []string
 	ike, child := 0, 0
+	cur := ""
+	up := map[string]bool{}
 	for _, l := range strings.Split(out, "\n") {
+		t := strings.TrimSpace(l)
+		f := strings.Split(t, ", ")
 		switch {
-		case strings.Contains(l, "ESTABLISHED"):
-			ike++
-		case strings.Contains(l, "INSTALLED"):
-			child++
+		case l != "" && l[0] != ' ' && len(f) >= 3 && strings.Contains(f[0], ": #"):
+			name, _, _ := strings.Cut(f[0], ":")
+			cur = clip(name, 32)
+			up[name] = true
+			if f[1] == "ESTABLISHED" {
+				ike++
+			}
+			sas = append(sas, fmt.Sprintf("  %s: %s, %s", cur, clip(f[1], 14), clip(f[2], 8)))
+		case strings.HasPrefix(t, "established ") && len(sas) > 0:
+			sas[len(sas)-1] += ", up " + clip(strings.TrimPrefix(strings.SplitN(t, " ago", 2)[0], "established "), 20)
+		case strings.Contains(t, ", INSTALLED") || strings.Contains(t, ", REKEYING"):
+			if strings.Contains(t, ", INSTALLED") {
+				child++
+			}
+			name, _, _ := strings.Cut(t, ":")
+			sas = append(sas, fmt.Sprintf("    child %s: %s", clip(name, 32), clip(f[len(f)-3+0], 12)+" "+clip(f[len(f)-2], 12)))
+		case (strings.HasPrefix(t, "in ") || strings.HasPrefix(t, "out ")) && len(f) >= 2 && len(sas) > 0:
+			dir, _, _ := strings.Cut(t, " ")
+			sas[len(sas)-1] += ", " + dir + " " + clip(strings.TrimSpace(strings.TrimSuffix(f[1], "bytes")), 14) + "B"
 		}
 	}
-	return strings.Join(append(lines, fmt.Sprintf("IKE SAs established: %d", ike), fmt.Sprintf("child SAs installed: %d", child)), "\n")
+	lines = append(lines, fmt.Sprintf("IKE SAs established: %d", ike), fmt.Sprintf("child SAs installed: %d", child))
+	if len(sas) > 0 {
+		lines = append(lines, "SAs (peer names are chosen by the peer):")
+		if len(sas) > 4*maxShown {
+			sas = append(sas[:4*maxShown], "  ... more not shown")
+		}
+		lines = append(lines, sas...)
+	}
+	if conns, err := run(ctx, 15*time.Second, "swanctl", "--list-conns"); err == nil {
+		var idle []string
+		for _, l := range strings.Split(conns, "\n") {
+			if name, rest, ok := strings.Cut(l, ": IKEv"); ok && l[0] != ' ' && rest != "" && !up[name] {
+				idle = append(idle, clip(name, 32))
+			}
+		}
+		if len(idle) > 0 {
+			lines = append(lines, "configured but with no SA now: "+strings.Join(idle, ", "))
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // ---------------------------------------------------------------- cloudflared
@@ -56,11 +95,53 @@ func readFrpc(ctx context.Context) string {
 	if err != nil {
 		return strings.Join(append(lines, "frpc config unreadable: "+clip(err.Error(), 160)), "\n")
 	}
+	sec := frpCommon(tree)
 	lines = append(lines,
-		"server: "+pick(tree.get("main", "server_addr") != "", hostOnly(tree.get("main", "server_addr"))+":"+clip(tree.get("main", "server_port"), 6), "not set"),
-		"token: "+pick(tree.get("main", "token") != "", "set (not shown)", "not set"),
-		fmt.Sprintf("proxies: %d", len(tree.sectionsOfType("conf"))))
+		"server: "+pick(tree.get(sec, "server_addr") != "", hostOnly(tree.get(sec, "server_addr"))+":"+clip(tree.get(sec, "server_port"), 6), "not set"),
+		"token: "+pick(tree.get(sec, "token") != "", "set (not shown)", "not set"))
+	proxies := frpProxies(tree)
+	lines = append(lines, fmt.Sprintf("proxies: %d", len(proxies)))
+	for i, p := range proxies {
+		if i == maxShown {
+			lines = append(lines, fmt.Sprintf("  ... %d more", len(proxies)-maxShown))
+			break
+		}
+		// A proxy opens a local service to whoever reaches the server's remote port.
+		parts := []string{clip(p, 30), clip(tree.get(p, "type"), 8)}
+		if v := tree.get(p, "local_port"); v != "" {
+			parts = append(parts, "local "+clip(tree.get(p, "local_ip"), 40)+":"+clip(v, 6))
+		}
+		if v := tree.get(p, "remote_port"); v != "" {
+			parts = append(parts, "remote port "+clip(v, 6))
+		}
+		if v := tree.get(p, "custom_domains"); v != "" {
+			parts = append(parts, "domain "+clip(v, 40))
+		}
+		lines = append(lines, "  "+strings.Join(parts, ", "))
+	}
 	return strings.Join(lines, "\n")
+}
+
+// frpCommon is the section the package writes as [common] (stock config: `config conf 'common'`);
+// `main` is what an older note of ours assumed, kept as a fallback.
+func frpCommon(t *uciTree) string {
+	for _, s := range t.sectionsOfType("conf") {
+		if s == "common" {
+			return s
+		}
+	}
+	return "main"
+}
+
+// frpProxies are the other `conf` sections: one proxy each.
+func frpProxies(t *uciTree) []string {
+	var out []string
+	for _, s := range t.sectionsOfType("conf") {
+		if s != "common" {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 func readFrps(ctx context.Context) string {
@@ -69,10 +150,11 @@ func readFrps(ctx context.Context) string {
 	if err != nil {
 		return strings.Join(append(lines, "frps config unreadable: "+clip(err.Error(), 160)), "\n")
 	}
+	sec := frpCommon(tree)
 	lines = append(lines,
-		"bind port: "+pick(tree.get("main", "bind_port") != "", clip(tree.get("main", "bind_port"), 6), "default"),
-		"token: "+pick(tree.get("main", "token") != "", "set (not shown)", "not set (any client may connect)"),
-		"dashboard: "+pick(tree.get("main", "dashboard_port") != "", "port "+clip(tree.get("main", "dashboard_port"), 6)+", password "+pick(tree.get("main", "dashboard_pwd") != "", "set", "not set"), "off"))
+		"bind port: "+pick(tree.get(sec, "bind_port") != "", clip(tree.get(sec, "bind_port"), 6), "default"),
+		"token: "+pick(tree.get(sec, "token") != "", "set (not shown)", "not set (any client may connect)"),
+		"dashboard: "+pick(tree.get(sec, "dashboard_port") != "", "port "+clip(tree.get(sec, "dashboard_port"), 6)+", password "+pick(tree.get(sec, "dashboard_pwd") != "", "set", "not set"), "off"))
 	return strings.Join(lines, "\n")
 }
 

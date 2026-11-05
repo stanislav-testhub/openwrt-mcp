@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -92,8 +93,75 @@ func readOpenVPN(ctx context.Context) string {
 			parts = append(parts, "uses an .ovpn file")
 		}
 		lines = append(lines, "  "+strings.Join(parts, ", "))
+		if uciFlag(tree.get(s, "enabled"), false) && uciName.MatchString(s) {
+			lines = append(lines, openVPNStatus(s)...)
+		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+const openVPNMaxClients = 15
+
+// openVPNStatus reads /var/run/openvpn.<section>.status, which OpenWrt's init script asks every
+// instance to write (version 1, comma separated, refreshed about once a minute). A server lists
+// each client's name, virtual address and traffic; a client has only its tunnel counters. The
+// client's public address is left out, and its name is chosen by whoever holds the certificate.
+func openVPNStatus(section string) []string {
+	text, err := readSys("/var/run/openvpn." + section + ".status")
+	if err != nil {
+		return []string{"    status file not written yet (about once a minute after start)"}
+	}
+	var clients []string
+	virt := map[string]string{}
+	stats := map[string]int64{}
+	updated, mode := "", ""
+	for _, l := range strings.Split(text, "\n") {
+		f := strings.Split(strings.TrimRight(l, "\r"), ",")
+		switch {
+		case l == "OpenVPN CLIENT LIST" || l == "ROUTING TABLE" || l == "OpenVPN STATISTICS":
+			mode = l
+		case l == "GLOBAL STATS" || l == "END":
+			mode = ""
+		case f[0] == "Updated" && len(f) > 1 && updated == "":
+			updated = clip(f[1], 24)
+		case mode == "OpenVPN CLIENT LIST" && len(f) >= 5 && f[0] != "Common Name":
+			rx, e1 := strconv.ParseInt(f[2], 10, 64)
+			tx, e2 := strconv.ParseInt(f[3], 10, 64)
+			if e1 == nil && e2 == nil {
+				clients = append(clients, fmt.Sprintf("%s (in %s, out %s, since %s)", fmt.Sprintf("%q", clip(f[0], 32)), humanBytes(rx), humanBytes(tx), clip(f[4], 24)))
+			}
+		case mode == "ROUTING TABLE" && len(f) >= 4 && f[0] != "Virtual Address" && validIP(f[0]):
+			virt[f[1]] = f[0]
+		case mode == "OpenVPN STATISTICS" && len(f) == 2:
+			if n, err := strconv.ParseInt(f[1], 10, 64); err == nil {
+				stats[f[0]] = n
+			}
+		}
+	}
+	asOf := pick(updated != "", " (as of "+updated+")", "")
+	switch {
+	case len(stats) > 0:
+		return []string{fmt.Sprintf("    tunnel: carried %s in, %s out on the wire%s", humanBytes(stats["TCP/UDP read bytes"]), humanBytes(stats["TCP/UDP write bytes"]), asOf)}
+	case strings.Contains(text, "OpenVPN CLIENT LIST"):
+		if len(clients) == 0 {
+			return []string{"    connected clients: none" + asOf}
+		}
+		out := []string{fmt.Sprintf("    connected clients (%d)%s:", len(clients), asOf)}
+		for i, c := range clients {
+			if i == openVPNMaxClients {
+				out = append(out, fmt.Sprintf("      ... %d more", len(clients)-openVPNMaxClients))
+				break
+			}
+			if name, rest, ok := strings.Cut(c, " ("); ok {
+				if v := virt[strings.Trim(name, `"`)]; v != "" {
+					c = name + " at " + v + " (" + rest
+				}
+			}
+			out = append(out, "      "+c)
+		}
+		return out
+	}
+	return []string{"    status file not recognised"}
 }
 
 // ---------------------------------------------------------------- nextdns

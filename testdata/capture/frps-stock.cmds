@@ -1,0 +1,3 @@
+# commands the frps adapter runs
+pidof frps
+uci -q show frps

@@ -1,0 +1,9 @@
+# uci -q show frps
+frps.@init[0]=init
+frps.@init[0].stdout='1'
+frps.@init[0].stderr='1'
+frps.@init[0].user='frps'
+frps.@init[0].group='frps'
+frps.@init[0].respawn='1'
+frps.common=conf
+frps.common.bind_port='7000'

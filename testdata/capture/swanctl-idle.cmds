@@ -1,0 +1,4 @@
+# commands the strongSwan adapter runs: a connection loaded, no peer yet
+pidof charon
+swanctl --list-sas
+swanctl --list-conns

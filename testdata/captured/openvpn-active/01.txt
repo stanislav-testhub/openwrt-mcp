@@ -1,0 +1,38 @@
+# ubus call service list '{"name":"openvpn"}'
+{
+	"openvpn": {
+		"instances": {
+			"srv": {
+				"running": true,
+				"pid": 8728,
+				"command": [
+					"/usr/sbin/openvpn",
+					"--syslog",
+					"openvpn(srv)",
+					"--status",
+					"/var/run/openvpn.srv.status",
+					"--cd",
+					"/var/etc",
+					"--config",
+					"openvpn-srv.conf",
+					"--up",
+					"/usr/libexec/openvpn-hotplug up srv",
+					"--down",
+					"/usr/libexec/openvpn-hotplug down srv",
+					"--route-up",
+					"/usr/libexec/openvpn-hotplug route-up srv",
+					"--route-pre-down",
+					"/usr/libexec/openvpn-hotplug route-pre-down srv",
+					"--script-security",
+					"2"
+				],
+				"term_timeout": 15,
+				"respawn": {
+					"threshold": 3600,
+					"timeout": 5,
+					"retry": -1
+				}
+			}
+		}
+	}
+}

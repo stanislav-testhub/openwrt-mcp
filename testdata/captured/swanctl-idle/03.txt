@@ -1,0 +1,24 @@
+# swanctl --list-conns
+plugin 'test-vectors': failed to load - test_vectors_plugin_create not found and no plugin file available
+plugin 'blowfish': failed to load - blowfish_plugin_create not found and no plugin file available
+plugin 'sha3': failed to load - sha3_plugin_create not found and no plugin file available
+plugin 'md4': failed to load - md4_plugin_create not found and no plugin file available
+plugin 'pkcs7': failed to load - pkcs7_plugin_create not found and no plugin file available
+plugin 'pkcs12': failed to load - pkcs12_plugin_create not found and no plugin file available
+plugin 'openssl': failed to load - openssl_plugin_create not found and no plugin file available
+plugin 'wolfssl': failed to load - wolfssl_plugin_create not found and no plugin file available
+plugin 'gcrypt': failed to load - gcrypt_plugin_create not found and no plugin file available
+plugin 'pkcs8': failed to load - pkcs8_plugin_create not found and no plugin file available
+plugin 'af-alg': failed to load - af_alg_plugin_create not found and no plugin file available
+plugin 'curve25519': failed to load - curve25519_plugin_create not found and no plugin file available
+plugin 'drbg': failed to load - drbg_plugin_create not found and no plugin file available
+site: IKEv2, no reauthentication, rekeying every 14400s
+  local:  192.168.1.1[500]
+  remote: 192.168.1.50[500]
+  local pre-shared key authentication:
+    id: srv
+  remote pre-shared key authentication:
+    id: cli
+  net: TUNNEL, rekeying every 3600s
+    local:  10.1.0.0/24
+    remote: 10.2.0.0/24

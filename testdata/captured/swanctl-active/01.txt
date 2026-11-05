@@ -1,0 +1,12 @@
+# swanctl --list-sas
+site: #1, ESTABLISHED, IKEv2, 894ab5bf70e253ae_i 3432fe7fd46bd1ee_r*
+  local  'srv' @ 192.168.1.100[4500]
+  remote 'cli' @ 192.168.1.101[4500]
+  AES_CBC-256/HMAC_SHA2_256_128/PRF_HMAC_SHA2_256/MODP_2048
+  established 12s ago, rekeying in 13292s
+  net: #1, reqid 1, INSTALLED, TUNNEL, ESP:AES_CBC-256/HMAC_SHA2_256_128
+    installed 12s ago, rekeying in 3330s, expires in 3948s
+    in  cf1f63f7,      0 bytes,     0 packets
+    out c4bb43ca,      0 bytes,     0 packets
+    local  10.1.0.0/24
+    remote 10.2.0.0/24

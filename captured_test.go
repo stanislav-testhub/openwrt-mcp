@@ -359,3 +359,99 @@ func TestOpenNDSWhenItsSocketDoesNotAnswer(t *testing.T) {
 	got := body(t, "opennds")
 	wantAll(t, got, "ndsctl does not answer: Failed to connect to opennds")
 }
+
+// OpenVPN 2.7.8 on the 25.12.6 VM: a TLS server with one client connected from a LAN namespace. The init
+// script makes every instance write /var/run/openvpn.<section>.status (version 1, comma separated).
+func TestOpenVPNServerWithAClientOnItsRealStatusFile(t *testing.T) {
+	f, root := wave1Router(t)
+	addRC(f, "openvpn")
+	f.on(`ubus call service list {"name":"openvpn"}`, captured(t, "openvpn-active", "01.txt"))
+	f.on("uci -q show openvpn", captured(t, "openvpn-active", "02.txt"))
+	writeFixture(t, root, "var/run/openvpn.srv.status", captured(t, "openvpn-active", "03.txt"))
+	got := strings.Join(detail(t, "openvpn"), "\n")
+	wantAll(t, got, "connected clients (1) (as of 2026-11-05 20:30:56):", `"client" at 192.168.1.100 (in 4K, out 5K, since 2026-11-05 20:30:15)`)
+	mustNotContain(t, got, "udp4:", ":37509")
+}
+
+// The same version in client mode (status written with `--status FILE 5`): only tunnel counters.
+func TestOpenVPNClientStatusHasOnlyCounters(t *testing.T) {
+	f, root := wave1Router(t)
+	addRC(f, "openvpn")
+	f.on(`ubus call service list {"name":"openvpn"}`, `{"openvpn":{"instances":{"cli":{"running":true}}}}`)
+	f.on("uci -q show openvpn", "openvpn.cli=openvpn\nopenvpn.cli.enabled='1'\nopenvpn.cli.client='1'\n")
+	writeFixture(t, root, "var/run/openvpn.cli.status", "OpenVPN STATISTICS\nUpdated,2026-11-05 20:30:20\nTUN/TAP read bytes,440\nTUN/TAP write bytes,0\nTCP/UDP read bytes,4478\nTCP/UDP write bytes,4366\nAuth read bytes,0\nEND\n")
+	got := strings.Join(detail(t, "openvpn"), "\n")
+	wantAll(t, got, "tunnel: carried 4K in, 4K out on the wire (as of 2026-11-05 20:30:20)")
+}
+
+func TestOpenVPNWithoutAStatusFileOrWithAnEmptyServer(t *testing.T) {
+	f, root := wave1Router(t)
+	addRC(f, "openvpn")
+	f.on(`ubus call service list {"name":"openvpn"}`, `{"openvpn":{"instances":{"srv":{"running":true}}}}`)
+	f.on("uci -q show openvpn", "openvpn.srv=openvpn\nopenvpn.srv.enabled='1'\nopenvpn.off=openvpn\nopenvpn.off.enabled='0'\n")
+	got := strings.Join(detail(t, "openvpn"), "\n")
+	wantAll(t, got, "status file not written yet")
+	if strings.Count(got, "status file") != 1 {
+		t.Errorf("a disabled instance got a status line:\n%s", got)
+	}
+	writeFixture(t, root, "var/run/openvpn.srv.status", "OpenVPN CLIENT LIST\nUpdated,2026-11-05 20:28:54\nCommon Name,Real Address,Bytes Received,Bytes Sent,Connected Since\nROUTING TABLE\nVirtual Address,Common Name,Real Address,Last Ref\nGLOBAL STATS\nMax bcast/mcast queue length,0\nEND\n")
+	wantAll(t, strings.Join(detail(t, "openvpn"), "\n"), "connected clients: none (as of 2026-11-05 20:28:54)")
+}
+
+// frp 0.66.0 on the 25.12.6 VM, stock configs: the package's own section is `common` (written as [common]
+// in the generated ini), every other `conf` section is one proxy. The adapters once read a section `main`.
+func TestFrpcOnItsRealStockConfig(t *testing.T) {
+	f, _ := wave1Router(t)
+	addRC(f, "frpc")
+	f.on("pidof frpc", captured(t, "frpc-stock", "01.txt"))
+	f.on("uci -q show frpc", captured(t, "frpc-stock", "02.txt"))
+	got := strings.Join(detail(t, "frpc"), "\n")
+	wantAll(t, got, "server: ", ":7000", "token: not set", "proxies: 1", "ssh, tcp, local ", ":22, remote port 6000")
+	mustNotContain(t, got, "server: not set")
+}
+
+func TestFrpsOnItsRealStockConfigAndTheFindingFollowsTheToken(t *testing.T) {
+	f, root := wave1Router(t)
+	addRC(f, "frps")
+	f.on("pidof frps", captured(t, "frps-stock", "01.txt"))
+	f.on("uci -q show frps", captured(t, "frps-stock", "02.txt"))
+	got := strings.Join(detail(t, "frps"), "\n")
+	wantAll(t, got, "bind port: 7000", "token: not set (any client may connect)")
+	installAddonConfig(t, root, "frps")
+	f.on("ubus call rc list", `{"frps":{"enabled":true,"running":true,"start":99,"stop":1}}`)
+	if auditFindings(context.Background()).byID("frps-open") == nil {
+		t.Error("a token-less stock frps was not flagged")
+	}
+	f.on("uci -q show frps", captured(t, "frps-stock", "02.txt")+"frps.common.token='x'\n")
+	if auditFindings(context.Background()).byID("frps-open") != nil {
+		t.Error("frps with a token in its real `common` section was flagged")
+	}
+}
+
+// strongSwan 6.0.7 on the 25.12.6 VM. Idle: one connection loaded, no peer (the plugin warnings are real
+// stderr that `swanctl` prints and the adapter's command capture mixes in). Active: two charon daemons in
+// network namespaces joined by a veth pair, PSK, IKEv2; the listing is from the responder.
+func swanRouter(t *testing.T) *fakeRouter {
+	f, _ := wave1Router(t)
+	addRC(f, "swanctl")
+	f.on("pidof charon", captured(t, "swanctl-idle", "01.txt"))
+	return f
+}
+
+func TestStrongSwanIdleNamesTheConnectionThatHasNoSA(t *testing.T) {
+	f := swanRouter(t)
+	f.on("swanctl --list-sas", captured(t, "swanctl-idle", "02.txt"))
+	f.on("swanctl --list-conns", captured(t, "swanctl-idle", "03.txt"))
+	got := strings.Join(detail(t, "swanctl"), "\n")
+	wantAll(t, got, "IKE SAs established: 0", "child SAs installed: 0", "configured but with no SA now: site")
+	mustNotContain(t, got, "plugin ", "192.168.1.1")
+}
+
+func TestStrongSwanEstablishedListsEachSAWithoutAddresses(t *testing.T) {
+	f := swanRouter(t)
+	f.on("swanctl --list-sas", captured(t, "swanctl-active", "01.txt"))
+	f.on("swanctl --list-conns", captured(t, "swanctl-idle", "03.txt"))
+	got := strings.Join(detail(t, "swanctl"), "\n")
+	wantAll(t, got, "IKE SAs established: 1", "child SAs installed: 1", "site: ESTABLISHED, IKEv2, up 12s", "child net: INSTALLED TUNNEL", "peer names are chosen by the peer")
+	mustNotContain(t, got, "configured but with no SA", "192.168.1.", "@")
+}

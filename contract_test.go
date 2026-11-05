@@ -629,7 +629,7 @@ func readOnlyCommand(a []string) bool {
 	case "upsc":
 		return len(a) == 2
 	case "swanctl":
-		return len(a) == 2 && a[1] == "--list-sas"
+		return len(a) == 2 && (a[1] == "--list-sas" || a[1] == "--list-conns")
 	case "zerotier-cli":
 		return len(a) == 2 && a[1] == "listnetworks"
 	case "netbird":

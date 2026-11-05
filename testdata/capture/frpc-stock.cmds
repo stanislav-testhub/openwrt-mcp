@@ -1,0 +1,3 @@
+# commands the frpc adapter runs
+pidof frpc
+uci -q show frpc

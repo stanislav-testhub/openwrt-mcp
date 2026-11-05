@@ -1,0 +1,2 @@
+# commands the strongSwan adapter runs, with a tunnel up (captured from a private namespace, see CHANGELOG)
+swanctl --list-sas

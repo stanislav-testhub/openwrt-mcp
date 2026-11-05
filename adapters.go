@@ -97,7 +97,7 @@ var adapters = []adapter{
 	{service: "nut-monitor", read: readNUT},
 	{service: "openclash", read: wave4["openclash"].read},
 	{service: "opennds", read: readOpenNDS},
-	{service: "openvpn", read: readOpenVPN},
+	{service: "openvpn", read: readOpenVPN, untrusted: "OpenVPN client names"},
 	{service: "passwall", read: wave4["passwall"].read},
 	{service: "passwall2", read: wave4["passwall2"].read},
 	{service: "pbr", read: readPBR, query: &adapterQuery{"ip", queryPBR}},

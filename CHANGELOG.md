@@ -37,6 +37,16 @@ Added
     command line for it, so the verb drops the line from the lease file, restarts the daemon (which rebuilds its rules from that file) and reads
     the file back; a mapping that is still there is reported as a failure. Routine. A client that renews its mapping creates it again. Run on
     a 25.12.6 VM against miniupnpd 2.3.9 with a LAN client made with `upnpc`: the nft rule and the `upnpc -l` entry went, the other mapping stayed.
+  - Peer and login states on the 25.12.6 VM (all against real packages, no outside accounts), three adapters changed by what they showed:
+    - `openvpn` now reads the status file of each enabled instance (OpenVPN 2.7.8): connected clients with name, virtual address, traffic and
+      start time (client names marked as untrusted, public addresses left out), or the tunnel counters on a client.
+    - `frpc`, `frps` and the audit finding `frps-open` read the section `common`; the stock config of frp 0.66.0 has no `main`, so the adapters
+      reported "server not set" and the finding fired on a server that had a token. Proxies are now listed (type, local and remote port).
+    - `swanctl` (strongSwan 6.0.7): per IKE SA its state and age, per child SA its state and traffic, and a configured connection that has
+      no SA now (from `swanctl --list-conns`). The tunnel was two charon daemons in network namespaces over a veth pair; over the VM's bridge
+      IKE packets did not reach the responder, and why was not found.
+    - Not done: the libvirt VM has no Tailscale, NetBird or ZeroTier account, samba4 does not fit the VM's 98 MB root and its adapter reads
+      shares from the config only, and frp client to server was not connected (the adapters read config, not tunnels).
   - pbr checked with a second uplink on the 25.12.6 VM (eth2 as `wan2`): a route table and mark for it, a policy for one LAN client via `wan2`
     and `ip route get` with that mark left through eth2; the adapter lists all three gateways and `query` finds the policy. Captured as
     `pbr-two-uplinks`. Packet forwarding past the host NAT was not seen.

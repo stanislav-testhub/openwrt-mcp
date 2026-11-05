@@ -920,7 +920,7 @@ wave: `query` for adblock, mwan3, pbr, verbs for ddns/pbr/UPnP, the exposure vie
 
 ### 9.7 Verified on a real router
 
-**Status (unreleased):** eight passes done (see CHANGELOG). Waves 1 to 3 ran against real packages on the 24.10.8 (opkg) and 25.12.6 (apk) x86 VMs, with running banIP, adblock, adblock-fast, pbr, ddns and UPnP states captured; the GL-MT6000 (25.12.6) answered read-only for podkop, tailscale, AdGuard Home, ttyd, samba4, collectd, nlbwmon, tor, transmission and lldpd, and the doctor and audit ran there. Open: the states that need a peer or a login (netbird, zerotier, openvpn, strongSwan, frp, travelmate uplink, a samba4 login), the wave 4 proxies other than podkop, and the README add-on table with version and place verified per adapter.
+**Status (unreleased):** eight passes done (see CHANGELOG). Waves 1 to 3 ran against real packages on the 24.10.8 (opkg) and 25.12.6 (apk) x86 VMs, with running banIP, adblock, adblock-fast, pbr, ddns and UPnP states captured; the GL-MT6000 (25.12.6) answered read-only for podkop, tailscale, AdGuard Home, ttyd, samba4, collectd, nlbwmon, tor, transmission and lldpd, and the doctor and audit ran there. Open: the states that need an outside account or a radio (netbird, zerotier, tailscale login, travelmate uplink, usteer and DAWN with a real access point), the wave 4 proxies other than podkop, and the README add-on table with version and place verified per adapter.
 
 - **Ships.** Every official-feed add-on from waves 1 to 3 stays installed on the verification router (GL-MT6000, 1 GB
   RAM, 25.12). Each has a rig class:
