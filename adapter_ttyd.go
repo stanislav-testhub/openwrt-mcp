@@ -45,7 +45,16 @@ func ttydInstance(t *uciTree, s string) string {
 		iface = "network " + iface[1:]
 	}
 	creds := t.get(s, "credential") != ""
-	parts := []string{"port " + port, "listens on " + iface, "login: " + pick(creds, "credential set", "none"),
+	sysLogin := ttydRunsLogin(t.get(s, "command"))
+	login := "none"
+	switch {
+	case creds:
+		login = "credential set"
+	case sysLogin:
+		login = "system login prompt"
+	}
+	creds = creds || sysLogin
+	parts := []string{"port " + port, "listens on " + iface, "login: " + login,
 		"tls " + pick(uciFlag(t.get(s, "ssl"), false), "on", "off"), pick(uciFlag(t.get(s, "readonly"), false), "read-only", "read-write")}
 	if !uciFlag(t.get(s, "enable"), true) {
 		parts = append(parts, "disabled")
@@ -63,4 +72,11 @@ func ttydInstance(t *uciTree, s string) string {
 		line += "; no credential: any host on " + iface + " gets a shell"
 	}
 	return line
+}
+
+// ttydRunsLogin is true when the instance's command is the system login program, which asks for
+// a user name and password itself (luci-app-ttyd's default), so no ttyd credential is needed.
+func ttydRunsLogin(command string) bool {
+	f := strings.Fields(command)
+	return len(f) > 0 && (f[0] == "/bin/login" || f[0] == "login")
 }

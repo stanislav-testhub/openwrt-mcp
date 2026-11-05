@@ -25,6 +25,8 @@ func auditFindings(ctx context.Context) *findingsRun {
 		{"root-password", checkRootPassword},
 		{"packages", checkPackagesAudit},
 		{"wireguard", checkWireGuard},
+		{"ttyd", checkTTYD},
+		{"upnp-secure-mode", checkUPnPSecureMode},
 	})
 }
 

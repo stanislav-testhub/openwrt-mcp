@@ -146,6 +146,9 @@ func healthFindings(ctx context.Context) *findingsRun {
 		{currentPkgManager().name() + "-new", checkNewConfigs},
 		{"ntp", checkNTP},
 		{"kernel", checkKernel},
+		{"sqm", checkSQM},
+		{"ddns", checkDDNS},
+		{"mwan3", checkMwan3},
 	})
 }
 

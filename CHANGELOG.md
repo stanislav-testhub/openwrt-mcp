@@ -3,6 +3,16 @@
 ## Unreleased
 
 Added
+- **Add-on findings in `system_status mode=doctor` and `mode=audit` (ROADMAP 9.1, L5).** Only for installed add-ons.
+  Audit: `ttyd-open` (a shell with no login: no credential and not `/bin/login`; high on every interface, medium on one),
+  `upnp-insecure-mode`. Doctor: `sqm-offload`, `ddns-stale`, `ddns-cgnat`, `mwan3-iface-offline`, `mwan3-policy-down`.
+  A check that cannot read its add-on (mwan3 not running) is listed under "not checked", not as a finding.
+
+Fixed
+- The ttyd status no longer calls a default luci-app-ttyd instance (`command /bin/login`) an open shell: login asks for the
+  system password. It says "system login prompt".
+
+Added
 - **`service_list detail=NAME query=VALUE` (ROADMAP 9.1, query layer).** One bounded lookup per add-on, validated by kind before
   anything runs. adblock-fast: `query=<domain>` says whether the name (or a parent domain) is in the loaded block list and in
   which one, or whether `allowed_domain` exempts it. banIP: `query=<ip>` asks each active set of the address's family

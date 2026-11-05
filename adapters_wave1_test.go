@@ -51,7 +51,7 @@ func mustNotContain(t *testing.T, out string, canaries ...string) {
 
 const ttydUCI = `ttyd.@ttyd[0]=ttyd
 ttyd.@ttyd[0].interface='@lan'
-ttyd.@ttyd[0].command='/bin/login'
+ttyd.@ttyd[0].command='/bin/sh'
 ttyd.@ttyd[1]=ttyd
 ttyd.@ttyd[1].port='7682'
 ttyd.@ttyd[1].credential='root:canary-ttyd-password'
@@ -67,7 +67,7 @@ func TestTTYDShowsExposureAndNeverTheCredential(t *testing.T) {
 	want := []string{
 		"ttyd: running, pids 612 640",
 		"instances (2):",
-		"cfg023579: port 7681, listens on network lan, login: none, tls off, read-write, runs /bin/login; no credential: any host on network lan gets a shell",
+		"cfg023579: port 7681, listens on network lan, login: none, tls off, read-write, runs /bin/sh; no credential: any host on network lan gets a shell",
 		"cfg033579: port 7682, listens on all interfaces, login: credential set, tls on, read-write, runs /bin/sh; listens on every interface: check the firewall does not allow port 7682 from WAN",
 	}
 	if len(got) != len(want) {
@@ -91,7 +91,7 @@ func TestTTYDShowsExposureAndNeverTheCredential(t *testing.T) {
 func TestTTYDOnAllInterfacesWithoutLoginIsAWarning(t *testing.T) {
 	f, _ := wave1Router(t)
 	f.fail("pidof ttyd", "")
-	f.on("uci -q show ttyd", "ttyd.main=ttyd\nttyd.main.command='/bin/login'\n")
+	f.on("uci -q show ttyd", "ttyd.main=ttyd\nttyd.main.command='/bin/sh'\n")
 	got := detail(t, "ttyd")
 	if got[0] != "ttyd: not running" || !strings.Contains(got[2], "WARNING: a shell on every interface with no credential") {
 		t.Errorf("open ttyd:\n%q", got)
@@ -599,5 +599,16 @@ func TestQueryValueIsValidatedBeforeAnythingRuns(t *testing.T) {
 		if argv[0] != "ubus" {
 			t.Errorf("a rejected query ran %q", argv)
 		}
+	}
+}
+
+// luci-app-ttyd's default runs /bin/login, which asks for the system password: not an open shell.
+func TestTTYDWithTheSystemLoginIsNotFlaggedAsOpen(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on("pidof ttyd", "612\n")
+	f.on("uci -q show ttyd", "ttyd.main=ttyd\nttyd.main.command='/bin/login'\n")
+	got := detail(t, "ttyd")
+	if !strings.Contains(got[2], "login: system login prompt") || strings.Contains(got[2], "WARNING") || strings.Contains(got[2], "no credential") {
+		t.Errorf("system login:\n%q", got)
 	}
 }
