@@ -26,7 +26,9 @@ var (
 	reNFTChain   = regexp.MustCompile(`^\s+chain (\S+) \{`)
 	reMarkMatch  = regexp.MustCompile(`\bmeta mark & (0x[0-9a-fA-F]+) (?:==|!=) 0x[0-9a-fA-F]+`)
 	reMarkSetOr  = regexp.MustCompile(`\bmeta mark set meta mark & (0x[0-9a-fA-F]+) \| (0x[0-9a-fA-F]+)`)
-	reMarkSetRaw = regexp.MustCompile(`\bmeta mark set (0x[0-9a-fA-F]+)\s*$`)
+	reMarkSetRaw = regexp.MustCompile(`\bmeta mark set (0x[0-9a-fA-F]+)(?:\s|$)`) // counter and comment may follow
+	reMarkAddRaw = regexp.MustCompile(`\bmeta mark set meta mark \| (0x[0-9a-fA-F]+)(?:\s|$)`)
+	reMarkExact  = regexp.MustCompile(`\bmeta mark (0x[0-9a-fA-F]+)(?:\s|$)`)
 )
 
 // markOwner attributes a rule to an add-on from its table and chain names; "" means not a
@@ -39,6 +41,8 @@ func markOwner(table, chain string) string {
 		return "pbr"
 	case strings.HasPrefix(chain, "ts-"):
 		return "tailscale"
+	case strings.HasPrefix(chain, "podkop_"):
+		return "podkop" // podkop_remark sits in fw4 itself
 	}
 	switch table {
 	case "PodkopTable":
@@ -81,7 +85,18 @@ func parseMarkOwners(ruleset string) []*markUse {
 				get(owner).bits |= m
 			}
 		}
-		if g := reMarkSetOr.FindStringSubmatch(l); g != nil {
+		for _, g := range reMarkExact.FindAllStringSubmatch(l, -1) {
+			if m, ok := hexU(g[1]); ok {
+				get(owner).bits |= m
+			}
+		}
+		if g := reMarkAddRaw.FindStringSubmatch(l); g != nil {
+			if v, ok := hexU(g[1]); ok {
+				u := get(owner)
+				u.bits |= v
+				u.values[v] = true
+			}
+		} else if g := reMarkSetOr.FindStringSubmatch(l); g != nil {
 			keep, ok1 := hexU(g[1])
 			v, ok2 := hexU(g[2])
 			if ok1 && ok2 {
@@ -144,7 +159,7 @@ func markConflicts(us []*markUse) []string {
 			switch {
 			case len(same) > 0:
 				w = append(w, fmt.Sprintf("%s and %s both write mark %s", a.owner, b.owner, strings.Join(same, ", ")))
-			case a.bits != b.bits:
+			case a.bits != b.bits && mayCollide(a, b):
 				w = append(w, fmt.Sprintf("%s (0x%x) and %s (0x%x) share bits 0x%x without sharing a mask", a.owner, a.bits, b.owner, b.bits, a.bits&b.bits))
 			}
 		}
@@ -152,11 +167,29 @@ func markConflicts(us []*markUse) []string {
 	if len(us) > 1 {
 		for _, u := range us {
 			if u.whole {
-				w = append(w, u.owner+" sets the whole mark, which wipes the bits the other add-ons set earlier in the packet's path")
+				w = append(w, u.owner+" sets the whole mark, which can wipe the bits another add-on set earlier in the packet's path (check the hook order if both see the same traffic)")
 			}
 		}
 	}
 	return w
+}
+
+// mayCollide is false only when both add-ons write values nft shows and, inside the bits they
+// share, no value of one equals a value of the other. Otherwise (a hidden iptables-nft value) it
+// cannot be ruled out.
+func mayCollide(a, b *markUse) bool {
+	if len(a.values) == 0 || len(b.values) == 0 {
+		return true
+	}
+	inter := a.bits & b.bits
+	for va := range a.values {
+		for vb := range b.values {
+			if va&inter == vb&inter {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // ruleOwners names the add-ons whose bits contain an ip rule's mask (and whose written values

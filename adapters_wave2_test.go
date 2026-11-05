@@ -102,6 +102,22 @@ func TestDNSPathNamesEachHopAndTheBlockers(t *testing.T) {
 	mustNotContain(t, got, "canary-profile-id")
 }
 
+// A dnsmasq upstream no add-on config claims (a proxy stack's DNS port) is named by the process
+// that holds the port, read from /proc, so the wave 4 stacks need no port table of their own.
+func TestDNSPathNamesTheProcessBehindAnUnclaimedLocalPort(t *testing.T) {
+	f := newFakeRouter(t)
+	withFixtureRoot(t)
+	f.on("ubus call rc list", `{}`)
+	f.on("uci -q get dhcp.@dnsmasq[0].server", "127.0.0.1#7874 127.0.0.1#7999\n")
+	writeFixture(t, sysRoot, "proc/net/udp", "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops\n"+
+		"   1: 0100007F:1EC2 00000000:0000 07 00000000:00000000 00:00000000 00000000     0        0 55501 2 0000000000000000 0\n")
+	holdSocket(t, "321", "clash\x1b[31m", "55501")
+	got := netDiagText(t, netDiagIn{Action: "dns_path"})
+	wantAll(t, got, "dnsmasq -> 127.0.0.1#7874 -> (process clash", "no add-on config claims this port",
+		"dnsmasq -> 127.0.0.1#7999 -> (a local listener this tool does not know)")
+	mustNotContain(t, got, "\x1b")
+}
+
 func TestPathShowsTheRouteTheMarkMapAndPolicyHits(t *testing.T) {
 	f := newFakeRouter(t)
 	withFixtureRoot(t)

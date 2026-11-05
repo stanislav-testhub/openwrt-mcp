@@ -130,3 +130,43 @@ func listenerAuth(sn *snapshot, comm string, port int) (note string, login bool)
 	}
 	return "", true
 }
+
+// localPortOwner names the process that listens on a local port at any address, loopback
+// included, or "" when /proc does not say. dns_path uses it for a dnsmasq upstream no add-on
+// config claims, such as the DNS port of a proxy stack, so the hop is named without upstream ports.
+func localPortOwner(port string) string {
+	want, err := strconv.Atoi(port)
+	if err != nil || want <= 0 {
+		return ""
+	}
+	var inodes []string
+	for _, f := range []struct{ file, state string }{
+		{"/proc/net/udp", "07"}, {"/proc/net/udp6", "07"}, {"/proc/net/tcp", "0A"}, {"/proc/net/tcp6", "0A"},
+	} {
+		text, err := readSys(f.file)
+		if err != nil {
+			continue
+		}
+		for i, line := range strings.Split(text, "\n") {
+			fl := strings.Fields(line)
+			if i == 0 || len(fl) < 10 || fl[3] != f.state {
+				continue
+			}
+			if _, p, ok := strings.Cut(fl[1], ":"); ok {
+				if n, err := strconv.ParseUint(p, 16, 16); err == nil && int(n) == want {
+					inodes = append(inodes, fl[9])
+				}
+			}
+		}
+	}
+	if len(inodes) == 0 {
+		return ""
+	}
+	owners := socketOwners()
+	for _, in := range inodes {
+		if n := sanitizeText(owners[in]); n != "" {
+			return n
+		}
+	}
+	return ""
+}

@@ -64,3 +64,43 @@ func TestMarkOwnersIgnoreWhatIsNotARoutingAddOn(t *testing.T) {
 		t.Errorf("fw4 chains are not an add-on: %+v", us)
 	}
 }
+
+// The forms tailscale and podkop write on a real GL-MT6000 (OpenWrt 25.12.6), rewritten by hand with
+// neutral addresses: podkop's whole-mark write is followed by `counter`, its OR form lives in an fw4
+// chain called podkop_remark, and tailscale keeps the rest of the mark. They use different values
+// inside tailscale's field, so they do not collide, but podkop does set the whole mark.
+const liveFormMarks = `table inet fw4 {
+	chain podkop_remark {
+		iifname { "br-lan", "tailscale0" } ip daddr 198.18.0.0/15 meta l4proto { tcp, udp } meta mark set meta mark | 0x00100000
+	}
+}
+table ip filter {
+	chain ts-forward {
+		iifname "tailscale0*" counter packets 0 bytes 0 meta mark set meta mark & 0xff04ffff | 0x00040000
+		meta mark & 0x00ff0000 == 0x00040000 counter packets 0 bytes 0 accept
+	}
+}
+table inet PodkopTable {
+	chain mangle {
+		iifname @interfaces ip daddr 198.18.0.0/15 meta l4proto tcp meta mark set 0x00100000 counter packets 0 bytes 0
+	}
+	chain proxy {
+		meta mark 0x00200000 counter packets 0 bytes 0 return
+		meta mark & 0x00100000 == 0x00100000 meta l4proto tcp tproxy ip to 127.0.0.1:1602 counter packets 0 bytes 0
+	}
+}
+`
+
+func TestMarkOwnersReadTheFormsTailscaleAndPodkopWriteOnARealRouter(t *testing.T) {
+	us := parseMarkOwners(liveFormMarks)
+	var names []string
+	for _, u := range us {
+		names = append(names, u.describe())
+	}
+	got := strings.Join(names, "\n")
+	wantAll(t, got, "podkop: bits 0x300000, writes 0x100000", "tailscale: bits 0xff0000, writes 0x40000")
+	mustNotContain(t, got, "value not visible")
+	c := strings.Join(markConflicts(us), "\n")
+	wantAll(t, c, "podkop sets the whole mark")
+	mustNotContain(t, c, "without sharing a mask", "both write")
+}

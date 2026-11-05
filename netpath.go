@@ -85,7 +85,11 @@ func dnsPath(ctx context.Context) (string, string, error) {
 		case ok && (host == "127.0.0.1" || host == "::1") && owners[port] != "":
 			lines = append(lines, "dnsmasq -> "+s+" -> "+owners[port])
 		case ok && (host == "127.0.0.1" || host == "::1"):
-			lines = append(lines, "dnsmasq -> "+s+" -> (a local listener this tool does not know)")
+			who := "a local listener this tool does not know"
+			if o := localPortOwner(port); o != "" {
+				who = "process " + o + ", no add-on config claims this port"
+			}
+			lines = append(lines, "dnsmasq -> "+s+" -> ("+who+")")
 		default:
 			lines = append(lines, "dnsmasq -> "+s+" (plain DNS, not encrypted)")
 		}

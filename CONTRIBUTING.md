@@ -38,6 +38,34 @@ cross-compiles every supported architecture.
 
 Please describe what you tested on real hardware (board, OpenWrt release) in the PR.
 
+## Adding an adapter
+
+An adapter answers `service_list detail=<service>` for one add-on package. The tool list stays flat:
+adapters are rows in a table, not tools.
+
+1. **Write `read(ctx) string`** (a new `adapter_<name>.go`, or a row in `wave4` in `adapter_wave4.go`
+   for a status-only proxy stack). Read only: commands are argv built by the code, never from the
+   caller. Print fixed fields by name; never echo a config file or a command's output, because those
+   hold keys, node links and tokens. An add-on that does not answer is a status line, not an error.
+2. **Register it** in `adapters` in `adapters.go`, sorted by service name. The name is the init script
+   (`/etc/init.d/<name>`); the "available here" line follows from it. Set `untrusted` when the output
+   carries text someone else chose (a peer's host name, a lease description): clip it, pass it through
+   `sanitizeText`, and name it there. Add a `query` only for a bounded lookup (a domain or an IP).
+3. **Read the upstream project, not memory.** Take option names, runtime files and nft table names from the
+   package's default config and init script, and say in the README row which version you checked.
+   An adapter built from docs only is marked "source-checked", one run on a router "verified".
+4. **Capture real output** when you can run the package: list the read-only commands in
+   `testdata/capture/<service>.cmds` (a test keeps the file read-only and rejects anything that writes),
+   run `ROUTER=root@host ./capture.sh <service> [host,names,to,hide]`, and read every file in
+   `testdata/captured/<service>/` before committing. Test against the capture in `captured_test.go`-style
+   tests; add a synthetic fixture only for states you could not produce, and say so in the test.
+5. **Add findings** only for a state that is wrong whatever the operator intended. A finding is a
+   `check*` function in `findings_addons.go` registered in `healthFindings` (`health.go`, the doctor) or in `auditFindings` (`securityaudit.go`), with a
+   `findingHints` entry that names the tool to call next. Add the README row and a CHANGELOG line.
+6. **Wire the shared views** if the add-on listens for DNS (`dnsOwners` in `netpath.go`), marks packets
+   (`markowners.go`) or opens a port (`securityexposure_auth.go`). Otherwise `dns_path` still names the
+   process behind an unclaimed local port, and the exposure view lists it without a login note.
+
 ## Releasing (maintainers)
 
 1. Set `version` in `main.go` and in `server.json` to `X.Y.Z` (a test checks that they match).

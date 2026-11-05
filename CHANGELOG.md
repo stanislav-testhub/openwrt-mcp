@@ -10,7 +10,11 @@ Added
   - `net_diag action=path` reads `nft -t list ruleset` and names the add-on behind each fwmark (mwan3, pbr, tailscale, podkop, wave 4
     tables): bits, written values, and warnings for a shared value, partly overlapping bits and a whole-mark write. Taken from a real
     mwan3 2.12.0 and pbr 1.2.2 ruleset (25.12.6 VM, `nft-marks`); mwan3's MARK value is hidden by iptables-nft, so only its mask shows.
-    tailscale and podkop forms are synthetic.
+    tailscale and podkop forms were read off a real GL-MT6000 ruleset and rewritten by hand for the tests: podkop's whole-mark write
+    with `counter` after it, its `podkop_remark` chain inside fw4, an exact `meta mark 0x...` match and the OR form were not recognised
+    before; a partial bit overlap is now reported only when the written values can collide.
+  - `net_diag action=dns_path` names the process behind a dnsmasq upstream no add-on claims (from /proc), which covers the DNS port of
+    the wave 4 proxy stacks without a port table.
   - `system_status` (status mode) and `service_list` (listing) return `structuredContent` too; the text stays. The Tasks extension waits
     for go-sdk (v1.8.0 has none).
   - Wave 4 adapters compared with the projects' own default configs and init scripts: passwall2 reads `remote_dns_protocol` (it has no
