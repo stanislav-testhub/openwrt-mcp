@@ -16,6 +16,7 @@ Added
   - `net_diag action=path` names the nftables rules that write a mark and can catch the given client: its address, the target and the incoming
     interface are evaluated against each rule, a rule in a chain reached by `jump` or `goto` takes its callers' verdict, and named sets are
     asked with `nft get element`. Ports, protocols and connection state are not evaluated; mwan3's marks stay hidden by iptables-nft.
+  - `net_diag action=throughput` and `action=capture` were run for the first time against real iperf3 and tcpdump 4.99 (25.12.6 VM, through the stdio bridge). One bug: DNS replies were counted as "other" in the capture summary; now they count as DNS.
   - `net_diag action=dns_path` names the process behind a dnsmasq upstream no add-on claims (from /proc), which covers the DNS port of
     the wave 4 proxy stacks without a port table.
   - `system_status` (status mode) and `service_list` (listing) return `structuredContent` too; the text stays. The Tasks extension waits

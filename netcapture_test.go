@@ -189,3 +189,15 @@ func TestPresetsDoNotGrantThroughputOrCapture(t *testing.T) {
 		}
 	}
 }
+
+// Lines as tcpdump 4.99 prints them on the 25.12.6 VM for one lookup: the replies have no question
+// mark and the second one is cut by the snaplen ("[|domain]"). They are DNS, not "other".
+func TestCaptureCountsDNSRepliesAsDNS(t *testing.T) {
+	out := "1793913443.890284 IP 192.168.1.50.39083 > 192.168.1.1.53: 34806+ A? example.com. (29)\n" +
+		"1793913443.890395 IP 192.168.1.1.53 > 192.168.1.50.39083: 34806 2/0/0 A 172.66.147.243, (61)\n" +
+		"1793913443.890410 IP 192.168.1.50.39083 > 192.168.1.1.53: 34807+ AAAA? example.com. (29)\n" +
+		"1793913443.890419 IP 192.168.1.1.53 > 192.168.1.50.39083: 34807 2/0/0 AAAA [|domain]\n"
+	got := summariseCapture(out, "br-lan", "port 53", 5)
+	wantAll(t, got, "protocols: dns 4", "DNS names asked: example.com 2")
+	mustNotContain(t, got, "other")
+}

@@ -147,6 +147,14 @@ func hostOfEndpoint(e string) string {
 	return e
 }
 
+// endpointPort is the part after the last dot of "192.168.1.5.443" or "2001:db8::1.443".
+func endpointPort(e string) string {
+	if i := strings.LastIndex(e, "."); i > 0 {
+		return e[i+1:]
+	}
+	return ""
+}
+
 func capture(ctx context.Context, in netDiagIn) (string, string, error) {
 	if !reNetName.MatchString(in.Target) {
 		return "", "", invalid("capture needs target = the interface to listen on, e.g. br-lan")
@@ -205,8 +213,8 @@ func summariseCapture(out, iface, filter string, sec int) string {
 			if f := rest[strings.Index(rest, "Flags [")+7:]; strings.HasPrefix(f, "R") {
 				resets++
 			}
-		case pair != nil && reCapDNS.MatchString(pair[3]):
-			proto["dns"]++
+		case pair != nil && (reCapDNS.MatchString(pair[3]) || endpointPort(pair[1]) == "53" || endpointPort(pair[2]) == "53"):
+			proto["dns"]++ // a reply ("2/0/0 A 1.2.3.4") carries no question mark, so the port 53 end says it
 		case strings.Contains(rest, "UDP"):
 			proto["udp"]++
 		case strings.Contains(rest, "ICMP"):
