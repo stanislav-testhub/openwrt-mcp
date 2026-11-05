@@ -581,8 +581,9 @@ func execTool(ctx context.Context, in execIn) (string, string, error) {
 // ---------------------------------------------------------------- net_diag
 
 type netDiagIn struct {
-	Action string `json:"action" jsonschema:"ping | traceroute | nslookup | route | rule | neigh | wifi_survey | traffic | usage"`
-	Target string `json:"target,omitempty" jsonschema:"host name or IP for ping/traceroute/nslookup; radio device for wifi_survey; interface for traffic; period date for usage"`
+	Action string `json:"action" jsonschema:"ping | traceroute | nslookup | route | rule | neigh | wifi_survey | traffic | usage | dns_path | path"`
+	Src    string `json:"src,omitempty" jsonschema:"path: client IP or MAC"`
+	Target string `json:"target,omitempty" jsonschema:"host name or IP for ping/traceroute/nslookup; destination IP for path; radio device for wifi_survey; interface for traffic; period date for usage"`
 	Iface  string `json:"iface,omitempty" jsonschema:"source interface/device for ping/traceroute, e.g. 'br-WAN' or 'wg0' -- useful with several uplinks"`
 	Count  int    `json:"count,omitempty" jsonschema:"ping count (default 4, max 10); seconds to sample for traffic (default 3, max 10)"`
 	Server string `json:"server,omitempty" jsonschema:"DNS server to ask for nslookup (default: the router's resolver)"`
@@ -610,6 +611,10 @@ func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 		return trafficDiag(ctx, in)
 	case "usage":
 		return nlbwUsage(ctx, in.Target)
+	case "dns_path":
+		return dnsPath(ctx)
+	case "path":
+		return pathDiag(ctx, in)
 	}
 	fam := "-4"
 	if in.IPv6 {
@@ -674,7 +679,7 @@ func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 	case "neigh":
 		argv = []string{"ip", fam, "neigh", "show"}
 	default:
-		return "", "", invalid("unknown action %q: use ping, traceroute, nslookup, route, rule, neigh, wifi_survey, traffic or usage", in.Action)
+		return "", "", invalid("unknown action %q: use ping, traceroute, nslookup, route, rule, neigh, wifi_survey, traffic, usage, dns_path or path", in.Action)
 	}
 	out, err := run(ctx, timeout, argv...)
 	// ping exits non-zero on packet loss; the output is the answer, not an error.

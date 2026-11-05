@@ -77,9 +77,12 @@ var adapters = []adapter{
 	{service: "mwan3", read: readMwan3},
 	{service: "pbr", read: readPBR},
 	{service: "podkop", read: readPodkop},
+	{service: "smartdns", read: readSmartDNS},
 	{service: "sqm", read: readSQM},
+	{service: "stubby", read: readStubby},
 	{service: "tailscale", untrusted: "tailnet host names", read: readTailscale},
 	{service: "ttyd", read: readTTYD},
+	{service: "unbound", read: readUnbound},
 }
 
 func adapterFor(service string) (adapter, bool) {

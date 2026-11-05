@@ -171,6 +171,9 @@ sanitised and marked untrusted.
 | adblock-fast | `query=<domain>`: blocked by which list, or allowlisted. Status: procd service data: status, the package's stats line, error and warning codes (not their info text), config summary | fixture-tested |
 | banIP | `query=<ip>`: which active sets hold it. Status: version, element count, active feeds, WAN interfaces (warns when none), last run | fixture-tested |
 | ddns | per section: domain, provider, registered address, WAN address from netifd, age of the last update; warns on a stale record and on a WAN address in 100.64.0.0/10 | fixture-tested |
+| unbound | running, listen port, DHCP link, DNSSEC validator, recursive or forwarding, cache statistics when `unbound-control` works, whether dnsmasq forwards to it | fixture-tested |
+| stubby | listen addresses, upstream hosts with their TLS names (pinsets never printed), whether dnsmasq forwards to it | fixture-tested |
+| smartdns | listen port, redirect mode, upstream servers as host only, whether dnsmasq forwards to it | fixture-tested |
 | https-dns-proxy | instances: resolver host only (no path, so no NextDNS id), listen address and port, bootstrap set or not; whether dnsmasq forwards to a local proxy port | fixture-tested |
 | miniupnpd | settings (warns when secure mode is off) and the live mappings: protocol, external port, client, description (marked untrusted) | fixture-tested |
 | mwan3 | per interface: status, link, tracking state, track IPs up, time online; per policy: members and weights, warns when no member is online (from `ubus call mwan3 status`) | fixture-tested |

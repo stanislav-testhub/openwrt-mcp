@@ -3,6 +3,14 @@
 ## Unreleased
 
 Added
+- **Wave 2 resolvers (ROADMAP 9.4): `service_list detail=unbound|stubby|smartdns`.** Listen port, upstream hosts (never URLs or
+  pinsets), DNSSEC mode, cache statistics when `unbound-control` answers, and whether dnsmasq forwards to the resolver.
+  Fixture-tested, not yet run on hardware.
+- **`net_diag action=dns_path`.** Who answers DNS, hop by hop: dnsmasq, its forwarders matched to the add-on that owns
+  each local port, and the enabled blockers. Warns on more than one blocker and on two daemons wanting port 53.
+- **`net_diag action=path src=<client IP|MAC> target=<IPv4>`.** The client's neighbour entry, the kernel's unmarked route,
+  the fwmark **mark map** from `ip rule` (warns when two masks share bits) and the pbr policies naming the client.
+  It does not simulate which mark nftables would set. New parameter: `src`.
 - **Add-on findings in `system_status mode=doctor` and `mode=audit` (ROADMAP 9.1, L5).** Only for installed add-ons.
   Audit: `ttyd-open` (a shell with no login: no credential and not `/bin/login`; high on every interface, medium on one),
   `upnp-insecure-mode`. Doctor: `sqm-offload`, `ddns-stale`, `ddns-cgnat`, `mwan3-iface-offline`, `mwan3-policy-down`.

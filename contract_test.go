@@ -43,6 +43,7 @@ var goldenCalls = []struct {
 	{"net_diag", map[string]any{"action": "wifi_survey", "target": "phy0-ap0"}},
 	{"net_diag", map[string]any{"action": "traffic", "target": "br-lan", "count": 2}},
 	{"net_diag", map[string]any{"action": "usage", "target": "2026-10-01"}},
+	{"net_diag", map[string]any{"action": "dns_path"}},
 	{"uci_get", map[string]any{"config": "dhcp", "section": "lan", "option": "ipaddr"}},
 	{"uci_apply", map[string]any{"dry_run": true, "changes": []map[string]any{
 		{"config": "dhcp", "section": "pi", "type": "host"},
@@ -213,9 +214,10 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.5 (5.1): +150 and +150 so the package tools can name both managers' files (.apk-new / -opkg,
 // .pre-apk-new / .pre-opkg-new) and say what an opkg router cannot answer (23,606 and 12,595 measured).
 // 1.5 (5.10): +250 and +250 for uci_get's `refs` mode, a search across configs that the cross-config
+// 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 23950 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg)
+	catalogueBudgetBytes = 24060 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg)
 	catalogueProseBudget = 12875 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
@@ -574,7 +576,7 @@ func readOnlyCommand(a []string) bool {
 		}
 		return false
 	case "ip":
-		return contains(a, "show")
+		return contains(a, "show") || (len(a) > 4 && a[2] == "route" && a[3] == "get") // path: the kernel's routing decision
 	case "nft":
 		return len(a) > 1 && (a[1] == "list" || (a[1] == "get" && len(a) > 2 && a[2] == "element")) // get element: the banIP query
 	case "fw4":
@@ -601,6 +603,8 @@ func readOnlyCommand(a []string) bool {
 		return len(a) > 1 && a[1] == "version"
 	case "tc": // the sqm adapter reads qdisc statistics
 		return len(a) > 3 && a[1] == "-s" && a[2] == "qdisc" && a[3] == "show"
+	case "unbound-control": // the unbound adapter reads cache statistics
+		return len(a) == 2 && a[1] == "stats_noreset"
 	}
 	return false
 }
