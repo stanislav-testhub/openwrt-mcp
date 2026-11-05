@@ -285,3 +285,32 @@ func TestUsageRefusesOutputItDoesNotUnderstand(t *testing.T) {
 		t.Error("garbage was accepted")
 	}
 }
+
+// One client's totals by layer7 protocol. Column names are nlbwmon's own (client.c in jow-/nlbwmon:
+// family, mac, ip, layer7, conns, rx_bytes, rx_pkts, tx_bytes, tx_pkts); the numbers are made up.
+const nlbwLayer7JSON = `{"columns":["mac","ip","layer7","conns","rx_bytes","rx_pkts","tx_bytes","tx_pkts"],"data":[
+ ["00:00:5e:00:53:01","192.0.2.10","https",80,8000000,8000,1000000,2000],
+ ["00:00:5e:00:53:01","192.0.2.10","dns",20,10000,100,5000,100],
+ ["00:00:5e:00:53:01","192.0.2.10","",5,500000,500,100000,300],
+ ["00:00:5e:00:53:02","192.0.2.20","https",5,300000,100,100000,100]]}`
+
+func TestUsageOfOneClientIsBrokenDownByProtocol(t *testing.T) {
+	f, _ := usageFixture(t)
+	f.on("nlbw -c json -g mac,ip,layer7", nlbwLayer7JSON)
+	for _, src := range []string{"192.0.2.10", "00:00:5E:00:53:01"} {
+		out, _, err := netDiag(context.Background(), netDiagIn{Action: "usage", Src: src})
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantAll(t, out, "(phone, 00:00:5e:00:53:01)", "https", "dns", "other")
+		if strings.Index(out, "https") > strings.Index(out, "dns") {
+			t.Errorf("protocols are not ordered by volume:\n%s", out)
+		}
+		mustNotContain(t, out, "192.0.2.20", "300000")
+	}
+	out, _, _ := netDiag(context.Background(), netDiagIn{Action: "usage", Src: "192.0.2.99"})
+	wantAll(t, out, "no traffic for 192.0.2.99")
+	if _, _, err := netDiag(context.Background(), netDiagIn{Action: "usage", Src: "not-a-client"}); err == nil {
+		t.Error("a bad src was accepted")
+	}
+}

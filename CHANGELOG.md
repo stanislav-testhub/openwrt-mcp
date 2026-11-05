@@ -16,6 +16,7 @@ Added
   - `net_diag action=path` names the nftables rules that write a mark and can catch the given client: its address, the target and the incoming
     interface are evaluated against each rule, a rule in a chain reached by `jump` or `goto` takes its callers' verdict, and named sets are
     asked with `nft get element`. Ports, protocols and connection state are not evaluated; mwan3's marks stay hidden by iptables-nft.
+  - `net_diag action=usage src=<client IP or MAC>` breaks one client's nlbwmon totals down by layer7 protocol (share, RX, TX; the ten largest). Column names checked against nlbwmon's source; not run against a real nlbwmon database (the VM has no space for the package, and the router wrapper refuses `nlbw`).
   - Two more wave 2 doctor findings: `dns-resolver-bypassed` (stubby or smartdns enabled while dnsmasq forwards nothing to its port; skipped when unbound fronts the path, smartdns redirects port 53 itself or listens on 53) and `watchcat-short-reboot` (a `ping_reboot` rule with a period under 5 minutes).
   - `net_diag action=throughput` and `action=capture` were run for the first time against real iperf3 and tcpdump 4.99 (25.12.6 VM, through the stdio bridge). One bug: DNS replies were counted as "other" in the capture summary; now they count as DNS.
   - `net_diag action=dns_path` names the process behind a dnsmasq upstream no add-on claims (from /proc), which covers the DNS port of

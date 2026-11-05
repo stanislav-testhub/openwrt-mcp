@@ -902,7 +902,7 @@ wave: `query` for adblock, mwan3, pbr, verbs for ddns/pbr/UPnP, the exposure vie
 
 ### 9.5 Wave 3 (v1.9): Wi-Fi, clients and the home server
 
-**Status (unreleased):** first batch built and fixture-tested: samba4, ksmbd, transmission, aria2, minidlna, mosquitto, tor, acme, nut-monitor, with findings smb-guest-writable, rpc-open, mosquitto-anonymous, acme-expiring. Second batch built: wifischedule, vnstat, hd-idle, keepalived, lldpd, nlbwmon (finding stats-db-in-ram). usteer, DAWN and openNDS are built (idle state only on a VM; see CHANGELOG). Not built: the extended `net_diag action=usage`. The five prompts (3.8) are built.
+**Status (unreleased):** first batch built and fixture-tested: samba4, ksmbd, transmission, aria2, minidlna, mosquitto, tor, acme, nut-monitor, with findings smb-guest-writable, rpc-open, mosquitto-anonymous, acme-expiring. Second batch built: wifischedule, vnstat, hd-idle, keepalived, lldpd, nlbwmon (finding stats-db-in-ram). usteer, DAWN and openNDS are built (idle state only on a VM; see CHANGELOG). Extended `net_diag action=usage src=<client>` (per-protocol breakdown) is built and fixture-tested against nlbwmon's documented columns, not a real database. The five prompts (3.8) are built.
 
 - **Ships.** usteer, DAWN, wifischedule, openNDS, nlbwmon (extending `net_diag action=usage`), vnStat, lldpd, Samba
   and ksmbd, Transmission, MiniDLNA, aria2, hd-idle, NUT, acme, Mosquitto, keepalived and Tor.

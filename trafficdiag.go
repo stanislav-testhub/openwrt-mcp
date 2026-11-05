@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"regexp"
 	"sort"
@@ -492,3 +493,117 @@ func nlbwUsage(ctx context.Context, period string) (string, string, error) {
 	}
 	return strings.TrimRight(b.String(), "\n"), "nlbwmon usage", nil
 }
+
+// nlbwClientUsage breaks one client's nlbwmon totals down by layer7 protocol (the port names in
+// nlbwmon's protocol file; everything else is "other"). src is an IP or a MAC address.
+func nlbwClientUsage(ctx context.Context, period, src string) (string, string, error) {
+	if period != "" && !reNlbwPeriod.MatchString(period) {
+		return "", "", invalid("a period is a date such as 2026-10-01, one of those listed under 'periods available'")
+	}
+	src = strings.ToLower(strings.TrimSpace(src))
+	isMAC := reUsageMAC.MatchString(src)
+	if ip := net.ParseIP(src); !isMAC && ip == nil {
+		return "", "", invalid("usage src must be a client IP or MAC address")
+	} else if ip != nil {
+		src = ip.String()
+	}
+	if _, err := os.Stat(sysPath("/usr/sbin/nlbw")); err != nil {
+		return "", "", notFound("nlbwmon is not installed: install it with pkg_change action=add packages=nlbwmon, let it run for a while, then ask again")
+	}
+	argv := []string{"nlbw", "-c", "json", "-g", "mac,ip,layer7"}
+	if period != "" {
+		argv = append(argv, "-t", period)
+	}
+	out, err := run(ctx, 30*time.Second, argv...)
+	if err != nil {
+		return out, "", fmt.Errorf("nlbw: %w", err)
+	}
+	var doc struct {
+		Columns []string            `json:"columns"`
+		Data    [][]json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal([]byte(out), &doc); err != nil {
+		return "", "", fmt.Errorf("unexpected nlbw output: %w", err)
+	}
+	col := map[string]int{}
+	for i, c := range doc.Columns {
+		col[c] = i
+	}
+	for _, need := range []string{"mac", "ip", "layer7", "rx_bytes", "tx_bytes"} {
+		if _, ok := col[need]; !ok {
+			return "", "", fmt.Errorf("unexpected nlbw output: no %s column", need)
+		}
+	}
+	str := func(raw json.RawMessage) string {
+		var s string
+		_ = json.Unmarshal(raw, &s)
+		return s
+	}
+	num := func(raw json.RawMessage) int64 {
+		var f float64
+		_ = json.Unmarshal(raw, &f)
+		return int64(f)
+	}
+	type proto struct{ rx, tx int64 }
+	by := map[string]*proto{}
+	var rx, tx int64
+	mac := ""
+	for _, r := range doc.Data {
+		if len(r) < len(doc.Columns) {
+			continue
+		}
+		m, ip := strings.ToLower(str(r[col["mac"]])), str(r[col["ip"]])
+		if (isMAC && m != src) || (!isMAC && ip != src) {
+			continue
+		}
+		mac = m
+		name := sanitizeText(clip(str(r[col["layer7"]]), 24))
+		if name == "" {
+			name = "other"
+		}
+		p := by[name]
+		if p == nil {
+			p = &proto{}
+			by[name] = p
+		}
+		p.rx += num(r[col["rx_bytes"]])
+		p.tx += num(r[col["tx_bytes"]])
+		rx += num(r[col["rx_bytes"]])
+		tx += num(r[col["tx_bytes"]])
+	}
+	label := orDefault(period, "current")
+	if len(by) == 0 {
+		return fmt.Sprintf("nlbwmon has no traffic for %s in accounting period %s", src, label), "nlbwmon usage " + src, nil
+	}
+	names := make([]string, 0, len(by))
+	for n := range by {
+		names = append(names, n)
+	}
+	sort.Slice(names, func(i, j int) bool {
+		a, b := by[names[i]], by[names[j]]
+		if a.rx+a.tx != b.rx+b.tx {
+			return a.rx+a.tx > b.rx+b.tx
+		}
+		return names[i] < names[j]
+	})
+	_, byName := leaseNames()
+	var b strings.Builder
+	fmt.Fprintf(&b, "nlbwmon usage of %s (%s, %s), accounting period %s: RX %s, TX %s\n", src, orDefault(byName[mac], "unnamed"), mac, label, humanBytes(rx), humanBytes(tx))
+	fmt.Fprintf(&b, "%-24s %9s %9s %6s\n", "PROTOCOL", "RX", "TX", "SHARE")
+	total := rx + tx
+	for i, n := range names {
+		if i == 10 {
+			b.WriteString(truncNotice(fmt.Sprintf("%d more protocols omitted", len(names)-10), "only the largest 10 are listed"))
+			break
+		}
+		p := by[n]
+		share := 0
+		if total > 0 {
+			share = int((p.rx + p.tx) * 100 / total)
+		}
+		fmt.Fprintf(&b, "%-24s %9s %9s %5d%%\n", n, humanBytes(p.rx), humanBytes(p.tx), share)
+	}
+	return strings.TrimRight(b.String(), "\n"), "nlbwmon usage " + src, nil
+}
+
+var reUsageMAC = regexp.MustCompile(`^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`)
