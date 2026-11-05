@@ -448,3 +448,93 @@ func checkStatsDBInRAM(sn *snapshot) ([]finding, error) {
 		"the nlbwmon traffic database is in RAM: the history is lost on every reboot",
 		"nlbwmon database_directory "+clip(nlbwDir(t), 60))}, nil
 }
+
+// ---------------------------------------------------------------- wave 1 leftovers
+
+func init() {
+	for id, h := range map[string]findingHint{
+		"adblock-broken": {"service_list detail=adblock (or adblock-fast) shows the last run and its codes; logread with pattern=adblock for the download error", ""},
+		"banip-no-wan":   {"service_list detail=banip shows the detected WAN interfaces; set ban_ifv4 or ban_dev with uci_apply (dry_run first)", ""},
+		"hdp-bypassed":   {"service_list detail=https-dns-proxy shows the instance ports and dnsmasq's upstreams; net_diag action=dns_path shows the whole path", ""},
+		"pbr-errors":     {"service_list detail=pbr shows the error codes; logread with pattern=pbr for the line that names the policy", ""},
+	} {
+		findingHints[id] = h
+	}
+}
+
+func enabledAtBoot(sn *snapshot, name string) bool {
+	rc, err := sn.getRC()
+	if err != nil {
+		return false
+	}
+	e, ok := rc[name]
+	return ok && e.Enabled
+}
+
+func checkAdblockBroken(sn *snapshot) ([]finding, error) {
+	var out []finding
+	if addonInstalled("adblock") && enabledAtBoot(sn, "adblock") {
+		if m, err := readRuntime(adblockRuntime); err == nil {
+			if st := m.str("adblock_status"); st == "error" || st == "paused" {
+				out = append(out, newFinding("adblock-broken", sevMedium, "adblock is "+st+": nothing is being filtered", "adblock_status "+st))
+			}
+		}
+	}
+	if addonInstalled("adblock-fast") && enabledAtBoot(sn, "adblock-fast") {
+		if found, _, data := procdData(sn.ctx, "adblock-fast"); found {
+			if codes := dataCodes(data, "errors"); len(codes) > 0 {
+				out = append(out, newFinding("adblock-broken", sevMedium, "adblock-fast reports errors, so its lists may not be loaded", "error codes: "+strings.Join(codes, ", ")))
+			}
+		}
+	}
+	return out, nil
+}
+
+func checkBanIPNoWAN(sn *snapshot) ([]finding, error) {
+	if !addonInstalled("banip") || !enabledAtBoot(sn, "banip") {
+		return nil, nil
+	}
+	m, err := readRuntime(banipRuntime)
+	if err != nil || m.str("status") == "" || len(m.list("wan_interfaces")) > 0 {
+		return nil, nil
+	}
+	return []finding{newFinding("banip-no-wan", sevMedium, "banIP found no WAN interface, so it protects nothing", "banIP runtime: status "+m.str("status")+", wan_interfaces empty")}, nil
+}
+
+func checkHTTPSDNSProxy(sn *snapshot) ([]finding, error) {
+	if !addonInstalled("https-dns-proxy") || !enabledAtBoot(sn, "https-dns-proxy") {
+		return nil, nil
+	}
+	t, err := sn.getUCI("https-dns-proxy")
+	if err != nil {
+		return nil, err
+	}
+	ports := map[string]bool{}
+	secs := t.sectionsOfType("https-dns-proxy")
+	for _, s := range secs {
+		if p := t.get(s, "listen_port"); p != "" {
+			ports[p] = true
+		}
+	}
+	if len(secs) == 0 || t.get("config", "dnsmasq_config_update") != "-" {
+		return nil, nil // the init script keeps dnsmasq pointed at the instances
+	}
+	if line := httpsDNSDnsmasq(dnsmasqServers(sn.ctx), ports, len(secs)); strings.Contains(line, "bypasses") {
+		return []finding{newFinding("hdp-bypassed", sevMedium, "https-dns-proxy is running but dnsmasq does not use it: DNS goes out unencrypted", clip(line, 200))}, nil
+	}
+	return nil, nil
+}
+
+func checkPBRErrors(sn *snapshot) ([]finding, error) {
+	if !addonInstalled("pbr") || !enabledAtBoot(sn, "pbr") {
+		return nil, nil
+	}
+	found, _, data := procdData(sn.ctx, "pbr")
+	if !found {
+		return nil, nil
+	}
+	if codes := dataCodes(data, "errors"); len(codes) > 0 {
+		return []finding{newFinding("pbr-errors", sevMedium, "pbr reports errors: some policies are not in force", "error codes: "+strings.Join(codes, ", "))}, nil
+	}
+	return nil, nil
+}

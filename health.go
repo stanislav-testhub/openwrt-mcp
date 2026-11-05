@@ -153,6 +153,10 @@ func healthFindings(ctx context.Context) *findingsRun {
 		{"unbound-port", checkUnboundPort},
 		{"dns-blockers", checkDNSBlockers},
 		{"acme", checkACME},
+		{"adblock", checkAdblockBroken},
+		{"banip-wan", checkBanIPNoWAN},
+		{"https-dns-proxy", checkHTTPSDNSProxy},
+		{"pbr", checkPBRErrors},
 		{"stats-db", checkStatsDBInRAM},
 	})
 }

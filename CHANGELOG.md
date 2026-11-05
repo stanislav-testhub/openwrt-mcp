@@ -3,6 +3,9 @@
 ## Unreleased
 
 Added
+- **Doctor findings for the wave 1 add-ons left over:** `adblock-broken` (adblock error or paused, adblock-fast error codes),
+  `banip-no-wan`, `hdp-bypassed` (https-dns-proxy running while its dnsmasq management is off and no forwarder points at it) and
+  `pbr-errors`. Only for installed, boot-enabled add-ons.
 - **Wave 4, best effort (ROADMAP 9.6):** status-only adapters for `openclash`, `zapret`, `v2raya`, `passwall`, `passwall2`, `nikki`,
   `youtubeUnblock` and `homeproxy` (podkop shipped in 1.5). Running processes, whether the stack's nft table is loaded, a few
   fixed config flags and node or subscription counts. Node names, links, subscription URLs and secrets are never read into the

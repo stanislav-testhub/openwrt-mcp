@@ -153,3 +153,31 @@ func TestDoctorFlagsTwoDNSBlockers(t *testing.T) {
 		t.Error("one enabled blocker flagged")
 	}
 }
+
+func TestDoctorFlagsBrokenFilteringAndRouting(t *testing.T) {
+	f, root := wave1Router(t)
+	for _, n := range []string{"adblock", "adblock-fast", "banip", "https-dns-proxy", "pbr"} {
+		installAddonConfig(t, root, n)
+	}
+	writeFixture(t, root, "var/run/adblock/adblock.runtime.json", `{"adblock_status":"error"}`)
+	writeFixture(t, root, "var/run/banIP/banIP.runtime.json", `{"status":"enabled","wan_interfaces":[]}`)
+	f.on("ubus call service list", `{"adblock-fast":{"instances":{"i":{"running":true,"data":{"errors":[{"code":"errorDownloadingList"}]}}}},"pbr":{"instances":{"i":{"running":true,"data":{"errors":[{"code":"errorNoGateway"}]}}}}}`)
+	f.on("uci -q show https-dns-proxy", "https-dns-proxy.config=main\nhttps-dns-proxy.config.dnsmasq_config_update='-'\nhttps-dns-proxy.a=https-dns-proxy\nhttps-dns-proxy.a.listen_port='5053'\n")
+	f.on("uci -q get dhcp.@dnsmasq[0].server", "9.9.9.9\n")
+	r := healthFindings(context.Background())
+	for _, id := range []string{"adblock-broken", "banip-no-wan", "hdp-bypassed", "pbr-errors"} {
+		if r.byID(id) == nil {
+			t.Errorf("%s not flagged", id)
+		}
+	}
+	writeFixture(t, root, "var/run/adblock/adblock.runtime.json", `{"adblock_status":"enabled"}`)
+	f.on("ubus call service list", `{"adblock-fast":{"instances":{"i":{"running":true,"data":{"errors":[]}}}},"pbr":{"instances":{"i":{"running":true,"data":{"errors":[]}}}}}`)
+	writeFixture(t, root, "var/run/banIP/banIP.runtime.json", `{"status":"enabled","wan_interfaces":["wan"]}`)
+	f.on("uci -q get dhcp.@dnsmasq[0].server", "127.0.0.1#5053\n")
+	r = healthFindings(context.Background())
+	for _, id := range []string{"adblock-broken", "banip-no-wan", "hdp-bypassed", "pbr-errors"} {
+		if r.byID(id) != nil {
+			t.Errorf("%s flagged on a healthy setup", id)
+		}
+	}
+}
