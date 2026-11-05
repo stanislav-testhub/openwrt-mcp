@@ -233,6 +233,13 @@ func checkServices(sn *snapshot) ([]finding, error) {
 		if len(svc.Instances) == 0 || !rc[name].Enabled {
 			continue
 		}
+		if name == "banip" {
+			// banIP 1.9 is enabled at boot, registers an instance and exits 1 with "banIP is disabled"
+			// until ban_enabled is set; that is its off switch, not a crash (seen on 25.12.6).
+			if t, err := sn.getUCI("banip"); err == nil && !uciFlag(t.get("global", "ban_enabled"), false) {
+				continue
+			}
+		}
 		running, failed := false, -1
 		for _, inst := range svc.Instances {
 			if inst.Running {

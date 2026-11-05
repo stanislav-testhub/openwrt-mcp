@@ -79,10 +79,19 @@ Added
     swanctl, travelmate, vnstat, watchcat, wifischedule; openvpn, smartdns, tor, transmission, unbound, zerotier; frpc, frps, nextdns,
     tailscale (NeedsLogin), cloudflared, netbird. All answer with plausible, readable status; the one thing found: collectd without
     luci-app-statistics said "luci_statistics config unreadable", now it says the config is absent and collectd uses `/etc/collectd.conf`.
+  - Fifth pass, **OpenWrt 25.12.6 (apk)** on the `openwrt-2512` VM (fixed to boot with the same OVMF pflash change as 2410): wave 1 and the
+    wave 2/3 batch above installed with apk and run. banIP 1.9.1 and adblock-fast ran for real. What it found:
+    - banIP 1.9 is enabled at boot, registers a procd instance and exits 1 with "banIP is disabled" until `ban_enabled` is set: the doctor
+      reported `service-crashed` (medium) for it. It no longer does while `ban_enabled` is off.
+    - banIP 1.9 keeps its version in `backend_ver` (`frontend_ver` is empty): the status line shows it.
+    - adblock-fast on 25.12 ships all 16 list sources with `enabled=0`; a first start fails with `errorNothingToDo`. The adapter said
+      "16 list sources configured"; it now says how many are enabled and that none means nothing to download.
+    - Confirmed unchanged on apk: the banIP runtime path (`/var/run/banIP/banIP.runtime.json`), `query` and `unban`, mwan3, pbr, ddns,
+      https-dns-proxy, UPnP, sqm and the 17 wave 2/3 adapters above; the audit and doctor read `apk` correctly (`apk-new`).
   Not verified: adblock (classic) after a run, a pbr policy that routes traffic, a UPnP mapping, a ddns update, the states that need a
     peer or a login (a connected tailscale, netbird, zerotier, openvpn, strongSwan, frp, a Wi-Fi uplink for travelmate), samba4 (did not
     fit on the VM), nut, the wave 4 proxies (homeproxy, nikki, openclash, passwall, podkop, zapret, youtubeUnblock: not in the official
-    feed), 25.12 (apk).
+    feed), the GL-MT6000.
 - **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
   same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
   names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a

@@ -1,0 +1,4 @@
+# banip 1.9.1 on 25.12.6, active (feeds doh and tor)
+ubus call service list '{"name":"banip"}'
+uci -q show banip
+cat /var/run/banIP/banIP.runtime.json

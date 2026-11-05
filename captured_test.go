@@ -91,3 +91,22 @@ func TestAdblockFastOnItsRealServiceDataAfterARun(t *testing.T) {
 	wantAll(t, got, "status: blocking", "is blocking 239581 domains", "warnings: warningMissingRecommendedPackages")
 	mustNotContain(t, got, "https://", "failed")
 }
+
+// OpenWrt 25.12.6 (x86 VM, apk): banip 1.9.1-r5 and adblock-fast 1.2.4-r4. banIP 1.9 keeps its
+// version in backend_ver; adblock-fast ships every list source disabled on 25.12, so a fresh start
+// fails with errorNothingToDo.
+func TestBanIPOnItsReal25RuntimeFile(t *testing.T) {
+	_, root := wave1Router(t)
+	writeFixture(t, root, "var/run/banIP/banIP.runtime.json", captured(t, "banip-2512", "03.txt"))
+	got := strings.Join(detail(t, "banip"), "\n")
+	wantAll(t, got, "status: active, banip 1.9.1-r5", "elements: 2 230 (chains: 7, sets: 10, rules: 38)", "doh.v4", "wan interfaces: wan")
+	mustNotContain(t, got, "NOTE: status is", "WARNING")
+}
+
+func TestAdblockFastOnItsReal25ServiceDataWithNothingEnabled(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on(`ubus call service list {"name":"adblock-fast"}`, captured(t, "adblock-fast-2512", "01.txt"))
+	f.on("uci -q show adblock-fast", captured(t, "adblock-fast-2512", "02.txt"))
+	got := strings.Join(detail(t, "adblock-fast"), "\n")
+	wantAll(t, got, "status: failed", "errors: errorNothingToDo, errorOhSnap", "16 list sources configured, none enabled, so there is nothing to download")
+}

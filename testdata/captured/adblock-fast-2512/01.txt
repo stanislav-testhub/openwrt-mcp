@@ -1,0 +1,151 @@
+# ubus call service list '{"name":"adblock-fast"}'
+{
+	"adblock-fast": {
+		"data": {
+			"dns": "dnsmasq.servers",
+			"entries": 0,
+			"errors": [
+				{
+					"code": "errorNothingToDo",
+					"info": ""
+				},
+				{
+					"code": "errorOhSnap",
+					"info": ""
+				}
+			],
+			"file_url": [
+				{
+					"name": "Hagezi - Pro",
+					"url": "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/wildcard/pro-onlydomains.txt",
+					"size": "3476485"
+				},
+				{
+					"name": "AdguardTeam - CNAME Trackers",
+					"url": "https://raw.githubusercontent.com/AdguardTeam/cname-trackers/master/data/combined_disguised_trackers_justdomains.txt",
+					"size": "6241707"
+				},
+				{
+					"name": "OISD - Big",
+					"url": "https://big.oisd.nl/",
+					"size": "6163363"
+				},
+				{
+					"name": "StevenBlack - Unified hosts",
+					"url": "https://cdn.jsdelivr.net/gh/StevenBlack/hosts/hosts",
+					"size": "4790642"
+				},
+				{
+					"name": "1Hosts - Lite",
+					"url": "https://o0.pages.dev/Lite/domains.txt",
+					"size": "2786010"
+				},
+				{
+					"name": "Bongochong - Combined Privacy Block Lists (TLD Optimized)",
+					"url": "https://cdn.jsdelivr.net/gh/bongochong/CombinedPrivacyBlockLists/NoFormatting/cpbl-ctld.txt",
+					"size": "2608152"
+				},
+				{
+					"name": "CERT Polska - Dangerous Websites",
+					"url": "https://hole.cert.pl/domains/v2/domains.txt",
+					"size": "731479"
+				},
+				{
+					"name": "Kboghdady - YouTube Ads DNS",
+					"url": "https://cdn.jsdelivr.net/gh/kboghdady/youTube_ads_4_pi-hole/black.list",
+					"size": "553006"
+				},
+				{
+					"name": "AdguardTeam - CNAME Clickthroughs",
+					"url": "https://raw.githubusercontent.com/AdguardTeam/cname-trackers/master/data/combined_disguised_clickthroughs_justdomains.txt",
+					"size": "362170"
+				},
+				{
+					"name": "SomeoneWhoCares - Hosts",
+					"url": "https://someonewhocares.org/hosts/hosts",
+					"size": "347410"
+				},
+				{
+					"name": "WinHelp2002 MVPS - Hosts",
+					"url": "https://winhelp2002.mvps.org/hosts.txt",
+					"size": "334861"
+				},
+				{
+					"name": "AdAway - Hosts",
+					"url": "https://adaway.org/hosts.txt",
+					"size": "243454"
+				},
+				{
+					"name": "AdguardTeam - CNAME Ads",
+					"url": "https://raw.githubusercontent.com/AdguardTeam/cname-trackers/master/data/combined_disguised_ads_justdomains.txt",
+					"size": "222595"
+				},
+				{
+					"name": "AdguardTeam - CNAME Microsites",
+					"url": "https://raw.githubusercontent.com/AdguardTeam/cname-trackers/master/data/combined_disguised_microsites_justdomains.txt",
+					"size": "123275"
+				},
+				{
+					"name": "Yoyo.org - Hosts",
+					"url": "https://pgl.yoyo.org/as/serverlist.php?hostformat=hosts&showintro=1&mimetype=plaintext",
+					"size": "99588"
+				},
+				{
+					"name": "Hoshsadiq - NoCoin Adblock List",
+					"url": "https://cdn.jsdelivr.net/gh/hoshsadiq/adblock-nocoin-list/hosts.txt",
+					"size": "11149"
+				}
+			],
+			"firewall": [
+				{
+					"type": "rule",
+					"src": "lan",
+					"dest": "*",
+					"proto": "tcp udp",
+					"dest_port": "53",
+					"target": "REJECT"
+				},
+				{
+					"type": "rule",
+					"src": "lan",
+					"dest": "*",
+					"proto": "tcp udp",
+					"dest_port": "853",
+					"target": "REJECT"
+				}
+			],
+			"force_dns_active": true,
+			"force_dns_ports": [
+				"53 853"
+			],
+			"message": "",
+			"outputCache": "/var/run/adblock-fast/dnsmasq.servers.cache",
+			"outputFile": "/var/run/adblock-fast/dnsmasq.servers",
+			"outputGzip": "",
+			"packageCompat": 17,
+			"platform": {
+				"ipset_installed": true,
+				"nft_installed": true,
+				"dnsmasq_installed": true,
+				"dnsmasq_ipset_support": false,
+				"dnsmasq_nftset_support": false,
+				"smartdns_installed": false,
+				"smartdns_ipset_support": false,
+				"smartdns_nftset_support": false,
+				"unbound_installed": false,
+				"leds": [
+					
+				]
+			},
+			"stats": "",
+			"status": "statusFail",
+			"version": "1.2.4-r4",
+			"warnings": [
+				{
+					"code": "warningMissingRecommendedPackages",
+					"info": "grep, sed, coreutils-sort"
+				}
+			]
+		}
+	}
+}

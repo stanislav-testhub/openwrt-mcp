@@ -398,3 +398,22 @@ func TestDoctorAndAuditAreSeparatelyGrantable(t *testing.T) {
 		t.Errorf("a bad mode is a VALIDATION error:\n%s", out)
 	}
 }
+
+// banIP 1.9 on 25.12.6: enabled at boot, registers an instance and exits 1 with "banIP is disabled"
+// until ban_enabled is set. That is its off switch, not a crash.
+func TestDoctorDoesNotCallADisabledBanIPCrashed(t *testing.T) {
+	for _, c := range []struct {
+		enabled string
+		want    bool
+	}{{"0", false}, {"1", true}} {
+		d := newDocFixture()
+		d.procd = `{"banip":{"instances":{"banip-service":{"running":false,"exit_code":1}}}}`
+		d.rc = `{"banip":{"start":95,"stop":0,"enabled":true,"running":false}}`
+		f := d.install(t)
+		f.on("uci -q show banip", "banip.global=banip\nbanip.global.ban_enabled='"+c.enabled+"'\n")
+		r := healthFindings(context.Background())
+		if got := r.byID("service-crashed") != nil; got != c.want {
+			t.Errorf("ban_enabled=%s: service-crashed=%v, want %v (%s)", c.enabled, got, c.want, findingIDs(r))
+		}
+	}
+}

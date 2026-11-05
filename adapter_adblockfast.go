@@ -39,7 +39,7 @@ func readAdblockFast(ctx context.Context) string {
 		}
 		lines = append(lines, "status: "+text)
 	} else if found && len(data) == 0 {
-		lines = append(lines, "no status yet: adblock-fast has not run since boot (checked on a 24.10 VM, where a never-started service has empty data)")
+		lines = append(lines, "no status yet: adblock-fast has not run since boot")
 	} else if found {
 		lines = append(lines, "output not recognised: no status in the service data")
 	}
@@ -60,9 +60,19 @@ func readAdblockFast(ctx context.Context) string {
 
 func adblockFastConfig(t *uciTree) string {
 	urls := len(t.sectionsOfType("file_url"))
+	enabledURLs := 0
+	for _, sec := range t.sectionsOfType("file_url") {
+		if uciFlag(t.get(sec, "enabled"), true) {
+			enabledURLs++
+		}
+	}
 	on := uciFlag(t.get("config", "enabled"), false)
 	parts := []string{"config: " + pick(on, "enabled", "disabled"), "dns " + pick(t.get("config", "dns") != "", clip(t.get("config", "dns"), 30), "dnsmasq.servers"),
 		fmt.Sprintf("%s configured", plural(urls, "list source"))}
+	if enabledURLs != urls {
+		// 25.12 ships every list source with enabled=0, so a fresh install has nothing to download.
+		parts = append(parts, pick(enabledURLs == 0, "none enabled, so there is nothing to download", fmt.Sprintf("%d enabled", enabledURLs)))
+	}
 	if uciFlag(t.get("config", "force_dns"), false) {
 		parts = append(parts, "force DNS on")
 	}

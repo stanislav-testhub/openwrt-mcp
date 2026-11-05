@@ -1,0 +1,3 @@
+# adblock-fast 1.2.4 on 25.12.6 as installed and started once: every list source is disabled
+ubus call service list '{"name":"adblock-fast"}'
+uci -q show adblock-fast

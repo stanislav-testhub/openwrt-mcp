@@ -85,7 +85,7 @@ func readFilterRuntime(ctx context.Context, name, file, statusKey, countKey, cou
 		return strings.Join(append(lines, "output not recognised: no "+statusKey+" in the runtime file ("+name+" "+m.str("frontend_ver")+")"), "\n")
 	}
 	head := "status: " + status
-	if v := firstOf(m.str("frontend_ver"), m.str("version")); v != "" { // banIP 1.5 says "version"
+	if v := firstOf(m.str("frontend_ver"), m.str("version"), m.str("backend_ver")); v != "" { // banIP 1.5 says "version", 1.9 keeps "backend_ver"
 		head += ", " + name + " " + v
 	}
 	lines = append(lines, head)
