@@ -193,3 +193,99 @@ func checkMwan3(sn *snapshot) ([]finding, error) {
 	}
 	return out, nil
 }
+
+// ---------------------------------------------------------------- wave 2
+
+func init() {
+	for id, h := range map[string]findingHint{
+		"sqm-qosify-both":    {"keep one shaper per interface: service_list detail=sqm and detail=qosify show both; turn one off with uci_apply (dry_run first)", ""},
+		"unbound-port-clash": {"move dnsmasq off port 53 (dhcp_link dnsmasq in unbound's config does it) or give unbound another listen_port, with uci_apply (dry_run first); service_list detail=unbound shows the wiring", ""},
+		"dns-two-blockers":   {"net_diag action=dns_path shows every blocker in the path; keep one and disable the other", ""},
+	} {
+		findingHints[id] = h
+	}
+}
+
+func checkSQMQosify(sn *snapshot) ([]finding, error) {
+	if !addonInstalled("sqm") || !addonInstalled("qosify") {
+		return nil, nil
+	}
+	sq, err := sn.getUCI("sqm")
+	if err != nil {
+		return nil, err
+	}
+	qo, err := sn.getUCI("qosify")
+	if err != nil {
+		return nil, err
+	}
+	shaped := map[string]bool{}
+	for _, s := range sq.sectionsOfType("queue") {
+		if uciFlag(sq.get(s, "enabled"), false) && sq.get(s, "interface") != "" {
+			shaped[sq.get(s, "interface")] = true
+		}
+	}
+	var out []finding
+	for _, s := range qo.sectionsOfType("interface") {
+		n := pick(qo.get(s, "name") != "", qo.get(s, "name"), s)
+		if !uciFlag(qo.get(s, "disabled"), false) && shaped[n] {
+			out = append(out, newFinding("sqm-qosify-both", sevMedium,
+				"sqm and qosify both shape "+clip(n, 20)+": the two queues fight over the same traffic",
+				fmt.Sprintf("sqm queue on %s enabled, qosify interface %s enabled", clip(n, 20), clip(s, 30))))
+		}
+	}
+	return out, nil
+}
+
+func checkUnboundPort(sn *snapshot) ([]finding, error) {
+	if !addonInstalled("unbound") {
+		return nil, nil
+	}
+	ub, err := sn.getUCI("unbound")
+	if err != nil {
+		return nil, err
+	}
+	rc, err := sn.getRC()
+	if err != nil {
+		return nil, err
+	}
+	if e, ok := rc["unbound"]; !ok || !e.Enabled {
+		return nil, nil
+	}
+	if p := ub.get("ub_main", "listen_port"); p != "" && p != "53" {
+		return nil, nil
+	}
+	if ub.get("ub_main", "dhcp_link") == "dnsmasq" {
+		return nil, nil
+	}
+	dh, err := sn.getUCI("dhcp")
+	if err != nil {
+		return nil, err
+	}
+	for _, s := range dh.sectionsOfType("dnsmasq") {
+		if p := dh.get(s, "port"); p == "" || p == "53" {
+			return []finding{newFinding("unbound-port-clash", sevHigh,
+				"unbound and dnsmasq both want port 53; one of them will fail to start",
+				fmt.Sprintf("unbound listen_port 53, dhcp_link %s, dnsmasq port %s", pick(ub.get("ub_main", "dhcp_link") != "", clip(ub.get("ub_main", "dhcp_link"), 20), "none"), pick(p != "", p, "53 (default)")))}, nil
+		}
+	}
+	return nil, nil
+}
+
+func checkDNSBlockers(sn *snapshot) ([]finding, error) {
+	rc, err := sn.getRC()
+	if err != nil {
+		return nil, err
+	}
+	var on []string
+	for _, b := range []string{"adblock", "adblock-fast", "simple-adblock"} {
+		if e, ok := rc[b]; ok && e.Enabled {
+			on = append(on, b)
+		}
+	}
+	if len(on) < 2 {
+		return nil, nil
+	}
+	return []finding{newFinding("dns-two-blockers", sevMedium,
+		"more than one DNS blocker is enabled at boot: they rewrite the same dnsmasq files",
+		strings.Join(on, ", ")+" enabled")}, nil
+}

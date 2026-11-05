@@ -402,8 +402,10 @@ and description limits in step with the code, so a release bumps both together.
 ### 3.11 Measured token cost
 
 **Status: half done.** `bench/cost.sh` measures calls and bytes sent and received for three tasks, openwrt-mcp against
-raw ssh, on a disposable OpenWrt (results in the README, *Verified*). Tokens are not measured: that needs a tokenizer or a
-live model run (`ANTHROPIC_API_KEY`), and the figure must not be estimated.
+raw ssh, on a disposable OpenWrt (results in the README, *Verified*). `bench/select_eval.py` measures, with DeepSeek
+(`deepseek-flash`), how many prompt tokens a catalogue costs and whether the model still picks the right tool: the 1.3.0
+trim kept the choice (74 of 87 before, 78 after). Still open: the same figures with a Claude model and its tokenizer
+(`ANTHROPIC_API_KEY`), and the private `tests/mcp_eval` run. The figure must not be estimated.
 
 - **Ships.** A reproducible task set: "who is on my Wi-Fi", "why is the WAN down", "add and remove a static
   lease". It measures tokens and calls through openwrt-mcp against the same task done with raw SSH and shell
@@ -884,7 +886,7 @@ wave: `query` for adblock, mwan3, pbr, the verb layer, findings for adblock, ban
 
 ### 9.4 Wave 2 (v1.8): resolvers, QoS, VPN and remote access
 
-**Status (unreleased):** unbound, stubby and smartdns L1 adapters, `net_diag action=dns_path` and `action=path` (neighbour, unmarked route, mark map with overlap warning, pbr hits) are built and fixture-tested. Also built: watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird (L1). Not built yet: strongSwan, cloudflared, frp, wave 2 findings, luci-app-statistics, irqbalance finding; the path view does not simulate nftables marking (mwan3, tailscale, podkop).
+**Status (unreleased):** unbound, stubby and smartdns L1 adapters, `net_diag action=dns_path` and `action=path` (neighbour, unmarked route, mark map with overlap warning, pbr hits) are built and fixture-tested. Also built: watchcat, openvpn, nextdns, qosify, travelmate, zerotier, netbird (L1). Findings built: sqm-qosify-both, unbound-port-clash, dns-two-blockers. Not built yet: strongSwan, cloudflared, frp, the other wave 2 findings, luci-app-statistics, irqbalance finding; the path view does not simulate nftables marking (mwan3, tailscale, podkop).
 
 - **Ships.** unbound, stubby, smartdns, nextdns, qosify, watchcat, travelmate, OpenVPN, ZeroTier, NetBird,
   strongSwan, cloudflared and frp; luci-app-statistics (collectd), which absorbs 7.5; an irqbalance doctor finding.

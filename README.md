@@ -659,7 +659,7 @@ add/list/remove against a captured 25.12 config, client join, log filtering, apk
 `.apk-new` resolution with rollback, preset contents, scope glob semantics.
 
 **Measured cost** (`sh bench/cost.sh`, OpenWrt 24.10.8 in a virtual machine, 2026-11-04; calls, and bytes sent and received,
-not tokens, which need a tokenizer or a live model and are not estimated here). The same three tasks through openwrt-mcp
+not tokens; tokens are in the next paragraph). The same three tasks through openwrt-mcp
 and through raw `ssh` shell commands:
 
 | Task | openwrt-mcp | Raw ssh |
@@ -672,6 +672,22 @@ On these tasks openwrt-mcp is **not** cheaper in bytes: the tool catalogue alone
 lease task costs more because it dry-runs, arms a rollback and confirms. What the bytes buy is the policy check,
 redaction, the audit record and the automatic rollback, none of which a raw shell has. The WAN task is dominated by
 `logread mode=summary` over a log that holds a whole boot; it is the largest single reply and a candidate for trimming.
+
+**Tokens and tool choice** (`python3 bench/select_eval.py`, DeepSeek `deepseek-flash`, 2026-11-05; the figures belong to that
+model and its tokenizer, not to Claude's). Each tool catalogue was given to the model with 29 plain requests ("who is
+connected", "install lldpd", "undo the change") at temperature 0, three runs each; the check is which tool the model calls first.
+The catalogue costs about 5.2 to 5.7 thousand prompt tokens per conversation (the figure includes a 100-token system prompt and
+the question):
+
+| Catalogue | Right tool first | Prompt tokens |
+|---|---|---|
+| 1.2.0 (before the description trim) | 74 of 87 | 5616 |
+| 1.3.0 (after it) | 78 of 87 | 5231 |
+| this version | 76 of 87 | 5695 |
+
+The trim did not make the choice worse. Most misses are the same on every version and are reasonable first steps rather than
+wrong tools: with no change pending in the conversation, the model reads the state before `uci_confirm` or `uci_apply`. The
+questions are synthetic and the set is small, so a gap of a few answers is noise.
 
 **Not yet verified on hardware** (covered by the fake-router tests only): `pkg_change` with `commit`,
 the LuCI page rendering, the web-root guard on a real `/www` path or symlink, a real power cycle (the

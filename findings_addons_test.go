@@ -111,3 +111,45 @@ func TestAddonChecksAreQuietWhenTheAddonIsNotInstalled(t *testing.T) {
 		}
 	}
 }
+
+func TestDoctorFlagsSQMAndQosifyOnOneInterface(t *testing.T) {
+	f, root := wave1Router(t)
+	installAddonConfig(t, root, "sqm")
+	installAddonConfig(t, root, "qosify")
+	f.on("uci -q show sqm", "sqm.q=queue\nsqm.q.enabled='1'\nsqm.q.interface='wan'\n")
+	f.on("uci -q show qosify", "qosify.w=interface\nqosify.w.name='wan'\n")
+	if healthFindings(context.Background()).byID("sqm-qosify-both") == nil {
+		t.Error("two shapers on wan not flagged")
+	}
+	f.on("uci -q show qosify", "qosify.w=interface\nqosify.w.name='wan'\nqosify.w.disabled='1'\n")
+	if healthFindings(context.Background()).byID("sqm-qosify-both") != nil {
+		t.Error("a disabled qosify interface is flagged")
+	}
+}
+
+func TestDoctorFlagsUnboundAndDnsmasqOnPort53(t *testing.T) {
+	f, root := wave1Router(t)
+	installAddonConfig(t, root, "unbound")
+	f.on("ubus call rc list", `{"unbound":{"enabled":true,"running":false,"start":25,"stop":4}}`)
+	f.on("uci -q show unbound", "unbound.ub_main=unbound\n")
+	f.on("uci -q show dhcp", "dhcp.@dnsmasq[0]=dnsmasq\n")
+	if healthFindings(context.Background()).byID("unbound-port-clash") == nil {
+		t.Error("port clash not flagged")
+	}
+	f.on("uci -q show dhcp", "dhcp.@dnsmasq[0]=dnsmasq\ndhcp.@dnsmasq[0].port='1053'\n")
+	if healthFindings(context.Background()).byID("unbound-port-clash") != nil {
+		t.Error("dnsmasq moved aside, yet flagged")
+	}
+}
+
+func TestDoctorFlagsTwoDNSBlockers(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on("ubus call rc list", `{"adblock":{"enabled":true,"running":true,"start":30,"stop":4},"adblock-fast":{"enabled":true,"running":true,"start":50,"stop":4}}`)
+	if healthFindings(context.Background()).byID("dns-two-blockers") == nil {
+		t.Error("two blockers not flagged")
+	}
+	f.on("ubus call rc list", `{"adblock":{"enabled":true,"running":true,"start":30,"stop":4},"adblock-fast":{"enabled":false,"running":false,"start":50,"stop":4}}`)
+	if healthFindings(context.Background()).byID("dns-two-blockers") != nil {
+		t.Error("one enabled blocker flagged")
+	}
+}

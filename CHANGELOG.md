@@ -3,6 +3,8 @@
 ## Unreleased
 
 Added
+- **Wave 2 doctor findings:** `sqm-qosify-both` (two shapers on one interface), `unbound-port-clash` (unbound and dnsmasq both on port 53),
+  `dns-two-blockers` (adblock, adblock-fast or simple-adblock enabled together). Only for installed add-ons.
 - **Wave 2 resolvers (ROADMAP 9.4): `service_list detail=unbound|stubby|smartdns`.** Listen port, upstream hosts (never URLs or
   pinsets), DNSSEC mode, cache statistics when `unbound-control` answers, and whether dnsmasq forwards to the resolver.
   Fixture-tested, not yet run on hardware.
