@@ -168,8 +168,8 @@ sanitised and marked untrusted.
 | AdGuard Home | running, listen addresses, protection and filtering switches, upstreams (scheme and host only), bootstrap, filter list and rule counts, whether dnsmasq forwards to it | GL-MT6000, 25.12 |
 | podkop | version, sing-box running, nft table, dnsmasq path, settings, one line per section (type, interface, community lists, size of dynamic lists) | GL-MT6000, 25.12 |
 | adblock | `query=<domain>`: blocked by the merged list, or allowlisted. Status: procd instance, status, version, blocked domain count, active feeds, DNS backend, last run (from `/var/run/adblock/adblock.runtime.json`) | fixture-tested |
-| adblock-fast | `query=<domain>`: blocked by which list, or allowlisted. Status: procd service data: status, the package's stats line, error and warning codes (not their info text), config summary | fixture-tested |
-| banIP | `query=<ip>`: which active sets hold it. Status: version, element count, active feeds, WAN interfaces (warns when none), last run | fixture-tested |
+| adblock-fast | `query=<domain>`: blocked by which list, or allowlisted. Status: procd service data: status, the package's stats line, error and warning codes (not their info text), config summary | stopped/failed states verified on 24.10.8 (VM, adblock-fast 1.2.4-r4); running state fixture-tested |
+| banIP | `query=<ip>`: which active sets hold it. Status: version, element count, active feeds, WAN interfaces (warns when none), last run | stopped/failed states verified on 24.10.8 (VM, banip 1.5.6-r7); running state fixture-tested |
 | ddns | per section: domain, provider, registered address, WAN address from netifd, age of the last update; warns on a stale record and on a WAN address in 100.64.0.0/10 | fixture-tested |
 | unbound | running, listen port, DHCP link, DNSSEC validator, recursive or forwarding, cache statistics when `unbound-control` works, whether dnsmasq forwards to it | fixture-tested |
 | stubby | listen addresses, upstream hosts with their TLS names (pinsets never printed), whether dnsmasq forwards to it | fixture-tested |

@@ -175,9 +175,21 @@ func checkMwan3(sn *snapshot) ([]finding, error) {
 				"mwan3 status: "+n+" "+i.Status+", tracking "+clip(i.Tracking, 20)+", score "+strconv.Itoa(i.Score)))
 		}
 	}
+	// A policy no rule uses is not in the way of any traffic: a stock install has wanb_only and friends for a
+	// second uplink that is disabled, which would otherwise be a high finding on every default config.
+	used := map[string]bool{}
+	tree, terr := sn.getUCI("mwan3")
+	if terr != nil {
+		return out, nil
+	}
+	for _, r := range tree.sectionsOfType("rule") {
+		used[tree.get(r, "use_policy")] = true
+	}
 	names := make([]string, 0, len(pol.Policies.V4))
 	for n := range pol.Policies.V4 {
-		names = append(names, n)
+		if used[n] {
+			names = append(names, n)
+		}
 	}
 	sort.Strings(names)
 	for _, n := range names {
@@ -494,7 +506,7 @@ func checkBanIPNoWAN(sn *snapshot) ([]finding, error) {
 	if !addonInstalled("banip") || !enabledAtBoot(sn, "banip") {
 		return nil, nil
 	}
-	m, err := readRuntime(banipRuntime)
+	m, err := readRuntime(banipRuntime())
 	if err != nil || m.str("status") == "" || len(m.list("wan_interfaces")) > 0 {
 		return nil, nil
 	}

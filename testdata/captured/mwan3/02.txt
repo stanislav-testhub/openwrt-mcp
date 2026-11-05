@@ -1,0 +1,96 @@
+# ubus call mwan3 status '{"section":"interfaces"}'
+{
+	"interfaces": {
+		"wan": {
+			"age": 7,
+			"online": 288,
+			"offline": 0,
+			"uptime": 39602,
+			"score": 10,
+			"lost": 0,
+			"turn": 29,
+			"status": "online",
+			"enabled": true,
+			"running": true,
+			"tracking": "active",
+			"up": true,
+			"track_ip": [
+				{
+					"ip": "198.51.100.1",
+					"status": "up",
+					"latency": 0,
+					"packetloss": 0
+				},
+				{
+					"ip": "198.51.100.2",
+					"status": "up",
+					"latency": 0,
+					"packetloss": 0
+				},
+				{
+					"ip": "198.51.100.3",
+					"status": "skipped",
+					"latency": 0,
+					"packetloss": 0
+				},
+				{
+					"ip": "198.51.100.4",
+					"status": "skipped",
+					"latency": 0,
+					"packetloss": 0
+				}
+			]
+		},
+		"wan6": {
+			"age": 0,
+			"online": 0,
+			"offline": 0,
+			"uptime": 0,
+			"score": 0,
+			"lost": 0,
+			"turn": 0,
+			"status": "unknown",
+			"enabled": false,
+			"running": false,
+			"tracking": "down",
+			"up": false,
+			"track_ip": [
+				
+			]
+		},
+		"wanb": {
+			"age": 0,
+			"online": 0,
+			"offline": 0,
+			"uptime": 0,
+			"score": 0,
+			"lost": 0,
+			"turn": 0,
+			"status": "unknown",
+			"enabled": false,
+			"running": false,
+			"tracking": "down",
+			"up": false,
+			"track_ip": [
+				
+			]
+		},
+		"wanb6": {
+			"age": 0,
+			"online": 0,
+			"offline": 0,
+			"uptime": 0,
+			"score": 0,
+			"lost": 0,
+			"turn": 0,
+			"status": "unknown",
+			"enabled": false,
+			"running": false,
+			"tracking": "down",
+			"up": false,
+			"track_ip": [
+				
+			]
+		}
+	}
+}

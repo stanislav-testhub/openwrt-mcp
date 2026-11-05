@@ -1,2 +1,3 @@
 uci -q show mwan3
-ubus call mwan3 status {}
+ubus call mwan3 status '{"section":"interfaces"}'
+ubus call mwan3 status '{"section":"policies"}'

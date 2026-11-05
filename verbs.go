@@ -30,6 +30,15 @@ func initScript(service, verb string) func(context.Context, string) (string, err
 	}
 }
 
+// banipRefresh: a disabled banIP exits 1 from `reload` without a word (seen on 24.10.8, banip 1.5.6),
+// so say what is wrong instead of reporting a bare exit status.
+func banipRefresh(ctx context.Context, _ string) (string, error) {
+	if m, err := readRuntime(banipRuntime()); err == nil && m.str("status") == "disabled" {
+		return "", fmt.Errorf("banIP is disabled (option ban_enabled): enable it with uci_apply, then refresh")
+	}
+	return initScript("banip", "reload")(ctx, "")
+}
+
 var adapterVerbs = []adapterVerb{
 	{"adblock", "refresh", false, "", initScript("adblock", "reload")},
 	{"adblock", "suspend", true, "", initScript("adblock", "suspend")},
@@ -37,7 +46,7 @@ var adapterVerbs = []adapterVerb{
 	{"adblock-fast", "refresh", false, "", initScript("adblock-fast", "reload")},
 	{"adblock-fast", "pause", true, "", initScript("adblock-fast", "pause")},
 	{"adblock-fast", "resume", true, "", initScript("adblock-fast", "resume")},
-	{"banip", "refresh", false, "", initScript("banip", "reload")},
+	{"banip", "refresh", false, "", banipRefresh},
 	{"banip", "unban", false, "ip", banipUnban},
 	{"mwan3", "ifup", true, "iface", mwan3Link("ifup")},
 	{"mwan3", "ifdown", true, "iface", mwan3Link("ifdown")},
@@ -103,7 +112,7 @@ func runVerb(ctx context.Context, v adapterVerb, arg string) (string, string, er
 // banipUnban deletes the address from every active set that holds it, then reads back. A feed
 // refresh will put it back if a feed still lists it; the allowlist is the lasting answer.
 func banipUnban(ctx context.Context, ip string) (string, error) {
-	m, err := readRuntime(banipRuntime)
+	m, err := readRuntime(banipRuntime())
 	if err != nil {
 		return "", fmt.Errorf("banIP has not run since boot (no runtime file)")
 	}

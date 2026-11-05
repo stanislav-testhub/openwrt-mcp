@@ -148,3 +148,19 @@ func TestStandardActionsRejectAnArgAndUnknownVerbsListTheOnesThatExist(t *testin
 		t.Errorf("unknown verb error: %v", err)
 	}
 }
+
+func TestBanIPRefreshExplainsADisabledBanIP(t *testing.T) {
+	f, root := wave1Router(t)
+	writeFixture(t, root, "var/run/banip_runtime.json", `{"status":"disabled","version":"1.5.6-r7"}`)
+	f.fail("/etc/init.d/banip reload", "")
+	v, _ := verbFor("banip", "refresh")
+	_, _, err := runVerb(context.Background(), v, "")
+	if err == nil || !strings.Contains(err.Error(), "banIP is disabled") {
+		t.Fatalf("err = %v", err)
+	}
+	for _, c := range f.argvList() {
+		if strings.Contains(strings.Join(c, " "), "init.d/banip") {
+			t.Errorf("reload was run on a disabled banIP: %v", c)
+		}
+	}
+}

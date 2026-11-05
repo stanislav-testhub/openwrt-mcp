@@ -1,0 +1,4 @@
+# ubus call service list '{"name":"banip"}'
+{
+	
+}

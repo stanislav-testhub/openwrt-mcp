@@ -1,0 +1,2 @@
+# cat /var/run/adblock-fast/dnsmasq.servers
+cat: can't open '/var/run/adblock-fast/dnsmasq.servers': No such file or directory

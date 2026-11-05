@@ -1,0 +1,51 @@
+# ubus call mwan3 status '{"section":"policies"}'
+{
+	"policies": {
+		"ipv4": {
+			"balanced": [
+				{
+					"interface": "wan",
+					"percent": 100
+				}
+			],
+			"wan_only": [
+				{
+					"interface": "wan",
+					"percent": 100
+				}
+			],
+			"wan_wanb": [
+				{
+					"interface": "wan",
+					"percent": 100
+				}
+			],
+			"wanb_only": [
+				
+			],
+			"wanb_wan": [
+				{
+					"interface": "wan",
+					"percent": 100
+				}
+			]
+		},
+		"ipv6": {
+			"balanced": [
+				
+			],
+			"wan_only": [
+				
+			],
+			"wan_wanb": [
+				
+			],
+			"wanb_only": [
+				
+			],
+			"wanb_wan": [
+				
+			]
+		}
+	}
+}

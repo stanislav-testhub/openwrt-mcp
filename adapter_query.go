@@ -149,7 +149,7 @@ func queryAdblock(ctx context.Context, domain string) string {
 }
 
 func queryBanIP(ctx context.Context, ip string) string {
-	m, err := readRuntime(banipRuntime)
+	m, err := readRuntime(banipRuntime())
 	if err != nil {
 		return "banIP has not run since boot (no runtime file); status: service_list detail=banip"
 	}

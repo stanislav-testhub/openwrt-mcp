@@ -21,7 +21,7 @@ while IFS= read -r cmd; do
 	n=$((n + 1))
 	f=$(printf '%s/%02d.txt' "$out" "$n")
 	{ printf '# %s\n' "$cmd"
-	  ssh -o BatchMode=yes -p "${SSH_PORT:-22}" ${SSH_KEY:+-i "$SSH_KEY"} "$ROUTER" "$cmd" 2>&1 \
+	  ssh -n -q -o BatchMode=yes -p "${SSH_PORT:-22}" ${SSH_KEY:+-i "$SSH_KEY"} "$ROUTER" "$cmd" 2>&1 \
 		| /tmp/openwrt-mcp-scrub scrub -hosts "$hosts"
 	} > "$f" || { echo "scrub refused $f; remove it and look at the command" >&2; rm -f "$f"; exit 1; }
 	echo "wrote $f"

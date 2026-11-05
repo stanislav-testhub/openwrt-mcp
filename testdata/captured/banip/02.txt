@@ -1,0 +1,6 @@
+# uci -q show banip
+banip.global=banip
+banip.global.ban_enabled='0'
+banip.global.ban_debug='0'
+banip.global.ban_autodetect='1'
+banip.global.ban_logterm='Exit before auth from' 'luci: failed login'

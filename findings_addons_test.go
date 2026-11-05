@@ -94,10 +94,28 @@ func TestDoctorFlagsMwan3OfflineAndPolicyDown(t *testing.T) {
 	installAddonConfig(t, root, "mwan3")
 	f.on(`ubus call mwan3 status {"section":"interfaces"}`, mwan3Interfaces)
 	f.on(`ubus call mwan3 status {"section":"policies"}`, strings.Replace(mwan3PoliciesJSON, `"balanced":{"x":0},`, `"balanced":[{"interface":"wan","percent":50},{"interface":"wanb","percent":50}],`, 1))
+	// Rules use balanced and wanb_only; wan_only is defined but unused, and is down all the same.
+	f.on("uci -q show mwan3", "mwan3.r1=rule\nmwan3.r1.use_policy='balanced'\nmwan3.r2=rule\nmwan3.r2.use_policy='wanb_only'\n")
 	r := healthFindings(context.Background())
 	ids := findingIDs(r)
 	if !strings.Contains(ids, "mwan3-iface-offline") || strings.Count(ids, "mwan3-policy-down") != 1 {
 		t.Errorf("want wanb offline and only wanb_only down (balanced still has wan): %v", ids)
+	}
+	f.on("uci -q show mwan3", "mwan3.r1=rule\nmwan3.r1.use_policy='balanced'\n")
+	if ids := findingIDs(healthFindings(context.Background())); strings.Contains(ids, "mwan3-policy-down") {
+		t.Errorf("a policy no rule uses was flagged: %v", ids)
+	}
+}
+
+// The stock mwan3 config on a real 24.10.8 install: wanb_only has no active member and is not used.
+func TestDoctorIsQuietOnAStockMwan3(t *testing.T) {
+	f, root := wave1Router(t)
+	installAddonConfig(t, root, "mwan3")
+	f.on(`ubus call mwan3 status {"section":"interfaces"}`, captured(t, "mwan3", "02.txt"))
+	f.on(`ubus call mwan3 status {"section":"policies"}`, captured(t, "mwan3", "03.txt"))
+	f.on("uci -q show mwan3", captured(t, "mwan3", "01.txt"))
+	if ids := findingIDs(healthFindings(context.Background())); strings.Contains(ids, "mwan3") {
+		t.Errorf("findings on a stock mwan3: %v", ids)
 	}
 }
 

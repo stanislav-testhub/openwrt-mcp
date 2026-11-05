@@ -51,6 +51,22 @@ Fixed
   system password. It says "system login prompt".
 
 Added
+- **First run on a real OpenWrt (ROADMAP 9.7, 24.10.8 x86 VM; banip 1.5.6-r7, adblock-fast 1.2.4-r4, mwan3 2.11.16-r5, sqm-scripts 1.6.0, tcpdump 4.99.5, iperf3 3.22).**
+  The adapters, verbs, doctor, audit, `capture` and `throughput` ran against the real packages (`go test -tags realtarget`,
+  `realtarget_addons_test.go`). What it found and what changed:
+  - banIP 1.5 writes its status to `/var/run/banip_runtime.json`, not the path the adapter assumed, and names its version `version`:
+    the adapter, `query`, `unban` and the doctor read the real file first (the old path stays as a fallback).
+  - A disabled banIP says "disabled" and no longer warns about missing WAN interfaces; `banip refresh` on a disabled banIP explains why it
+    cannot run instead of "exit status 1".
+  - adblock-fast that has never run has empty service data: it says so, not "output not recognised".
+  - The doctor flagged `mwan3-policy-down` (high) on a stock mwan3 install, for a policy of a disabled second uplink that no rule uses. It
+    now looks at policies a rule uses.
+  - Confirmed as written: adblock-fast status and error codes, the mwan3 interface and policy status, the mwan3 ifup/ifdown verbs,
+    adblock-fast refresh, sqm queue listing, tcpdump line parsing, iperf3 `-J` output in both directions.
+  - `make capture` lost every command after the first (ssh read the manifest from stdin), put ssh warnings into captures and mangled JSON
+    arguments; fixed. Scrubbed captures are under `testdata/captured/` and drive `captured_test.go`.
+  Not verified: a *running* banIP or adblock-fast (the VM has no DNS, so adblock-fast's heartbeat check fails), `query` hits, `unban` that
+  removes something, adblock (classic), pbr, ddns, UPnP, https-dns-proxy, wave 2 to 4 add-ons, 25.12 (apk).
 - **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
   same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
   names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a

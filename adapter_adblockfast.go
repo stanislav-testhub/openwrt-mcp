@@ -38,6 +38,8 @@ func readAdblockFast(ctx context.Context) string {
 			text = clip(code, 40)
 		}
 		lines = append(lines, "status: "+text)
+	} else if found && len(data) == 0 {
+		lines = append(lines, "no status yet: adblock-fast has not run since boot (checked on a 24.10 VM, where a never-started service has empty data)")
 	} else if found {
 		lines = append(lines, "output not recognised: no status in the service data")
 	}

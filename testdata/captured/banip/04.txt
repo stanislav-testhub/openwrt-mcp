@@ -1,0 +1,4 @@
+# nft list table inet banIP
+Error: No such file or directory
+list table inet banIP
+                ^^^^^
