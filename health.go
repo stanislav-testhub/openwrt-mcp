@@ -158,6 +158,7 @@ func healthFindings(ctx context.Context) *findingsRun {
 		{"https-dns-proxy", checkHTTPSDNSProxy},
 		{"pbr", checkPBRErrors},
 		{"stats-db", checkStatsDBInRAM},
+		{"irqbalance", checkIRQBalance},
 	})
 }
 

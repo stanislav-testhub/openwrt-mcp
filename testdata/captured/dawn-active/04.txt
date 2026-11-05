@@ -1,0 +1,4 @@
+# ubus call dawn get_hearing_map
+{
+	
+}

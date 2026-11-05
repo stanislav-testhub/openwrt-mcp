@@ -218,8 +218,8 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 25600 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142)
-	catalogueProseBudget = 13130 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 25700 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74)
+	catalogueProseBudget = 13200 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
@@ -562,6 +562,12 @@ func readOnlyCommand(a []string) bool {
 		if len(a) >= 3 && a[1] == "-v" && a[2] == "list" {
 			return true
 		}
+		if len(a) >= 2 && a[1] == "list" { // names the objects on the bus
+			return true
+		}
+		if len(a) >= 4 && a[1] == "call" && (a[2] == "usteer" || a[2] == "dawn") { // the roaming adapters: get_*, local_info, remote_hosts only
+			return matchAny([]string{"get_config", "get_clients", "get_network", "get_hearing_map", "local_info", "remote_hosts", "remote_info", "connected_clients"}, a[3])
+		}
 		if len(a) >= 5 && a[1] == "call" && a[2] == "mwan3" && a[3] == "status" { // the mwan3 adapter's rpcd plugin: reads only
 			return true
 		}
@@ -581,6 +587,10 @@ func readOnlyCommand(a []string) bool {
 		return contains(a, "show") || (len(a) > 4 && a[2] == "route" && a[3] == "get") // path: the kernel's routing decision
 	case "nft":
 		return len(a) > 1 && (a[1] == "list" || (a[1] == "get" && len(a) > 2 && a[2] == "element")) // get element: the banIP query
+	case "ndsctl":
+		return len(a) == 2 && (a[1] == "status" || a[1] == "json")
+	case "rrdtool":
+		return len(a) > 2 && a[1] == "fetch" // history: reads one RRD file
 	case "fw4":
 		return len(a) > 1 && (a[1] == "check" || (a[1] == "-q" && len(a) > 2 && a[2] == "print"))
 	case "apk":

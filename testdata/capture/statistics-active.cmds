@@ -1,0 +1,10 @@
+uci -q show luci_statistics
+rrdtool fetch /tmp/rrd/OpenWrt/load/load.rrd AVERAGE -s -1h
+rrdtool fetch /tmp/rrd/OpenWrt/cpu-0/percent-idle.rrd AVERAGE -s -1h
+rrdtool fetch /tmp/rrd/OpenWrt/interface-br-lan/if_octets.rrd AVERAGE -s -1h
+rrdtool fetch /tmp/rrd/OpenWrt/memory/memory-used.rrd AVERAGE -s -1h
+rrdtool fetch /tmp/rrd/OpenWrt/memory/memory-free.rrd AVERAGE -s -1h
+rrdtool fetch /tmp/rrd/OpenWrt/memory/memory-buffered.rrd AVERAGE -s -1h
+rrdtool fetch /tmp/rrd/OpenWrt/memory/memory-cached.rrd AVERAGE -s -1h
+rrdtool fetch /tmp/rrd/OpenWrt/memory/memory-slab_recl.rrd AVERAGE -s -1h
+rrdtool fetch /tmp/rrd/OpenWrt/memory/memory-slab_unrecl.rrd AVERAGE -s -1h

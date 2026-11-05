@@ -18,12 +18,16 @@ import (
 // ---------------------------------------------------------------- system_status
 
 type systemStatusIn struct {
-	Mode string `json:"mode,omitempty" jsonschema:"status (default) | doctor: ranked health findings | audit: ranked security findings"`
+	Mode    string `json:"mode,omitempty" jsonschema:"status (default) | doctor: ranked health findings | audit: ranked security findings"`
+	History string `json:"history,omitempty" jsonschema:"1h | 6h | 24h | 7d: load, CPU, memory, temperature, traffic over that window (collectd)"`
 }
 
 // systemStatusScope makes doctor and audit separately grantable: a grant for '*' (both presets) covers
 // them, a grant for system_status alone does not teach a client the router's security posture.
 func systemStatusScope(in systemStatusIn) []string {
+	if in.History != "" {
+		return []string{"history"}
+	}
 	if in.Mode == "doctor" || in.Mode == "audit" {
 		return []string{in.Mode}
 	}
@@ -91,6 +95,13 @@ func interfaceDump(ctx context.Context) ([]ubusIface, error) {
 // pending rollback, package configs waiting for review). Each section degrades to a note
 // rather than failing the whole call.
 func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, string, error) {
+	if in.History != "" {
+		if in.Mode != "" && in.Mode != "status" {
+			return "", "", invalid("history and mode cannot be combined")
+		}
+		out, err := metricsHistory(ctx, in.History)
+		return out, "history " + in.History, err
+	}
 	switch in.Mode {
 	case "", "status":
 	case "doctor":

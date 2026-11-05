@@ -89,6 +89,7 @@ var findingHints = map[string]findingHint{
 	"wan-port-open":           {"firewall_show shows the live rule; remove or restrict it with uci_apply (dry_run first) if nothing needs it", docFirewall},
 	"wan-forward-open":        {"firewall_show shows the live rule; remove or restrict it with uci_apply (dry_run first) if nothing needs it", docFirewall},
 	"wan-redirect":            {"firewall_show shows the live redirect; remove it with uci_apply (dry_run first), or reach the device over a VPN instead", docFirewall},
+	"wan-exposure":            {"firewall_show view=table lists the rules behind each entry; close what nothing needs with uci_apply (dry_run first)", docFirewall},
 	"ssh-wan":                 {"bind dropbear to the LAN or remove the WAN rule with uci_apply (dry_run first), after a key login works", docDropbear},
 	"ssh-password-auth":       {"set PasswordAuth off with uci_apply (dry_run first) once a key login works, in a second session", docDropbear},
 	"luci-wan":                {"remove the WAN rule with uci_apply (dry_run first): LuCI belongs on the LAN only", docLuciSec},

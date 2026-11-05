@@ -1,0 +1,4 @@
+# ubus call usteer local_info
+{
+	
+}

@@ -406,3 +406,63 @@ func TestSSHWanNeedsTheSSHPort(t *testing.T) {
 		})
 	}
 }
+
+// The exposure view crosses the sockets bound to every address (/proc/net) with the WAN rules and
+// forwards. /proc/net/tcp lines: "sl local rem st"; 0A is LISTEN, 07 an unconnected UDP socket.
+func TestAuditExposureViewCrossesListeningSocketsWithWanRulesAndForwards(t *testing.T) {
+	a := newAuditFixture()
+	a.firewall += `firewall.@rule[3]=rule
+firewall.@rule[3].name='Allow-Web'
+firewall.@rule[3].src='wan'
+firewall.@rule[3].proto='tcp'
+firewall.@rule[3].dest_port='8443'
+firewall.@rule[3].src_ip='203.0.113.5'
+firewall.@rule[3].target='ACCEPT'
+firewall.@rule[4]=rule
+firewall.@rule[4].name='Allow-Nothing-Yet'
+firewall.@rule[4].src='wan'
+firewall.@rule[4].proto='tcp'
+firewall.@rule[4].dest_port='9999'
+firewall.@rule[4].target='ACCEPT'
+firewall.@redirect[0]=redirect
+firewall.@redirect[0].name='nas'
+firewall.@redirect[0].src='wan'
+firewall.@redirect[0].proto='tcp'
+firewall.@redirect[0].src_dport='2222'
+firewall.@redirect[0].dest_ip='192.0.2.50'
+firewall.@redirect[0].dest_port='22'
+`
+	a.install(t)
+	root := sysRoot
+	writeFixture(t, root, "proc/net/tcp", "  sl  local_address rem_address   st\n"+
+		"   0: 00000000:20FB 00000000:0000 0A 00000000:00000000\n"+ // 8443, any address, listening
+		"   1: 00000000:0050 00000000:0000 0A 00000000:00000000\n"+ // 80, any address, blocked
+		"   2: 0100007F:1F90 00000000:0000 0A 00000000:00000000\n"+ // 8080 on loopback only
+		"   3: 00000000:0016 0100A8C0:C350 01 00000000:00000000\n") // established, not a listener
+	writeFixture(t, root, "proc/net/udp", "  sl  local_address rem_address   st\n"+
+		"   0: 00000000:0035 00000000:0000 07 00000000:00000000\n")
+	out := auditFindings(context.Background()).render()
+	wantAll(t, out, "wan-exposure", "1 listening port on the router reachable from the internet", "1 forward into the LAN",
+		`tcp/8443 (rule "Allow-Web", only from 203.0.113.5)`, "tcp 2222 -> 192.0.2.50:22",
+		"blocked by the firewall: udp/53, tcp/80", "accepted but nothing listens now: tcp/9999 (Allow-Nothing-Yet)",
+		"custom nft rules")
+	mustNotContain(t, out, "8080", "tcp/22")
+}
+
+func TestAuditExposureViewIsQuietWhenNothingFacesTheInternet(t *testing.T) {
+	a := newAuditFixture()
+	a.install(t)
+	writeFixture(t, sysRoot, "proc/net/tcp", "  sl  local_address rem_address   st\n   0: 00000000:0050 00000000:0000 0A 0:0\n")
+	if r := auditFindings(context.Background()); r.byID("wan-exposure") != nil {
+		t.Errorf("exposure reported for a router whose firewall accepts nothing: %+v", r.byID("wan-exposure"))
+	}
+}
+
+func TestAuditExposureViewTreatsAnOpenWanZoneAsEverythingReachable(t *testing.T) {
+	a := newAuditFixture()
+	a.firewall = strings.Replace(a.firewall, "firewall.@zone[1].input='REJECT'", "firewall.@zone[1].input='ACCEPT'", 1)
+	a.install(t)
+	writeFixture(t, sysRoot, "proc/net/tcp", "  sl  local_address rem_address   st\n   0: 00000000:0050 00000000:0000 0A 0:0\n")
+	out := auditFindings(context.Background()).render()
+	wantAll(t, out, "tcp/80 (zone wan accepts all input)")
+}

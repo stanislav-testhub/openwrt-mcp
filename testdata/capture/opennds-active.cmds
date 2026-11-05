@@ -1,0 +1,3 @@
+uci -q show opennds
+ndsctl status
+ndsctl json

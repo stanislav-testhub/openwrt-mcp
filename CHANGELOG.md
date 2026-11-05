@@ -3,6 +3,26 @@
 ## Unreleased
 
 Added
+- **Last tails of waves 2 and 3.**
+  - `system_status history=1h|6h|24h|7d` (ROADMAP 7.5): load, CPU, memory, temperatures and the five busiest interfaces from collectd's
+    RRD files, as now, average and maximum, a trend of 6 to 8 slices and the volume an interface carried. Needs luci-app-statistics
+    (it depends on `rrdtool`, which the adapter runs as `rrdtool fetch` on paths it listed itself); says what is missing when the data
+    is not there, and when collectd has covered only part of the window. Own scope `history`. Checked on a 25.12.6 VM with collectd
+    5.12 and rrdtool 1.0.50, but with only minutes of data: a full day was not seen.
+  - `service_control name=ddns action=update`: removes `<rundir>/<section>.update` of each enabled service and restarts the updaters, because
+    the updater skips a send while the address equals what DNS returns and the last send is younger than `force_interval`, and a restart alone
+    does not change that (read from the 25.12.6 `dynamic_dns_updater.sh`; not run against a provider). Routine. pbr and miniupnpd get no verb:
+    `reload`/`restart` already cover pbr, and miniupnpd keeps its leases in a file it reads at start, so a safe `unmap` needs a real client.
+  - Audit finding `wan-exposure` (info): the listening ports reachable from the internet (sockets on every address from `/proc/net` crossed
+    with WAN rules and the open-zone case), the port forwards and rules into the LAN, the ports bound to every address but held back by the
+    firewall, and rules that accept a port nothing listens on. Silent when nothing is reachable. Custom nft rules and upstream NAT are not seen.
+  - Doctor finding `irq-one-cpu` (info): on a multi-core router with at least 100,000 device interrupts, one CPU handles 90% or more of them
+    and irqbalance is not running. Timers and IPIs are left out. The thresholds are a judgement, not measured on a router.
+  - Adapters `usteer`, `dawn` and `opennds` (status only). usteer: active policies from the effective config, nodes, peers and a client count
+    (never client addresses). DAWN: discovery mode, encryption, hostapd presence; warns when the shipped key is in use. openNDS: `ndsctl
+    status`, FAS host without its path. `shared_key` and `faskey` joined the secret option names (audit log, output masking, capture scrubber).
+    Run on a 25.12.6 VM: usteer and DAWN idle (the hwsim radios would not come up under hostapd, so no AP and no peer), openNDS with no clients.
+    What usteer and DAWN print with clients uses field names from their documentation and has not been seen on a router.
 - **Add-on verbs on `service_control` (ROADMAP 9.1, L3).** New parameter `arg`. Verbs: `adblock` refresh/suspend/resume, `adblock-fast`
   refresh/pause/resume, `banip` refresh and `unban <ip>`, `mwan3` ifup/ifdown `<interface>`. Scope `<service>.<verb>`. Routine verbs are in
   `@operator`; disruptive ones are left out of the preset (it now lists service_control scopes instead of `*`) and need a named grant.

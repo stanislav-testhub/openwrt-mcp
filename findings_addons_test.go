@@ -216,3 +216,46 @@ func TestDoctorIgnoresMwan3WhenOnlyItsConfigIsLeftBehind(t *testing.T) {
 		}
 	}
 }
+
+// /proc/interrupts of a 4-core router: the first line names the CPUs, IPIs and timers are per-CPU by
+// design and must not count, and a device whose interrupts are spread must not trip the finding.
+const irqSkewed = `           CPU0       CPU1       CPU2       CPU3       
+ 11:     500000     480000     470000     460000     GICv3  30 Level     arch_timer
+ 38:    1200000      10000       5000       3000     GICv3 229 Level     mt76-wmac
+ 39:     800000       2000       1000       1000     GICv3 105 Level     eth0
+IPI0:     90000      90000      90000      90000       Rescheduling interrupts
+`
+
+func TestDoctorSuggestsIrqbalanceWhenOneCpuTakesTheDeviceInterrupts(t *testing.T) {
+	f, root := wave1Router(t)
+	writeFixture(t, root, "proc/interrupts", irqSkewed)
+	f.on("ubus call rc list", `{}`)
+	fd := healthFindings(context.Background()).byID("irq-one-cpu")
+	if fd == nil || fd.sev != sevInfo || !strings.Contains(fd.msg, "CPU0 handles 98%") || !strings.Contains(fd.evidence, "irqbalance is not installed") {
+		t.Fatalf("finding %+v", fd)
+	}
+	f.on("ubus call rc list", `{"irqbalance":{"enabled":false,"running":false,"start":11,"stop":89}}`)
+	if fd := healthFindings(context.Background()).byID("irq-one-cpu"); fd == nil || !strings.Contains(fd.evidence, "installed but not running") {
+		t.Errorf("installed but stopped: %+v", fd)
+	}
+	f.on("ubus call rc list", `{"irqbalance":{"enabled":true,"running":true,"start":11,"stop":89}}`)
+	if healthFindings(context.Background()).byID("irq-one-cpu") != nil {
+		t.Error("flagged with irqbalance running")
+	}
+}
+
+func TestDoctorStaysQuietOnSpreadOrQuietOrSingleCoreInterrupts(t *testing.T) {
+	f, root := wave1Router(t)
+	f.on("ubus call rc list", `{}`)
+	for name, text := range map[string]string{
+		"spread": "           CPU0       CPU1\n 38:    600000     500000     GIC  eth0\n",
+		"quiet":  "           CPU0       CPU1\n 38:      9000        100     GIC  eth0\n",
+		"one":    "           CPU0\n 38:    900000     GIC  eth0\n",
+		"timers": "           CPU0       CPU1\n 11:    900000          0     GIC  arch_timer\nIPI0:    900000          0       Rescheduling interrupts\n",
+	} {
+		writeFixture(t, root, "proc/interrupts", text)
+		if healthFindings(context.Background()).byID("irq-one-cpu") != nil {
+			t.Errorf("%s: flagged", name)
+		}
+	}
+}

@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -203,4 +205,142 @@ func TestMwan3QueryOnItsRealStockRules(t *testing.T) {
 	if got6 := queryOut(t, "mwan3", "2606:4700::1111"); !strings.Contains(got6, "rule default_rule_v6 (dest_ip ::/0)") {
 		t.Errorf("v6:\n%s", got6)
 	}
+}
+
+// collectd 5.12 with luci-app-statistics (26.304) and rrdtool 1.0.50 on the 25.12.6 VM, a few minutes
+// after the service started: `rrdtool fetch` prints a header of data source names, a blank line and
+// "timestamp:  value ..." rows, with -nan where nothing was stored yet.
+func historyRouter(t *testing.T) *fakeRouter {
+	f, root := wave1Router(t)
+	f.on("uci -q show luci_statistics", captured(t, "statistics-active", "01.txt"))
+	for _, p := range []string{"load/load", "cpu-0/percent-idle", "cpu-1/percent-idle", "interface-br-lan/if_octets", "interface-lo/if_octets",
+		"memory/memory-used", "memory/memory-free", "memory/memory-buffered", "memory/memory-cached", "memory/memory-slab_recl", "memory/memory-slab_unrecl"} {
+		writeFixture(t, root, "tmp/rrd/OpenWrt/"+p+".rrd", "")
+	}
+	for i, p := range []string{"load/load", "cpu-0/percent-idle", "interface-br-lan/if_octets", "memory/memory-used", "memory/memory-free",
+		"memory/memory-buffered", "memory/memory-cached", "memory/memory-slab_recl", "memory/memory-slab_unrecl"} {
+		f.on("rrdtool fetch /tmp/rrd/OpenWrt/"+p+".rrd AVERAGE -s", captured(t, "statistics-active", fmt.Sprintf("%02d.txt", i+2)))
+	}
+	f.on("rrdtool fetch /tmp/rrd/OpenWrt/cpu-1/percent-idle.rrd AVERAGE -s", captured(t, "statistics-active", "03.txt"))
+	f.on("rrdtool fetch /tmp/rrd/OpenWrt/interface-lo/if_octets.rrd AVERAGE -s", captured(t, "statistics-active", "04.txt"))
+	return f
+}
+
+func TestHistorySummarisesTheRealRrdtoolOutput(t *testing.T) {
+	f := historyRouter(t)
+	out, _, err := testServer(t, "").systemStatus(context.Background(), systemStatusIn{History: "1h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAll(t, out, "history, last 1 hour, from collectd on OpenWrt (one sample per 30 s)",
+		"load (1 min): now 0.00, avg 0.02, max 0.06; per 10 min: - - - - - 0.02", "cpu busy (2 cores): now 0%", "memory used: now 11%",
+		"br-lan received: now 20B/s, avg 19B/s, max 20B/s", "br-lan sent: now 23B/s", "data covers only the last 3 minutes")
+	mustNotContain(t, out, "interface-lo", "lo received", "nan")
+	for _, a := range f.argvList() {
+		if a[0] == "rrdtool" && (a[1] != "fetch" || !strings.HasPrefix(a[2], "/tmp/rrd/OpenWrt/")) {
+			t.Errorf("unexpected rrdtool call %v", a)
+		}
+	}
+}
+
+func TestHistoryRefusesAnUnknownWindowAndMissingData(t *testing.T) {
+	historyRouter(t)
+	for _, bad := range []string{"2h", "24h; reboot", "../x", "1d"} {
+		if _, _, err := testServer(t, "").systemStatus(context.Background(), systemStatusIn{History: bad}); err == nil {
+			t.Errorf("history=%q accepted", bad)
+		}
+	}
+	if _, _, err := testServer(t, "").systemStatus(context.Background(), systemStatusIn{History: "1h", Mode: "doctor"}); err == nil {
+		t.Error("history together with mode accepted")
+	}
+	// No data directory: say what is missing instead of an empty table.
+	f, _ := wave1Router(t)
+	f.fail("uci -q show luci_statistics", "uci: Entry not found")
+	_, _, err := testServer(t, "").systemStatus(context.Background(), systemStatusIn{History: "24h"})
+	if err == nil || !strings.Contains(err.Error(), "luci-app-statistics") {
+		t.Errorf("missing data: %v", err)
+	}
+}
+
+func TestHistoryNeedsItsOwnScope(t *testing.T) {
+	if got := systemStatusScope(systemStatusIn{History: "24h"}); len(got) != 1 || got[0] != "history" {
+		t.Errorf("scope %v", got)
+	}
+}
+
+// usteer 2025.10.04, DAWN 2025.11.07 and openNDS 10.3.1 on the 25.12.6 VM. The VM has no Wi-Fi hardware
+// that hostapd would take (the hwsim radios never came up), so usteer and DAWN were captured with no
+// access point and no peer: what they print with clients is built from field names, not seen.
+func wifiRoamRouter(t *testing.T) *fakeRouter {
+	f, _ := wave1Router(t)
+	addRC(f, "usteer", "dawn", "opennds")
+	f.on("pidof usteerd", "11232\n")
+	f.on("pidof dawn", "10060\n")
+	f.on("pidof opennds", "10253\n")
+	return f
+}
+
+func TestUsteerOnItsRealIdleState(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("ubus call usteer get_config", captured(t, "usteer-active", "02.txt"))
+	f.on("ubus call usteer local_info", captured(t, "usteer-active", "03.txt"))
+	f.on("ubus call usteer remote_hosts", captured(t, "usteer-active", "04.txt"))
+	f.on("ubus call usteer get_clients", captured(t, "usteer-active", "05.txt"))
+	got := body(t, "usteer")
+	wantAll(t, got, "usteerd: running", "policies on: band steering every 120 s (min signal -60, station delta 5)",
+		"policies off: load balancing, client roaming, minimum-SNR kick", "exchanges state over: br-lan", "steering applies to every SSID",
+		"local nodes: none", "0 other usteer hosts seen, 0 clients tracked", "nothing is steered between access points")
+	mustNotContain(t, got, "WARNING", "does not answer")
+}
+
+// Field names after usteer's documentation; client addresses are never printed.
+func TestUsteerCountsClientsAndPeersWithoutPrintingAddresses(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("ubus call usteer get_config", `{"band_steering_interval":0,"load_balancing_threshold":3,"roam_scan_snr":-70,"roam_trigger_snr":-75,"local_mode":true,"ssid_list":["Home"]}`)
+	f.on("ubus call usteer local_info", `{"phy0-ap0":{"ssid":"Home","freq":2437,"n_assoc":2,"load":31},"phy1-ap0":{"ssid":"Home","freq":5180,"n_assoc":0}}`)
+	f.on("ubus call usteer remote_hosts", `{"10.0.0.2":{"id":7}}`)
+	f.on("ubus call usteer get_clients", `{"aa:bb:cc:dd:ee:01":{},"aa:bb:cc:dd:ee:02":{}}`)
+	got := body(t, "usteer")
+	wantAll(t, got, "policies off: band steering", "load balancing at a difference of 3 stations", "WARNING: local_mode is on",
+		"steering limited to 1 SSID", "local nodes (2):", `phy0-ap0: ssid "Home", 2437 MHz, 2 clients, load 31%`,
+		"1 other usteer host seen, 2 clients tracked")
+	mustNotContain(t, got, "aa:bb:cc", "nothing is steered")
+}
+
+func TestDAWNOnItsRealIdleState(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("uci -q show dawn", captured(t, "dawn-active", "01.txt"))
+	f.fail("ubus list hostapd.*", "Command failed: Not found")
+	f.on("ubus call dawn get_network", captured(t, "dawn-active", "03.txt"))
+	f.on("ubus call dawn get_hearing_map", captured(t, "dawn-active", "04.txt"))
+	got := body(t, "dawn")
+	wantAll(t, got, "dawn: running", "AP discovery: TCP with umdns discovery", "traffic between APs is not encrypted",
+		"no hostapd interface on ubus", "network view: 0 entries", "hearing map: 0 entries")
+}
+
+func TestDAWNWarnsAboutTheShippedKeyAndNeverPrintsKeys(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("uci -q show dawn", "dawn.@network[0]=network\ndawn.@network[0].network_option='3'\ndawn.@network[0].use_symm_enc='1'\ndawn.@network[0].shared_key='Niiiiiiiiiiiiick'\ndawn.@network[0].iv='CanaryIV123456789'\n")
+	f.on("ubus list hostapd.*", "hostapd.phy0-ap0\nhostapd.phy1-ap0\n")
+	got := body(t, "dawn")
+	wantAll(t, got, "AP discovery: TCP", "encrypted with the key the package ships with", "2 hostapd interfaces on ubus")
+	mustNotContain(t, got, "Niiiiiiiiiiiiick", "CanaryIV")
+}
+
+func TestOpenNDSOnItsRealStatus(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("ndsctl status", captured(t, "opennds-active", "02.txt"))
+	f.on("uci -q show opennds", "opennds.@opennds[0]=opennds\nopennds.@opennds[0].faskey='CanaryFasKey0123456789'\n")
+	got := body(t, "opennds")
+	wantAll(t, got, "opennds: running", "version 10.3.1, up 6m 26s, managing br-lan", "clients now: 0, authenticated since start: 0",
+		"FAS: Secure Level 1, host status.client", "idle timeout: preauthenticated 30m, authenticated 120m",
+		"binauth script: /usr/lib/opennds/binauth_log.sh", "FAS key set (not shown)")
+	mustNotContain(t, got, "CanaryFasKey", "/opennds_preauth", "Walledgarden")
+}
+
+func TestOpenNDSWhenItsSocketDoesNotAnswer(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.fail("ndsctl status", "Failed to connect to opennds")
+	got := body(t, "opennds")
+	wantAll(t, got, "ndsctl does not answer: Failed to connect to opennds")
 }

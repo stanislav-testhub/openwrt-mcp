@@ -1,0 +1,6 @@
+# ndsctl json
+{
+  "client_list_length":"0",
+  "clients":{
+  }
+}

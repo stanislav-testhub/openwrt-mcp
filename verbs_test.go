@@ -164,3 +164,40 @@ func TestBanIPRefreshExplainsADisabledBanIP(t *testing.T) {
 		}
 	}
 }
+
+func TestDDNSUpdateClearsTheLastSendRecordOfEnabledServicesAndRestarts(t *testing.T) {
+	f := newFakeRouter(t)
+	f.on("ubus call rc list", `{"ddns":{"enabled":true,"running":true,"start":95,"stop":10}}`)
+	f.on("uci -q show ddns", "ddns.global=ddns\nddns.lab=service\nddns.lab.enabled='1'\nddns.off=service\nddns.off.enabled='0'\nddns.global.ddns_rundir='/var/run/ddns'\n")
+	f.on("rm -f /var/run/ddns/lab.update", "")
+	f.on("/etc/init.d/ddns restart", "")
+	out, err := callControl(t, serviceControlIn{Name: "ddns", Action: "update"})
+	if err != nil || !strings.Contains(out, "ddns update: done") || !strings.Contains(out, "for lab;") {
+		t.Fatalf("out %q err %v", out, err)
+	}
+	var cmds []string
+	for _, a := range f.argvList() {
+		cmds = append(cmds, strings.Join(a, " "))
+	}
+	all := strings.Join(cmds, "\n")
+	if strings.Contains(all, "off.update") {
+		t.Errorf("the disabled service was touched:\n%s", all)
+	}
+	if strings.Index(all, "rm -f /var/run/ddns/lab.update") > strings.Index(all, "/etc/init.d/ddns restart") {
+		t.Errorf("restart ran before the record was cleared:\n%s", all)
+	}
+}
+
+func TestDDNSUpdateWithNoEnabledServiceFailsWithoutRunningAnything(t *testing.T) {
+	f := newFakeRouter(t)
+	f.on("ubus call rc list", `{"ddns":{"enabled":true,"running":true,"start":95,"stop":10}}`)
+	f.on("uci -q show ddns", "ddns.lab=service\nddns.lab.enabled='0'\n")
+	if _, err := callControl(t, serviceControlIn{Name: "ddns", Action: "update"}); err == nil || !strings.Contains(err.Error(), "no enabled ddns service") {
+		t.Fatalf("err %v", err)
+	}
+	for _, a := range f.argvList() {
+		if a[0] == "rm" || a[0] == "/etc/init.d/ddns" {
+			t.Errorf("ran %v", a)
+		}
+	}
+}

@@ -31,6 +31,7 @@ func auditFindings(ctx context.Context) *findingsRun {
 		{"smb-shares", checkSMBShares},
 		{"rpc-open", checkRPC},
 		{"mosquitto-anonymous", checkMosquittoAnonymous},
+		{"exposure", checkExposure},
 	})
 }
 

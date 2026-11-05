@@ -20,6 +20,7 @@ var secretKeySubstrings = []string{
 	"password", "passwd", "secret", "token", "credential",
 	"apikey", "api_key", "privatekey", "private_key", "passphrase",
 	"psk", "wgkey", "encryption_key", "preshared", "pwd",
+	"shared_key", "faskey", // DAWN's AP-to-AP key, openNDS's FAS key
 }
 
 const redacted = "<redacted>"

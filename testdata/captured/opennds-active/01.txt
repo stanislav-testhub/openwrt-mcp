@@ -1,0 +1,3 @@
+# uci -q show opennds
+opennds.@opennds[0]=opennds
+opennds.@opennds[0].faskey='<redacted>'

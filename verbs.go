@@ -48,6 +48,7 @@ var adapterVerbs = []adapterVerb{
 	{"adblock-fast", "resume", true, "", initScript("adblock-fast", "resume")},
 	{"banip", "refresh", false, "", banipRefresh},
 	{"banip", "unban", false, "ip", banipUnban},
+	{"ddns", "update", false, "", ddnsUpdate},
 	{"mwan3", "ifup", true, "iface", mwan3Link("ifup")},
 	{"mwan3", "ifdown", true, "iface", mwan3Link("ifdown")},
 }
@@ -147,6 +148,36 @@ func mwan3Link(verb string) func(context.Context, string) (string, error) {
 		}
 		return run(ctx, defaultCmdTimeout, "mwan3", verb, iface)
 	}
+}
+
+// ddnsUpdate makes every enabled ddns service send its address now. The updater skips the send when
+// the address it finds equals the one DNS returns and the last send is younger than force_interval,
+// and a restart alone does not change that. Its record of the last send is <rundir>/<section>.update
+// (uptime seconds), so the verb removes those files and restarts the updaters.
+func ddnsUpdate(ctx context.Context, _ string) (string, error) {
+	t, err := uciShow(ctx, "ddns", false)
+	if err != nil {
+		return "", fmt.Errorf("ddns config unreadable: %w", err)
+	}
+	dir := runtimePath(t.get("global", "ddns_rundir"), ddnsRunDir)
+	var names []string
+	for _, s := range t.sectionsOfType("service") {
+		if uciFlag(t.get(s, "enabled"), false) && uciName.MatchString(s) {
+			names = append(names, s)
+		}
+	}
+	if len(names) == 0 {
+		return "", fmt.Errorf("no enabled ddns service in /etc/config/ddns")
+	}
+	for _, s := range names {
+		if _, err := run(ctx, defaultCmdTimeout, "rm", "-f", dir+"/"+s+".update"); err != nil {
+			return "", fmt.Errorf("clearing the last-update record of %s: %w", s, err)
+		}
+	}
+	if out, err := initScript("ddns", "restart")(ctx, ""); err != nil {
+		return out, err
+	}
+	return "updaters restarted for " + strings.Join(names, ", ") + "; each sends its address within a few seconds. Providers may refuse an update that changes nothing, so do not repeat it in a loop.", nil
 }
 
 // verbLine is the last line of a detail: what service_control can do for this add-on.

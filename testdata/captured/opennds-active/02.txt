@@ -1,0 +1,46 @@
+# ndsctl status
+==================
+openNDS Status
+====
+Version: 10.3.1
+Uptime: 6m 26s
+Gateway Name: [ openNDS Node:5254000a536c  ]
+Debug Level: [ 1 ]
+Gateway FQDN: [ status.client ]
+Managed interface: br-lan
+Upstream gateway(s) [ online:192.168.1.100,eth1  ]
+MHD Server [ version 1.0.2 ] listening on: http://192.168.1.1:2050
+Maximum Html Page size is [ 10240 ] Bytes
+Preemptive Authentication is Enabled
+Binauth Script: /usr/lib/opennds/binauth_log.sh
+ThemeSpec Core Library: /usr/lib/opennds/libopennds.sh
+FAS: Secure Level 1, URL: http://status.client:2050/opennds_preauth/
+Client Check Interval: 15s
+Rate Check Window: 2 check intervals (30s)
+Preauthenticated Client Idle Timeout: 30m
+Authenticated Client Idle Timeout: 120m
+Download rate limit threshold (default per client): no limit
+Upload rate limit threshold (default per client): no limit
+Download quota (default per client): no limit
+Upload quota (default per client): no limit
+Total download: 0 kByte; average: 0.00 kbit/s
+Total upload: 0 kByte; average: 0.00 kbit/s
+====
+Client authentications since start: 0
+Current clients: 0
+====
+Trusted MAC addresses:
+none
+====
+Walledgarden FQDNs:
+none
+
+Walledgarden Ports:
+all
+====
+Blocklist FQDNs:
+none
+
+Blocklist Ports:
+all
+========
