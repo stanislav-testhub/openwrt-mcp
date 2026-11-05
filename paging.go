@@ -36,3 +36,15 @@ func pageLines(lines []string, offset, limit int, unit string) ([]string, string
 	return lines[offset:end], truncNotice(fmt.Sprintf("%d more %s omitted", len(lines)-end, unit),
 		fmt.Sprintf("call again with offset=%d", end))
 }
+
+// pageLines2 is pageLines for any rows, without the notice: the slice the text page shows.
+func pageLines2[T any](rows []T, offset, limit int) ([]T, bool) {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= len(rows) {
+		return []T{}, false
+	}
+	end := min(offset+limit, len(rows))
+	return rows[offset:end], end < len(rows)
+}

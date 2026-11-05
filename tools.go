@@ -287,9 +287,10 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 	a.OpenWorldHint = ptr(openWorldTools[name])
 	schema := inputSchema[In]()
 	srv.AddReceivingMiddleware(omitNulls(name, schema))
-	mcp.AddTool(srv, &mcp.Tool{Name: name, Title: a.Title, Description: desc, Annotations: &a, InputSchema: schema},
+	mcp.AddTool(srv, &mcp.Tool{Name: name, Title: a.Title, Description: desc, Annotations: &a, InputSchema: schema, OutputSchema: outputSchemas[name]},
 		func(ctx context.Context, req *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 			started := time.Now()
+			var structured any // set on a successful call that has structured content
 			scopes := scopeOf(in)
 			ev := AuditEvent{Time: nowISO(), Client: client, Tool: name, Scope: strings.Join(scopes, " ")}
 			if b, err := json.Marshal(in); err == nil {
@@ -302,7 +303,7 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				ev.Outcome, ev.Summary, ev.Error = outcome, summary, errMsg
 				ev.Duration = time.Since(started).Milliseconds()
 				s.audit.Record(ev)
-				return res, nil, nil
+				return res, structured, nil
 			}
 
 			// A malformed call is a validation error, not a policy question: it must not reach the
@@ -361,6 +362,7 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 			defer cancel()
 
 			stopProgress := startProgress(callCtx, req, name, in)
+			callCtx, sink := withSink(callCtx)
 			out, summary, err := fn(callCtx, in)
 			stopProgress()
 			if err != nil {
@@ -385,6 +387,7 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				}
 				return finish(errResultCoded(msg, codeLine(errCode(err))), outcome, summary, errMsg)
 			}
+			structured = sink.value()
 			res := textResult(s.presentOutput(name, in, out))
 			if approvedNote != "" {
 				res.Content = append(res.Content, &mcp.TextContent{Text: approvedNote})

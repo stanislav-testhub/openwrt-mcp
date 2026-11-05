@@ -211,6 +211,7 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 		"HOST", "IP", "MAC", "VIA", "SIGNAL", "CONNECTED", "RATE rx/tx", "AIR", "LEASE")
 	filter := strings.ToLower(in.Filter)
 	var matched []string
+	var data []map[string]any // the same rows as data, in step with matched
 	for _, c := range rows {
 		ip := "-"
 		sort.Slice(c.IPs, func(i, j int) bool { return len(c.IPs[i]) < len(c.IPs[j]) }) // v4 first
@@ -260,8 +261,11 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 			continue
 		}
 		matched = append(matched, line)
+		data = append(data, clientData(c, lease))
 	}
 	page, notice := pageLines(matched, in.Offset, clientPageRows, "rows")
+	pageData, _ := pageLines2(data, in.Offset, clientPageRows)
+	setStructured(ctx, map[string]any{"total": len(matched), "clients": pageData})
 	for _, line := range page {
 		b.WriteString(line + "\n")
 	}
@@ -273,6 +277,22 @@ func networkClients(ctx context.Context, in networkClientsIn) (string, string, e
 		b.WriteString("\n" + notice)
 	}
 	return b.String(), fmt.Sprintf("%d clients", len(matched)), nil
+}
+
+// clientData is one client as structured content. Names a client chose are sanitised like the text.
+func clientData(c *netClient, lease string) map[string]any {
+	m := map[string]any{"mac": c.MAC, "ips": append([]string{}, c.IPs...), "lease": lease, "wireless": c.Wireless}
+	if c.Host != "" {
+		m["host"] = sanitizeText(c.Host)
+	}
+	if c.Dev != "" {
+		m["device"] = sanitizeText(c.Dev)
+	}
+	if c.Wireless {
+		m["ssid"] = sanitizeText(c.SSID)
+		m["signal_dbm"], m["connected_s"], m["rx_kbit"], m["tx_kbit"] = c.Signal, c.Conn, c.RxRate, c.TxRate
+	}
+	return m
 }
 
 var reMAC = regexp.MustCompile(`^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`)

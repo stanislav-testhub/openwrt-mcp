@@ -624,6 +624,8 @@ code release. Where the build differs from the text below:
 
 ### 5.5 Structured output
 
+**Status (unreleased):** built for `network_clients` and `wg_list_clients` (`structured.go`); `system_status`, `service_list` and the rest stay text. No version gating of the schemas yet.
+
 *Moved to 1.7.*
 
 *Replaces the `format=json` option.*

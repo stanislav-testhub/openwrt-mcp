@@ -51,6 +51,12 @@ Fixed
   system password. It says "system login prompt".
 
 Added
+- **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
+  same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
+  names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a
+  private or preshared key. An error result carries no structured content. A tool hands its data over with `setStructured`; any other
+  tool is text only. The catalogue grows by 1,142 bytes (budget raised to 25,600). Not done: the schemas are sent to every client, not
+  only to those that negotiated a version with them, and `system_status` and `service_list` are still text.
 - **Progress for long operations (ROADMAP 5.8).** A client that sends a `progressToken` gets a `notifications/progress` every 5 s while
   `pkg_change` (commit=true), `sysupgrade` (test, check) and `net_diag` (traceroute, throughput, capture) run, saying how long the call
   has been going. None of these knows a percentage, so there is no total. No token, or any other call: nothing is sent, and the

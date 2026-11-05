@@ -214,6 +214,29 @@ func wgListClients(ctx context.Context, in wgListIn) (string, string, error) {
 	if dup := duplicateNames(peers); len(dup) > 0 {
 		fmt.Fprintf(&b, "\nWARNING: several peers share a name (%s) -- remove by public_key or section.\n", strings.Join(dup, ", "))
 	}
+	pd := []map[string]any{}
+	for _, p := range peers {
+		m := map[string]any{"public_key": p.PubKey, "allowed_ips": append([]string{}, p.Allowed...), "handshake_unix": p.Handshake,
+			"rx_bytes": p.Rx, "tx_bytes": p.Tx, "in_uci": p.InUCI, "in_kernel": p.InKernel, "psk": p.HasPSK}
+		if p.Name != "" {
+			m["name"] = sanitizeText(p.Name)
+		}
+		if p.Endpoint != "" {
+			m["endpoint"] = p.Endpoint
+		}
+		if p.Section != "" {
+			m["section"] = p.Section
+		}
+		pd = append(pd, m)
+	}
+	sd := map[string]any{"interface": srv.Iface, "addresses": append([]string{}, srv.Addrs...), "peers": pd}
+	if srv.Port != "" {
+		sd["port"] = srv.Port
+	}
+	if srv.PubKey != "" {
+		sd["public_key"] = srv.PubKey
+	}
+	setStructured(ctx, sd)
 	return b.String(), fmt.Sprintf("%d peers on %s", len(peers), srv.Iface), nil
 }
 
