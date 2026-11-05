@@ -639,3 +639,15 @@ func TestTTYDWithTheSystemLoginIsNotFlaggedAsOpen(t *testing.T) {
 		t.Errorf("system login:\n%q", got)
 	}
 }
+
+// Found on a real miniupnpd 2.3.9: the lease file appears with the first mapping, so a quiet LAN
+// has none, and "not readable" would read as a fault.
+func TestUPnPNoLeaseFileYetMeansNoMappings(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on("pidof miniupnpd", "901\n")
+	f.on("uci -q show upnpd", upnpUCI)
+	out := strings.Join(detail(t, "miniupnpd"), "\n")
+	if !strings.Contains(out, "mappings: none (no lease file yet)") {
+		t.Errorf("absent lease file:\n%s", out)
+	}
+}

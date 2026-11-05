@@ -65,8 +65,12 @@ Added
     adblock-fast refresh, sqm queue listing, tcpdump line parsing, iperf3 `-J` output in both directions.
   - `make capture` lost every command after the first (ssh read the manifest from stdin), put ssh warnings into captures and mangled JSON
     arguments; fixed. Scrubbed captures are under `testdata/captured/` and drive `captured_test.go`.
+  - Second pass (adblock 4.4.2, pbr 1.2.2-r20, ddns-scripts 2.8.2, miniupnpd-nftables 2.3.9, https-dns-proxy 2026.05.06): all five adapters
+    answer on the real packages. miniupnpd creates its lease file with the first mapping, so a quiet LAN said "lease file not readable"; it now
+    says "none (no lease file yet)". https-dns-proxy keeps `listen_addr` in its global section, which the adapter now falls back to.
+    pbr and https-dns-proxy captures are in `testdata/captured/`.
   Not verified: a *running* banIP or adblock-fast (the VM has no DNS, so adblock-fast's heartbeat check fails), `query` hits, `unban` that
-  removes something, adblock (classic), pbr, ddns, UPnP, https-dns-proxy, wave 2 to 4 add-ons, 25.12 (apk).
+  removes something, adblock (classic) after a run, a pbr policy that routes traffic, a UPnP mapping, a ddns update, wave 2 to 4 add-ons, 25.12 (apk).
 - **Structured output (ROADMAP 5.5), first two tools.** `network_clients` and `wg_list_clients` declare an `outputSchema` and return the
   same rows as `structuredContent` next to the unchanged text table (`content`). Clients get the data for the page the text shows; host
   names, SSIDs and peer names are sanitised as in the text. WireGuard rows carry the full public key (public data) and never a

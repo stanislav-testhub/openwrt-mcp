@@ -50,3 +50,24 @@ func TestMwan3OnItsRealStatus(t *testing.T) {
 	wantAll(t, got, "interfaces (4):", "wan: online, link up, tracking active, 2 of 4 track IPs up", "wan6: unknown, disabled, link down, tracking down",
 		"policies (5):", "balanced: wan 100%", "wanb_only: no active member")
 }
+
+// pbr 1.2.2-r20 and https-dns-proxy 2026.05.06-r1, 24.10.8 VM, installed with stock config (pbr enabled
+// and started, no policy in use). Not covered: a pbr policy that really routes traffic.
+func TestPbrOnItsRealServiceData(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on(`ubus call service list {"name":"pbr"}`, captured(t, "pbr", "01.txt"))
+	f.on("uci -q show pbr", captured(t, "pbr", "02.txt"))
+	got := strings.Join(detail(t, "pbr"), "\n")
+	wantAll(t, got, "gateways (1):", "wan: table 256, mark 0x010000, priority 30000", "warnings: warningResolverNotSupported",
+		"settings: enabled, resolver set dnsmasq.nftset", "policies (3):", "Plex/Emby Local Server: via wan, disabled")
+}
+
+func TestHTTPSDNSProxyOnItsRealConfig(t *testing.T) {
+	f, _ := wave1Router(t)
+	f.on("pidof https-dns-proxy", captured(t, "https-dns-proxy", "01.txt"))
+	f.on("uci -q show https-dns-proxy", captured(t, "https-dns-proxy", "02.txt"))
+	f.on("uci -q get dhcp.@dnsmasq[0].server", captured(t, "https-dns-proxy", "03.txt"))
+	got := strings.Join(detail(t, "https-dns-proxy"), "\n")
+	wantAll(t, got, "instances (2):", "cloudflare-dns.com, listens on 127.0.0.1:5053, bootstrap DNS set",
+		"dns.google, listens on 127.0.0.1:5054", "https-dns-proxy is in the DNS path")
+}

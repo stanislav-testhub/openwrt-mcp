@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -32,6 +34,10 @@ func readUPnP(ctx context.Context) string {
 	lease := runtimePath(tree.get("config", "upnp_lease_file"), upnpLeaseFile)
 	text, rerr := readSys(lease)
 	if rerr != nil {
+		if errors.Is(rerr, os.ErrNotExist) {
+			// miniupnpd creates the file with the first mapping, so on a quiet LAN there is none.
+			return strings.Join(append(lines, "mappings: none (no lease file yet)"), "\n")
+		}
 		return strings.Join(append(lines, "mappings: lease file not readable"), "\n")
 	}
 	return strings.Join(append(lines, upnpLeases(text)...), "\n")

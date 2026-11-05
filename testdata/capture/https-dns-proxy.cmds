@@ -1,0 +1,4 @@
+# commands the https-dns-proxy adapter runs
+pidof https-dns-proxy
+uci -q show https-dns-proxy
+uci -q get dhcp.@dnsmasq[0].server

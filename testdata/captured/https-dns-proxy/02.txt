@@ -1,0 +1,25 @@
+# uci -q show https-dns-proxy
+https-dns-proxy.config=main
+https-dns-proxy.config.canary_domains_icloud='1'
+https-dns-proxy.config.canary_domains_mozilla='1'
+https-dns-proxy.config.dnsmasq_config_update='*'
+https-dns-proxy.config.force_dns='1'
+https-dns-proxy.config.notrack_dns='1'
+https-dns-proxy.config.force_dns_port='53' '853'
+https-dns-proxy.config.force_dns_src_interface='lan'
+https-dns-proxy.config.procd_trigger_wan6='0'
+https-dns-proxy.config.heartbeat_domain='heartbeat.mossdef.org'
+https-dns-proxy.config.heartbeat_sleep_timeout='10'
+https-dns-proxy.config.heartbeat_wait_timeout='10'
+https-dns-proxy.config.user='nobody'
+https-dns-proxy.config.group='nogroup'
+https-dns-proxy.config.listen_addr='127.0.0.1'
+https-dns-proxy.config.force_ip_family='auto'
+https-dns-proxy.@https-dns-proxy[0]=https-dns-proxy
+https-dns-proxy.@https-dns-proxy[0].bootstrap_dns='198.51.100.1,1.0.0.1,2001:db8::1,2001:db8::2'
+https-dns-proxy.@https-dns-proxy[0].resolver_url='https://cloudflare-dns.com/dns-query'
+https-dns-proxy.@https-dns-proxy[0].listen_port='5053'
+https-dns-proxy.@https-dns-proxy[1]=https-dns-proxy
+https-dns-proxy.@https-dns-proxy[1].bootstrap_dns='198.51.100.2,8.8.4.4,2001:db8::3,2001:db8::4'
+https-dns-proxy.@https-dns-proxy[1].resolver_url='https://dns.google/dns-query'
+https-dns-proxy.@https-dns-proxy[1].listen_port='5054'

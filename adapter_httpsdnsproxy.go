@@ -29,6 +29,9 @@ func readHTTPSDNSProxy(ctx context.Context) string {
 		port := clip(tree.get(s, "listen_port"), 6)
 		addr := clip(tree.get(s, "listen_addr"), 40)
 		if addr == "" {
+			addr = clip(tree.get("config", "listen_addr"), 40) // the package default lives in the config section
+		}
+		if addr == "" {
 			addr = "127.0.0.1"
 		}
 		if port != "" {

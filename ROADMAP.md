@@ -920,7 +920,7 @@ wave: `query` for adblock, mwan3, pbr, verbs for ddns/pbr/UPnP, the exposure vie
 
 ### 9.7 Verified on a real router
 
-**Status (unreleased):** first pass done on the openwrt-2410 VM (not the GL-MT6000): banip, adblock-fast, mwan3, sqm, `capture`, `throughput` and the verbs ran against the real packages and four fixes came out of it (see CHANGELOG). Still open: a running banIP/adblock-fast (needs DNS in the VM), the other wave 1 add-ons, waves 2 to 4, 25.12, and the GL-MT6000.
+**Status (unreleased):** first pass done on the openwrt-2410 VM (not the GL-MT6000): banip, adblock-fast, mwan3, sqm, `capture`, `throughput` and the verbs ran against the real packages and four fixes came out of it (see CHANGELOG). Still open: a running banIP/adblock-fast (needs DNS in the VM), adblock/pbr/ddns/UPnP/https-dns-proxy answer on the VM but with stock config only, waves 2 to 4, 25.12, and the GL-MT6000.
 
 - **Ships.** Every official-feed add-on from waves 1 to 3 stays installed on the verification router (GL-MT6000, 1 GB
   RAM, 25.12). Each has a rig class:

@@ -1,0 +1,2 @@
+# uci -q get dhcp.@dnsmasq[0].server
+/mask.icloud.com/ /mask-h2.icloud.com/ /use-application-dns.net/ 127.0.0.1#5053 127.0.0.1#5054
