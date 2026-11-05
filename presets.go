@@ -46,9 +46,12 @@ var presets = map[string][]presetPolicy{
 	// readonly plus every change that is simulated, rollback-armed, or narrowly reversible.
 	// Not included: exec, and ubus_call beyond the read list -- both bypass the safety rails.
 	"operator": {
+		// service_control gets its own block: the standard actions plus the routine add-on verbs. A
+		// disruptive verb (adblock.suspend, mwan3.ifdown) is not listed, so it needs a named grant.
+		{tools: []string{"service_control"}, scopes: append([]string{"*.start", "*.stop", "*.restart", "*.reload", "*.enable", "*.disable"}, routineVerbScopes()...)},
 		{tools: []string{"system_status", "logread", "network_clients", "firewall_show", "service_list",
 			"pkg_query", "pkg_config_diff", "wg_list_clients", "uci_get",
-			"uci_apply", "uci_confirm", "uci_rollback", "service_control", "pkg_change",
+			"uci_apply", "uci_confirm", "uci_rollback", "pkg_change",
 			"pkg_config_resolve", "wg_new_client", "wg_remove_client"}, scopes: []string{"*"}},
 		{tools: []string{"ubus_call"}, scopes: readonlyUbus},
 		{tools: []string{"net_diag"}, scopes: []string{"*"}},

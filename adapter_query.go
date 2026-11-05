@@ -121,12 +121,22 @@ func queryBanIP(ctx context.Context, ip string) string {
 	if err != nil {
 		return "banIP has not run since boot (no runtime file); status: service_list detail=banip"
 	}
-	suffix := ".v4"
+	hits, checked, suffix := banipSetsHolding(ctx, m, ip)
+	switch {
+	case checked == 0:
+		return "no active banIP set holds " + strings.TrimPrefix(suffix, ".") + " addresses"
+	case len(hits) == 0:
+		return fmt.Sprintf("not banned: %s is in none of the %s checked", ip, plural(checked, "set"))
+	}
+	return fmt.Sprintf("banned: %s is in %s", ip, strings.Join(hits, ", "))
+}
+
+// banipSetsHolding lists the active banIP sets of the address's family that hold ip.
+func banipSetsHolding(ctx context.Context, m runtimeJSON, ip string) (hits []string, checked int, suffix string) {
+	suffix = ".v4"
 	if strings.Contains(ip, ":") {
 		suffix = ".v6"
 	}
-	var hits []string
-	checked := 0
 	for _, set := range m.list("active_feeds") {
 		if !strings.HasSuffix(set, suffix) || !ifaceName.MatchString(set) {
 			continue
@@ -139,11 +149,5 @@ func queryBanIP(ctx context.Context, ip string) string {
 			hits = append(hits, set)
 		}
 	}
-	switch {
-	case checked == 0:
-		return "no active banIP set holds " + strings.TrimPrefix(suffix, ".") + " addresses"
-	case len(hits) == 0:
-		return fmt.Sprintf("not banned: %s is in none of the %s checked", ip, plural(checked, "set"))
-	}
-	return fmt.Sprintf("banned: %s is in %s", ip, strings.Join(hits, ", "))
+	return hits, checked, suffix
 }

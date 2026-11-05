@@ -214,11 +214,12 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.5 (5.1): +150 and +150 so the package tools can name both managers' files (.apk-new / -opkg,
 // .pre-apk-new / .pre-opkg-new) and say what an opkg router cannot answer (23,606 and 12,595 measured).
 // 1.5 (5.10): +250 and +250 for uci_get's `refs` mode, a search across configs that the cross-config
+// 1.8 (9.1, L3): +106 and +67 for service_control's `arg` and the verb wording (24,166 and 12,942 measured).
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 24060 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg)
-	catalogueProseBudget = 12875 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 24180 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg)
+	catalogueProseBudget = 12950 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 

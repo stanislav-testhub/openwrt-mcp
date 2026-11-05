@@ -35,7 +35,13 @@ func wave1Router(t *testing.T) (*fakeRouter, string) {
 
 func detail(t *testing.T, svc string) []string {
 	t.Helper()
-	return detailBody(t, listServices(t, serviceListIn{Detail: svc}))
+	var out []string
+	for _, l := range detailBody(t, listServices(t, serviceListIn{Detail: svc})) {
+		if !strings.HasPrefix(l, "service_control verbs:") { // checked in verbs_test.go
+			out = append(out, l)
+		}
+	}
+	return out
 }
 
 func mustNotContain(t *testing.T, out string, canaries ...string) {

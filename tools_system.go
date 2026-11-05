@@ -317,7 +317,8 @@ func serviceList(ctx context.Context, in serviceListIn) (string, string, error) 
 
 type serviceControlIn struct {
 	Name   string `json:"name" jsonschema:"init script name as listed by service_list, e.g. 'dnsmasq'"`
-	Action string `json:"action" jsonschema:"start | stop | restart | reload | enable | disable"`
+	Action string `json:"action" jsonschema:"start | stop | restart | reload | enable | disable | an add-on verb listed by service_list detail"`
+	Arg    string `json:"arg,omitempty" jsonschema:"verb argument: IP or interface"`
 	Wait   int    `json:"wait,omitempty" jsonschema:"seconds to wait for the service state to settle after the action (default 10, max 60)"`
 }
 
@@ -343,8 +344,21 @@ func serviceControlScope(in serviceControlIn) []string { return []string{in.Name
 var reServiceName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 func serviceControl(ctx context.Context, in serviceControlIn) (string, string, error) {
-	if !reServiceName.MatchString(in.Name) || !serviceActions[in.Action] {
-		return "", "", invalid("need a service name and one of start|stop|restart|reload|enable|disable")
+	if !reServiceName.MatchString(in.Name) {
+		return "", "", invalid("need a service name")
+	}
+	if v, ok := verbFor(in.Name, in.Action); ok {
+		return runVerb(ctx, v, in.Arg)
+	}
+	if !serviceActions[in.Action] {
+		more := ""
+		if n := verbNames(in.Name); n != "" {
+			more = " or " + n
+		}
+		return "", "", invalid("need one of start|stop|restart|reload|enable|disable%s", more)
+	}
+	if in.Arg != "" {
+		return "", "", invalid("arg is only for add-on verbs")
 	}
 	if lifelineServices[in.Name] && (in.Action == "stop" || in.Action == "disable") {
 		return "", "", invalid("refusing to %s %s: it carries the connection this tool is reached "+

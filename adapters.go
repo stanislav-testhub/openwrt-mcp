@@ -186,6 +186,7 @@ func serviceDetail(ctx context.Context, rc map[string]rcEntry, name, query strin
 		return b.String(), "service query " + name, nil
 	}
 	b.WriteString(strings.TrimRight(a.read(ctx), "\n"))
+	b.WriteString(verbLine(name))
 	text := b.String()
 	if a.untrusted != "" {
 		text = untrustedMarker(a.untrusted) + "\n" + text
