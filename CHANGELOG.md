@@ -51,6 +51,10 @@ Fixed
   system password. It says "system login prompt".
 
 Added
+- **Progress for long operations (ROADMAP 5.8).** A client that sends a `progressToken` gets a `notifications/progress` every 5 s while
+  `pkg_change` (commit=true), `sysupgrade` (test, check) and `net_diag` (traceroute, throughput, capture) run, saying how long the call
+  has been going. None of these knows a percentage, so there is no total. No token, or any other call: nothing is sent, and the
+  heartbeat ends with the call. The catalogue does not change. The Tasks extension is not built.
 - **`net_diag action=throughput` and `action=capture` (ROADMAP 9.8).** `throughput` runs `iperf3 -c <target> -J` once up and once down
   (3 s each by default, 5 s at most) and reports Mbit/s and retransmits; a server error is shown as the line's result. `capture`
   runs `tcpdump` on one interface (it must exist in `/proc/net/dev`) with `-c 2000`, a 128-byte snap length and a deadline of at most

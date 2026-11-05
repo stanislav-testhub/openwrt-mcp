@@ -656,6 +656,8 @@ code release. Where the build differs from the text below:
 
 *Moved to 1.7.*
 
+**Status (unreleased):** the progress heartbeat is built (`progress.go`); the Tasks extension is not.
+
 - **Ships.** MCP progress notifications for `pkg_change` commit, `sysupgrade` test and `traceroute`, and the Tasks
   extension where the client supports it.
 - **Not included.** The rollback countdown. A progress notification needs a request in flight, and none exists

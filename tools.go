@@ -360,7 +360,9 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 			callCtx, cancel := context.WithTimeout(ctx, limit)
 			defer cancel()
 
+			stopProgress := startProgress(callCtx, req, name, in)
 			out, summary, err := fn(callCtx, in)
+			stopProgress()
 			if err != nil {
 				switch {
 				case errors.Is(callCtx.Err(), context.DeadlineExceeded):
