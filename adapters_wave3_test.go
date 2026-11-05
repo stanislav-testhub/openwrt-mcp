@@ -116,3 +116,42 @@ func TestDoctorFlagsAnExpiringCertificate(t *testing.T) {
 		t.Error("a certificate expiring in 4 days is not flagged")
 	}
 }
+
+func TestWave3SecondBatch(t *testing.T) {
+	root := withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "wifischedule", "vnstat", "hd-idle", "keepalived", "lldpd", "nlbwmon")
+	writeFixture(t, root, "dev/sda", "")
+	f.on("uci -q show wifi_schedule", "wifi_schedule.global=global\nwifi_schedule.global.enabled='1'\nwifi_schedule.e1=entry\nwifi_schedule.e1.enabled='1'\nwifi_schedule.e1.daysofweek='Monday' 'Tuesday'\nwifi_schedule.e1.starttime='07:00'\nwifi_schedule.e1.stoptime='23:00'\n")
+	f.on("pidof vnstatd", "1\n")
+	f.on("uci -q show vnstat", "vnstat.@vnstat[0]=vnstat\nvnstat.@vnstat[0].interface='br-lan' 'wan'\n")
+	f.on("pidof hd-idle", "2\n")
+	f.on("uci -q show hd-idle", "hd-idle.@hd-idle[0]=hd-idle\nhd-idle.@hd-idle[0].disk='sda'\nhd-idle.@hd-idle[0].enabled='1'\nhd-idle.@hd-idle[0].idle_time_interval='600'\nhd-idle.@hd-idle[1]=hd-idle\nhd-idle.@hd-idle[1].disk='sdb'\n")
+	f.on("pidof keepalived", "3\n")
+	f.on("uci -q show keepalived", "keepalived.vi=vrrp_instance\nkeepalived.vi.name='VI_1'\nkeepalived.vi.state='MASTER'\nkeepalived.vi.priority='100'\nkeepalived.vi.interface='br-lan'\nkeepalived.vi.auth_pass='canary-vrrp'\n")
+	f.on("pidof lldpd", "4\n")
+	f.on("lldpcli -f json show neighbors", `{"lldp":{"interface":{"lan1":{"chassis":{"canary-switch":{}}},"lan3":{}}}}`)
+	f.on("pidof nlbwmon", "5\n")
+	f.on("uci -q show nlbwmon", "nlbwmon.@nlbwmon[0]=nlbwmon\n")
+	all := ""
+	for _, s := range []string{"wifischedule", "vnstat", "hd-idle", "keepalived", "lldpd", "nlbwmon"} {
+		all += body(t, s) + "\n"
+	}
+	mustNotContain(t, all, "canary")
+	wantAll(t, all, "e1: enabled, days Monday Tuesday, on 07:00, off 23:00", "tracked interfaces: br-lan, wan", "sda: enabled, idle after 600s, present", "sdb: disabled, idle after ?s, not present",
+		"VI_1: configured state MASTER, priority 100, interface br-lan, auth set", "local ports with a neighbour (2): lan1, lan3", "/var/lib/nlbwmon, in RAM, lost on reboot")
+}
+
+func TestDoctorFlagsTheTrafficDatabaseInRAM(t *testing.T) {
+	f, root := wave1Router(t)
+	installAddonConfig(t, root, "nlbwmon")
+	f.on("ubus call rc list", `{"nlbwmon":{"enabled":true,"running":true,"start":50,"stop":4}}`)
+	f.on("uci -q show nlbwmon", "nlbwmon.@nlbwmon[0]=nlbwmon\n")
+	if healthFindings(context.Background()).byID("stats-db-in-ram") == nil {
+		t.Error("RAM database not flagged")
+	}
+	f.on("uci -q show nlbwmon", "nlbwmon.@nlbwmon[0]=nlbwmon\nnlbwmon.@nlbwmon[0].database_directory='/mnt/usb/nlbwmon'\n")
+	if healthFindings(context.Background()).byID("stats-db-in-ram") != nil {
+		t.Error("a database on a disk is flagged")
+	}
+}

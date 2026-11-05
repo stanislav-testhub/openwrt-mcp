@@ -424,3 +424,27 @@ func checkACME(sn *snapshot) ([]finding, error) {
 	}
 	return out, nil
 }
+
+func init() {
+	findingHints["stats-db-in-ram"] = findingHint{"service_list detail=nlbwmon (or vnstat) shows the database path; point it at flash or a USB disk with uci_apply (dry_run first) so history survives a reboot", docExtroot}
+}
+
+func checkStatsDBInRAM(sn *snapshot) ([]finding, error) {
+	if !addonInstalled("nlbwmon") {
+		return nil, nil
+	}
+	t, err := sn.getUCI("nlbwmon")
+	if err != nil {
+		return nil, err
+	}
+	rc, err := sn.getRC()
+	if err != nil {
+		return nil, err
+	}
+	if e, ok := rc["nlbwmon"]; !ok || !e.Enabled || !inRAM(nlbwDir(t)) {
+		return nil, nil
+	}
+	return []finding{newFinding("stats-db-in-ram", sevLow,
+		"the nlbwmon traffic database is in RAM: the history is lost on every reboot",
+		"nlbwmon database_directory "+clip(nlbwDir(t), 60))}, nil
+}

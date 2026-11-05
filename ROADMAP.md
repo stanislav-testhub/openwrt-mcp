@@ -896,7 +896,7 @@ wave: `query` for adblock, mwan3, pbr, the verb layer, findings for adblock, ban
 
 ### 9.5 Wave 3 (v1.9): Wi-Fi, clients and the home server
 
-**Status (unreleased):** first batch built and fixture-tested: samba4, ksmbd, transmission, aria2, minidlna, mosquitto, tor, acme, nut-monitor, with findings smb-guest-writable, rpc-open, mosquitto-anonymous, acme-expiring. Not built: usteer, DAWN, wifischedule, openNDS, nlbwmon, vnStat, lldpd, hd-idle, keepalived. The five prompts (3.8) are built.
+**Status (unreleased):** first batch built and fixture-tested: samba4, ksmbd, transmission, aria2, minidlna, mosquitto, tor, acme, nut-monitor, with findings smb-guest-writable, rpc-open, mosquitto-anonymous, acme-expiring. Second batch built: wifischedule, vnstat, hd-idle, keepalived, lldpd, nlbwmon (finding stats-db-in-ram). Not built: usteer, DAWN, openNDS, the extended `net_diag action=usage`. The five prompts (3.8) are built.
 
 - **Ships.** usteer, DAWN, wifischedule, openNDS, nlbwmon (extending `net_diag action=usage`), vnStat, lldpd, Samba
   and ksmbd, Transmission, MiniDLNA, aria2, hd-idle, NUT, acme, Mosquitto, keepalived and Tor.

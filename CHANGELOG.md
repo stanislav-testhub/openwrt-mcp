@@ -3,6 +3,8 @@
 ## Unreleased
 
 Added
+- **Wave 3 adapters, second batch:** `wifischedule`, `vnstat`, `hd-idle`, `keepalived` (configured state only), `lldpd` (ports with a
+  neighbour; neighbour names not printed) and `nlbwmon` (database path, RAM or flash). Doctor finding `stats-db-in-ram`.
 - **Five more prompts (ROADMAP 3.8, 9.5):** `block-ads`, `multi-wan`, `vpn-policy-routing`, `expose-service-safely`, `remote-access`.
   Text only, read tools only, each ends in a proposal. Tests keep them inside the `@readonly` preset.
 - **Wave 3 adapters, first batch (ROADMAP 9.5):** `samba4`, `ksmbd` (shares, guest access, writable), `transmission`, `aria2`,
