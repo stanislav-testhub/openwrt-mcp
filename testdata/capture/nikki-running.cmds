@@ -1,0 +1,4 @@
+# nikki 2026.10.10 with mihomo-meta 1.19.32 (project release, x86_64 apk) on 25.12.6, enabled with a local direct profile
+pidof mihomo
+nft list table inet nikki
+uci -q show nikki

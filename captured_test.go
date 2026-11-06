@@ -632,3 +632,75 @@ func TestYoutubeUnblockOnItsRealRunningInstall(t *testing.T) {
 	wantAll(t, got, "youtubeUnblock: running", "nft chain youtubeUnblock in fw4: loaded", "config strategy: ui_flags", "queue number: 537", "packet mark: 32768", "sections: 1")
 	mustNotContain(t, got, "googlevideo")
 }
+
+// nikki 2026.10.10 with mihomo-meta 1.19.32 from the project's release (x86_64 apk) on 25.12.6,
+// enabled with a local profile. The stock config carries an API secret and a web login password
+// (both masked in the capture) and a subscription URL: none may reach the detail.
+func TestNikkiOnItsRealRunningInstall(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "nikki")
+	f.on("pidof mihomo", captured(t, "nikki-running", "01.txt"))
+	f.on("nft list table inet nikki", captured(t, "nikki-running", "02.txt"))
+	f.on("uci -q show nikki", captured(t, "nikki-running", "03.txt"))
+	got := body(t, "nikki")
+	wantAll(t, got, "mihomo: running", "nft table nikki: loaded", "enabled in config: 1", "TCP mode: redirect", "subscriptions: 1")
+	mustNotContain(t, got, "example.com", "redacted", "zashboard")
+}
+
+// zapret v72.13 from the project's openwrt-embedded bundle (x86_64 binaries) on 25.12.6, nfqws mode
+// on and tpws off: nfqws runs, the table inet zapret is loaded, tpws is reported as not running.
+func TestZapretOnItsRealNfqwsInstall(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "zapret")
+	f.on("pidof nfqws", captured(t, "zapret-running", "01.txt"))
+	f.fail("pidof tpws", "")
+	f.on("nft list table inet zapret", captured(t, "zapret-running", "03.txt"))
+	got := body(t, "zapret")
+	wantAll(t, got, "nfqws: running", "tpws: not running", "nft table zapret: loaded")
+}
+
+// luci-app-openclash 0.48.002 from the project's release (apk) on 25.12.6, with mihomo as its core
+// and a local profile. The process is called clash, its rules live in inet fw4 (no table of its own),
+// and the stock config holds a dashboard password that must stay out of the detail.
+func TestOpenClashOnItsRealRunningInstall(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "openclash")
+	f.on("pidof clash", captured(t, "openclash-running", "01.txt"))
+	f.on("uci -q show openclash", captured(t, "openclash-running", "02.txt"))
+	got := body(t, "openclash")
+	wantAll(t, got, "clash: running", "enabled in config: 1", "mode: fake-ip", "dashboard secret: set (not shown)")
+	mustNotContain(t, got, "redacted", "jsdelivr")
+}
+
+// luci-app-passwall 26.11.3 from the project's release (apk) on 25.12.6, stock config. The package's
+// own dependencies are not in the official feed, so the files were unpacked and the stack never ran:
+// this checks the config layout the adapter reads (@global[0], nodes, shunt_rules) against the real one.
+func TestPasswallOnItsRealStockConfig(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "passwall")
+	f.fail("pidof xray", "")
+	f.fail("pidof sing-box", "")
+	f.fail("nft list table inet passwall", "no such table")
+	f.on("uci -q show passwall", captured(t, "passwall-stock", "01.txt"))
+	got := body(t, "passwall")
+	wantAll(t, got, "enabled in config: 0", "DNS mode: tcp", "nodes: 1", "shunt rules: 6", "nft table passwall: not loaded")
+}
+
+// luci-app-homeproxy 26.298 (ImmortalWrt feed) on 25.12.6 with the feed's sing-box 1.13.21: homeproxy
+// writes a config with inbound fields that sing-box 1.13 removed, so the service stops at once. The
+// reason is only in /var/run/homeproxy/homeproxy.log; the detail now carries its last error lines.
+func TestHomeProxyShowsWhyItStoppedOnItsRealLog(t *testing.T) {
+	root := withFixtureRoot(t)
+	writeFixture(t, root, "var/run/homeproxy/homeproxy.log", captured(t, "homeproxy-failing", "03.txt"))
+	f := newFakeRouter(t)
+	addRC(f, "homeproxy")
+	f.fail("pidof sing-box", "")
+	f.on("uci -q show homeproxy", captured(t, "homeproxy-failing", "02.txt"))
+	got := body(t, "homeproxy")
+	wantAll(t, got, "sing-box: not running", "last error: wrong client configuration detected", "legacy inbound fields", "removed in sing-box 1.13.0")
+	mustNotContain(t, got, "\x1b")
+}

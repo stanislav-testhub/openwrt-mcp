@@ -1,0 +1,3 @@
+# luci-app-openclash 0.48.002 (project release, apk) with mihomo 1.19.32 as the core, 25.12.6, enabled with a local profile
+pidof clash
+uci -q show openclash

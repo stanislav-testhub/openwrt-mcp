@@ -1,0 +1,181 @@
+# nft list table inet nikki
+table inet nikki {
+	set dns_hijack_nfproto {
+		type nf_proto
+		flags interval
+		elements = { ipv4, ipv6 }
+	}
+
+	set proxy_nfproto {
+		type nf_proto
+		flags interval
+		elements = { ipv4, ipv6 }
+	}
+
+	set reserved_ip {
+		type ipv4_addr
+		flags interval
+		auto-merge
+		elements = { 0.0.0.0/8, 10.0.0.0/8,
+			     100.64.0.0/10, 127.0.0.0/8,
+			     169.254.0.0/16, 172.16.0.0/12,
+			     192.168.0.0/16, 224.0.0.0/3 }
+	}
+
+	set reserved_ip6 {
+		type ipv6_addr
+		flags interval
+		auto-merge
+		elements = { ::/127,
+			     ::ffff:0.0.0.0/96,
+			     64:ff9b::/96,
+			     100::/64,
+			     2001::/32,
+			     2001:10::-2001:db8::1,
+			     2001:db8::/32,
+			     2002::/16,
+			     fc00::/7,
+			     fe80::/10,
+			     ff00::/8 }
+	}
+
+	set lan_inbound_device {
+		type ifname
+		flags interval
+		auto-merge
+		elements = { "br-lan" }
+	}
+
+	set china_ip {
+		type ipv4_addr
+		flags interval
+	}
+
+	set china_ip6 {
+		type ipv6_addr
+		flags interval
+	}
+
+	set proxy_dport {
+		type inet_proto . inet_service
+		flags interval
+		elements = { tcp . 0-65535,
+			     udp . 0-65535 }
+	}
+
+	set bypass_dscp {
+		type dscp
+		flags interval
+		auto-merge
+		elements = { 0x04 }
+	}
+
+	chain router_dns_hijack {
+		meta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } meta skuid { 55, 81, 123, 453, 514, 65534 } th dport 53 counter packets 0 bytes 0 return
+		meta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } meta skgid { 55, 81, 123, 453, 514, 65534 } th dport 53 counter packets 0 bytes 0 return
+		meta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } socket cgroupv2 level 2 "services/dnsmasq" th dport 53 counter packets 0 bytes 0 return
+		meta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } socket cgroupv2 level 2 "services/sysntpd" th dport 53 counter packets 0 bytes 0 return
+		meta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter packets 0 bytes 0 redirect to :1053
+	}
+
+	chain router_redirect {
+		meta nfproto @proxy_nfproto meta l4proto tcp meta skuid { 55, 81, 123, 453, 514, 65534 } counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto tcp meta skgid { 55, 81, 123, 453, 514, 65534 } counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto tcp socket cgroupv2 level 2 "services/dnsmasq" counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto tcp socket cgroupv2 level 2 "services/sysntpd" counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto tcp counter packets 0 bytes 0 redirect to :7891
+	}
+
+	chain router_tun {
+		meta nfproto @proxy_nfproto meta l4proto { tcp, udp } meta skuid { 55, 81, 123, 453, 514, 65534 } counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto { tcp, udp } meta skgid { 55, 81, 123, 453, 514, 65534 } counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto { tcp, udp } socket cgroupv2 level 2 "services/dnsmasq" counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto { tcp, udp } socket cgroupv2 level 2 "services/sysntpd" counter packets 0 bytes 0 return
+		meta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto { tcp, udp } meta mark set meta mark & 0xffffff81 | 0x00000081 counter packets 0 bytes 0 accept
+	}
+
+	chain lan_dns_hijack {
+		meta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter packets 0 bytes 0 redirect to :1053
+	}
+
+	chain lan_redirect {
+		meta nfproto @proxy_nfproto meta l4proto tcp counter packets 0 bytes 0 redirect to :7891
+	}
+
+	chain lan_tun {
+		meta nfproto @dns_hijack_nfproto meta l4proto { tcp, udp } th dport 53 counter packets 0 bytes 0 return
+		meta nfproto @proxy_nfproto meta l4proto { tcp, udp } meta mark set meta mark & 0xffffff81 | 0x00000081 counter packets 0 bytes 0 accept
+	}
+
+	chain nat_output {
+		type nat hook output priority filter; policy accept;
+		socket cgroupv2 level 2 "services/nikki" counter packets 3 bytes 224 return
+		jump router_dns_hijack
+		fib daddr type { local, broadcast, anycast, multicast } counter packets 1 bytes 60 return
+		ct direction reply counter packets 0 bytes 0 return
+		ip daddr @reserved_ip ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		ip6 daddr @reserved_ip6 counter packets 0 bytes 0 return
+		ip daddr @china_ip counter packets 0 bytes 0 return
+		ip6 daddr @china_ip6 counter packets 0 bytes 0 return
+		meta l4proto . th dport != @proxy_dport ip daddr != 198.18.0.0/16 counter packets 2 bytes 168 return
+		meta nfproto ipv6 meta l4proto . th dport != @proxy_dport counter packets 0 bytes 0 return
+		meta l4proto { tcp, udp } ip dscp @bypass_dscp ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		meta l4proto { tcp, udp } ip6 dscp @bypass_dscp counter packets 0 bytes 0 return
+		jump router_redirect
+		icmp type echo-request ip daddr 198.18.0.0/16 counter packets 0 bytes 0 redirect
+	}
+
+	chain mangle_output {
+		type route hook output priority mangle; policy accept;
+		socket cgroupv2 level 2 "services/nikki" counter packets 489 bytes 31037 return
+		fib daddr type { local, broadcast, anycast, multicast } counter packets 38 bytes 8121 return
+		ct direction reply counter packets 37 bytes 7064 return
+		ip daddr @reserved_ip ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		ip6 daddr @reserved_ip6 counter packets 0 bytes 0 return
+		ip daddr @china_ip counter packets 0 bytes 0 return
+		ip6 daddr @china_ip6 counter packets 0 bytes 0 return
+		meta l4proto . th dport != @proxy_dport ip daddr != 198.18.0.0/16 counter packets 2 bytes 168 return
+		meta nfproto ipv6 meta l4proto . th dport != @proxy_dport counter packets 0 bytes 0 return
+		meta l4proto { tcp, udp } ip dscp @bypass_dscp ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		meta l4proto { tcp, udp } ip6 dscp @bypass_dscp counter packets 0 bytes 0 return
+		meta l4proto vmap { tcp : continue, udp : jump router_tun }
+	}
+
+	chain mangle_prerouting_router {
+		type filter hook prerouting priority mangle - 1; policy accept;
+		iifname "nikki" meta l4proto { icmp, tcp, udp } counter packets 14 bytes 4500 accept
+	}
+
+	chain dstnat {
+		type nat hook prerouting priority dstnat + 1; policy accept;
+		iifname @lan_inbound_device jump lan_dns_hijack
+		fib daddr type { local, broadcast, anycast, multicast } counter packets 4 bytes 1440 return
+		ct direction reply counter packets 0 bytes 0 return
+		ip daddr @reserved_ip ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		ip6 daddr @reserved_ip6 counter packets 0 bytes 0 return
+		ip daddr @china_ip counter packets 0 bytes 0 return
+		ip6 daddr @china_ip6 counter packets 0 bytes 0 return
+		meta l4proto . th dport != @proxy_dport ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		meta nfproto ipv6 meta l4proto . th dport != @proxy_dport counter packets 0 bytes 0 return
+		meta l4proto { tcp, udp } ip dscp @bypass_dscp ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		meta l4proto { tcp, udp } ip6 dscp @bypass_dscp counter packets 0 bytes 0 return
+		iifname @lan_inbound_device jump lan_redirect
+		icmp type echo-request ip daddr 198.18.0.0/16 counter packets 0 bytes 0 redirect
+	}
+
+	chain mangle_prerouting_lan {
+		type filter hook prerouting priority mangle; policy accept;
+		fib daddr type { local, broadcast, anycast, multicast } counter packets 1039 bytes 3039664 return
+		ct direction reply counter packets 0 bytes 0 return
+		ip daddr @reserved_ip ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		ip6 daddr @reserved_ip6 counter packets 0 bytes 0 return
+		ip daddr @china_ip counter packets 0 bytes 0 return
+		ip6 daddr @china_ip6 counter packets 0 bytes 0 return
+		meta l4proto . th dport != @proxy_dport ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		meta nfproto ipv6 meta l4proto . th dport != @proxy_dport counter packets 0 bytes 0 return
+		meta l4proto { tcp, udp } ip dscp @bypass_dscp ip daddr != 198.18.0.0/16 counter packets 0 bytes 0 return
+		meta l4proto { tcp, udp } ip6 dscp @bypass_dscp counter packets 0 bytes 0 return
+		iifname @lan_inbound_device meta l4proto vmap { tcp : continue, udp : jump lan_tun }
+	}
+}

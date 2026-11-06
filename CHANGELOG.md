@@ -3,6 +3,17 @@
 ## Unreleased
 
 Added
+- **Wave 4 run from the projects' own packages (25.12.6 VM, x86_64; unsigned, installed with `--allow-untrusted` on the isolated VM).**
+  nikki 2026.10.10 with mihomo-meta 1.19.32, OpenClash 0.48.002 (mihomo copied in as its core), zapret v72.13 (nfqws) and youtubeUnblock 1.3.1
+  ran with local profiles and stock configs; the adapters' guesses from source (process names, `inet nikki` and `inet zapret`, the chains in
+  `inet fw4`, option names) all held, and the stock configs' secrets (nikki API secret and web password, OpenClash dashboard password,
+  subscription URLs) stayed out of the detail. passwall 26.11.3 was unpacked only: its dependencies (chinadns-ng, tcping and others) are not
+  in the official feed; only the config layout (`@global[0]`, nodes, shunt rules) was checked. Not covered: passwall2, v2rayA, real proxy
+  traffic through any of them, the same stacks on 24.10.
+- **homeproxy: the detail says why it stopped.** luci-app-homeproxy 26.298 (ImmortalWrt feed) does not start on 25.12.6: it writes inbound
+  fields that sing-box 1.13.21 from the official feed removed (`legacy inbound fields ... removed in sing-box 1.13.0`), and the service stops
+  at once. The only trace is `/var/run/homeproxy/homeproxy.log`, so the detail now prints its last `Error:` line and sing-box's last
+  `FATAL` line (control characters dropped, marked untrusted). Capture `homeproxy-failing`.
 - **youtubeUnblock on a real install.** 1.3.1 from the project's release (x86_64 apk) on 25.12.6: the chain `youtubeUnblock` is in `inet fw4` as
   the source said, the section is named `youtubeUnblock`, the queue counted packets. Without `kmod-nft-queue` the daemon exits at once
   (`mnl_cb_run: Operation not permitted`); the package does not pull that module in. Capture `youtubeunblock-running`.

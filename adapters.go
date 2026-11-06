@@ -80,7 +80,7 @@ var adapters = []adapter{
 	{service: "frpc", read: readFrpc},
 	{service: "frps", read: readFrps},
 	{service: "hd-idle", read: readHDIdle},
-	{service: "homeproxy", read: wave4["homeproxy"].read},
+	{service: "homeproxy", untrusted: "the log lines", read: wave4["homeproxy"].read},
 	{service: "https-dns-proxy", read: readHTTPSDNSProxy},
 	{service: "ipsec", read: readStrongSwan},
 	{service: "keepalived", read: readKeepalived},

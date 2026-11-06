@@ -1,0 +1,2 @@
+# luci-app-passwall 26.11.3-r1 (project release, apk), stock config on 25.12.6; its dependencies (chinadns-ng, tcping and others) are not in the official feed, so it was unpacked and not started
+uci -q show passwall
