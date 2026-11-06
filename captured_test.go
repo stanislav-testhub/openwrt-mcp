@@ -594,3 +594,41 @@ func TestSamba4OnARealShareThatNeedsALogin(t *testing.T) {
 	wantAll(t, got, "bound to: lan", "shares (1):", "data (/srv/data): login required, writable")
 	mustNotContain(t, got, "smbtest", "guest access")
 }
+
+// netbird 0.59.13 on 24.10.8 next to mwan3: NetBird marks its own sockets 0x1bd00, and mwan3's rule
+// "fwmark 0x3d00/0x3f00 blackhole" matches that mark, so every connect to the management server fails
+// with EINVAL. Found with strace; the daemon reached the server once the two rules were removed.
+func TestNetBirdWarnsWhenAnFwmarkRuleBlackholesItsSockets(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "netbird")
+	f.on("pidof netbird", "70\n")
+	f.on("netbird status", captured(t, "netbird-mwan3", "02.txt"))
+	f.on("ip -4 rule show", captured(t, "netbird-mwan3", "01.txt"))
+	got := body(t, "netbird")
+	wantAll(t, got, "WARNING", "0x3d00/0x3f00 blackhole", "0x1bd00", "mwan3")
+}
+
+func TestNetBirdSaysNothingAboutMarksWhenNoRuleCatchesThem(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "netbird")
+	f.on("pidof netbird", "70\n")
+	f.on("netbird status", captured(t, "netbird-connected", "01.txt"))
+	f.on("ip -4 rule show", "0:\tfrom all lookup local\n30000:\tfrom all fwmark 0x10000/0xff0000 lookup pbr_wan\n32766:\tfrom all lookup main\n")
+	mustNotContain(t, body(t, "netbird"), "WARNING")
+}
+
+// youtubeUnblock 1.3.1 from the project's release (x86_64 apk) on 25.12.6, running with the stock
+// config: the chain is in inet fw4 as the source said, the section is named youtubeUnblock.
+func TestYoutubeUnblockOnItsRealRunningInstall(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "youtubeUnblock")
+	f.on("pidof youtubeUnblock", captured(t, "youtubeunblock-running", "01.txt"))
+	f.on("nft list chain inet fw4 youtubeUnblock", captured(t, "youtubeunblock-running", "02.txt"))
+	f.on("uci -q show youtubeUnblock", captured(t, "youtubeunblock-running", "03.txt"))
+	got := body(t, "youtubeUnblock")
+	wantAll(t, got, "youtubeUnblock: running", "nft chain youtubeUnblock in fw4: loaded", "config strategy: ui_flags", "queue number: 537", "packet mark: 32768", "sections: 1")
+	mustNotContain(t, got, "googlevideo")
+}

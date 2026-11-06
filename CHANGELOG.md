@@ -3,6 +3,14 @@
 ## Unreleased
 
 Added
+- **youtubeUnblock on a real install.** 1.3.1 from the project's release (x86_64 apk) on 25.12.6: the chain `youtubeUnblock` is in `inet fw4` as
+  the source said, the section is named `youtubeUnblock`, the queue counted packets. Without `kmod-nft-queue` the daemon exits at once
+  (`mnl_cb_run: Operation not permitted`); the package does not pull that module in. Capture `youtubeunblock-running`.
+- **NetBird next to mwan3 (found on the 24.10.8 VM).** The 0.59.13 client could not reach its management server: `connect: invalid argument`.
+  strace showed every `connect` to port 443 returning EINVAL right after `SO_MARK 0x1bd00`; NetBird marks its own control-plane sockets with
+  that value, and mwan3's rule `fwmark 0x3d00/0x3f00 blackhole` (its default mask) matches it. With the two mwan3 rules removed the daemon
+  reached the server (a dummy setup key was refused, as it should be). The `netbird` detail now warns when a routing rule that discards
+  packets (`blackhole`, `unreachable`, `prohibit`) matches 0x1bd00 (capture `netbird-mwan3`, two tests).
 - **samba4 with a real login.** samba4 4.22.7 ran on the 25.12.6 VM (root grown to 3 GB; the old 98 MB root could not hold it) with one share
   that lists a user (`users`, `guest_ok 'no'`): a login with the right password listed the share, a wrong one got `NT_STATUS_LOGON_FAILURE`.
   The adapter reads the config only and says `login required, writable`; the generated `smb.conf` has `valid users` and `guest ok = no` for it

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -304,11 +305,39 @@ func readZeroTier(ctx context.Context) string {
 
 // ---------------------------------------------------------------- netbird
 
+// netbirdSocketMark is the fwmark NetBird puts on its own control-plane sockets (ControlPlaneMark in
+// the client). A routing rule that matches it and discards the packet makes every connect fail with
+// EINVAL; mwan3's default "fwmark 0x3d00/0x3f00 blackhole" does (seen on 24.10.8, netbird 0.59.13).
+const netbirdSocketMark = 0x1bd00
+
+var discardingMarkRule = regexp.MustCompile(`fwmark (0x[0-9a-fA-F]+)(?:/(0x[0-9a-fA-F]+))?\s+(blackhole|unreachable|prohibit)`)
+
+func netbirdMarkWarnings(rules string) []string {
+	var out []string
+	for _, l := range strings.Split(rules, "\n") {
+		m := discardingMarkRule.FindStringSubmatch(l)
+		if m == nil {
+			continue
+		}
+		mark, err := strconv.ParseUint(m[1], 0, 32)
+		mask := uint64(0xffffffff)
+		if m[2] != "" {
+			mask, _ = strconv.ParseUint(m[2], 0, 32)
+		}
+		if err == nil && netbirdSocketMark&mask == mark {
+			out = append(out, "WARNING: the routing rule \"fwmark "+m[1]+pick(m[2] != "", "/"+m[2], "")+" "+m[3]+"\" catches NetBird's own socket mark 0x1bd00, so it cannot reach its management server (connect fails with EINVAL); this is the default of mwan3: change mwan3's mmx_mask or stop mwan3")
+		}
+	}
+	return out
+}
+
 func readNetBird(ctx context.Context) string {
 	lines := []string{running(ctx, "netbird")}
+	rules, _ := run(ctx, defaultCmdTimeout, "ip", "-4", "rule", "show")
+	warn := netbirdMarkWarnings(rules)
 	out, err := run(ctx, 15*time.Second, "netbird", "status")
 	if err != nil {
-		return strings.Join(append(lines, "netbird does not answer: "+clip(firstLine(strings.TrimSpace(out+" "+err.Error())), 120)), "\n")
+		return strings.Join(append(append(lines, "netbird does not answer: "+clip(firstLine(strings.TrimSpace(out+" "+err.Error())), 120)), warn...), "\n")
 	}
 	want := []string{"Management:", "Signal:", "Peers count:", "NetBird IP:", "Daemon version:"}
 	for _, l := range strings.Split(out, "\n") {
@@ -319,5 +348,5 @@ func readNetBird(ctx context.Context) string {
 			}
 		}
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(append(lines, warn...), "\n")
 }
