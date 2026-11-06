@@ -1,0 +1,17 @@
+# uci -q show travelmate
+travelmate.global=travelmate
+travelmate.global.trm_enabled='1'
+travelmate.global.trm_captive='1'
+travelmate.global.trm_proactive='0'
+travelmate.global.trm_netcheck='0'
+travelmate.global.trm_autoadd='0'
+travelmate.global.trm_mail='0'
+travelmate.global.trm_debug='0'
+travelmate.global.trm_iface='trm_wwan'
+travelmate.global.trm_radio='radio1'
+travelmate.@uplink[0]=uplink
+travelmate.@uplink[0].device='radio1'
+travelmate.@uplink[0].ssid='owlab-roam'
+travelmate.@uplink[0].encryption='psk2'
+travelmate.@uplink[0].key='<redacted>'
+travelmate.@uplink[0].enabled='1'

@@ -111,7 +111,7 @@ var adapters = []adapter{
 	{service: "tailscale", untrusted: "tailnet host names", read: readTailscale},
 	{service: "tor", read: readTor},
 	{service: "transmission", read: readTransmission},
-	{service: "travelmate", read: readTravelmate},
+	{service: "travelmate", untrusted: "the uplink's SSID", read: readTravelmate},
 	{service: "ttyd", read: readTTYD},
 	{service: "unbound", read: readUnbound},
 	{service: "usteer", read: readUsteer},

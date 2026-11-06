@@ -4,7 +4,7 @@
 		"bssid": "02:00:00:00:00:10",
 		"ssid": "owlab-roam",
 		"freq": 5180,
-		"n_assoc": 0,
+		"n_assoc": 1,
 		"noise": -92,
 		"load": 0,
 		"max_assoc": 0,

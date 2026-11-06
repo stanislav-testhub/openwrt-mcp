@@ -5,27 +5,43 @@
 			"channel": 36,
 			"freq": 5180,
 			"channel_utilization": 0,
-			"num_sta": 0,
+			"num_sta": 1,
 			"ht_support": true,
 			"vht_support": true,
 			"op_class": 128,
 			"local": true,
 			"neighbor_report": "020000000010ef1900008024090603022a00",
 			"iface": "phy0-ap0",
-			"hostname": "ow2410"
+			"hostname": "ow2410",
+			"02:00:00:00:00:01": {
+				"ht": true,
+				"vht": true,
+				"rrm-caps": ".TAP....",
+				"signal": -30,
+				"rcpi": -1,
+				"rsni": -1
+			}
 		},
 		"02:00:00:00:00:11": {
 			"channel": 36,
 			"freq": 5180,
 			"channel_utilization": 0,
-			"num_sta": 0,
+			"num_sta": 1,
 			"ht_support": true,
 			"vht_support": true,
 			"op_class": 115,
 			"local": false,
 			"neighbor_report": "020000000011ef1900007324090603000000",
-			"iface": "phy2-ap0",
-			"hostname": "ow2512"
+			"iface": "phy0-ap0",
+			"hostname": "ow2512",
+			"02:00:00:00:00:01": {
+				"ht": true,
+				"vht": true,
+				"rrm-caps": ".TAP....",
+				"signal": -30,
+				"rcpi": -1,
+				"rsni": -1
+			}
 		}
 	}
 }

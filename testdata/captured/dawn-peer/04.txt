@@ -1,4 +1,35 @@
 # ubus call dawn get_hearing_map
 {
-	
+	"owlab-roam": {
+		"02:00:00:00:00:01": {
+			"02:00:00:00:00:10": {
+				"signal": -30,
+				"rcpi": -1,
+				"rsni": -1,
+				"freq": 5180,
+				"ht_capabilities": false,
+				"vht_capabilities": false,
+				"channel_utilization": 0,
+				"num_sta": 1,
+				"ht_support": true,
+				"vht_support": true,
+				"rrm-caps": ".TAP....",
+				"score": 115
+			},
+			"02:00:00:00:00:11": {
+				"signal": -30,
+				"rcpi": -1,
+				"rsni": -1,
+				"freq": 5180,
+				"ht_capabilities": false,
+				"vht_capabilities": false,
+				"channel_utilization": 0,
+				"num_sta": 1,
+				"ht_support": true,
+				"vht_support": true,
+				"rrm-caps": ".TAP....",
+				"score": 115
+			}
+		}
+	}
 }

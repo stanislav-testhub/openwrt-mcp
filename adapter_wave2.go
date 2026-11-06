@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -221,7 +222,58 @@ func readTravelmate(ctx context.Context) string {
 		"enabled in config: "+pick(uciFlag(tree.get("global", "trm_enabled"), false), "yes", "no"),
 		"captive portal check: "+pick(uciFlag(tree.get("global", "trm_captive"), true), "on", "off"),
 		fmt.Sprintf("configured uplinks: %d", len(tree.sectionsOfType("uplink"))))
-	return strings.Join(lines, "\n")
+	return strings.Join(append(lines, travelmateRuntime()...), "\n")
+}
+
+// travelmateRuntimeFiles: 2.2.1 on 24.10 writes /tmp/trm_runtime.json, 2.4.9 on 25.12 writes
+// /var/run/travelmate/travelmate.runtime.json and calls its version backend_ver. Both are {"data": {...}}.
+var travelmateRuntimeFiles = []string{"/var/run/travelmate/travelmate.runtime.json", "/tmp/trm_runtime.json"}
+
+// travelmateRuntime reads what travelmate itself reports: its status, the uplink it is on and that
+// uplink's subnet. The SSID in the uplink is chosen by whoever runs the access point, so the entry
+// marks it untrusted.
+func travelmateRuntime() []string {
+	var text string
+	for _, f := range travelmateRuntimeFiles {
+		if t, err := readSys(f); err == nil {
+			text = t
+			break
+		}
+	}
+	if text == "" {
+		return nil
+	}
+	var doc struct {
+		Data map[string]string `json:"data"`
+	}
+	if json.Unmarshal([]byte(text), &doc) != nil || len(doc.Data) == 0 {
+		return []string{"runtime file not recognised"}
+	}
+	d := doc.Data
+	var out []string
+	if v := d["travelmate_status"]; v != "" {
+		ver := d["travelmate_version"]
+		if ver == "" {
+			ver = d["backend_ver"]
+		}
+		out = append(out, "status: "+clip(v, 60)+pick(ver != "", ", travelmate "+clip(ver, 20), ""))
+		if strings.Contains(v, "net nok") {
+			out = append(out, "WARNING: associated, but travelmate's internet check fails: the uplink gives no internet")
+		}
+	}
+	if id := strings.Split(d["station_id"], "/"); len(id) >= 2 && id[1] != "-" {
+		out = append(out, "uplink: radio "+clip(id[0], 20)+", SSID "+clip(id[1], 32)+", interface "+clip(strings.TrimSuffix(strings.Split(d["station_interfaces"], ",")[0], " "), 20))
+	}
+	if sub, lan, ok := strings.Cut(d["station_subnet"], " (lan: "); ok {
+		lan = strings.TrimSuffix(lan, ")")
+		if sub != "-" && sub == lan {
+			out = append(out, "WARNING: the uplink's subnet "+clip(sub, 20)+" is the LAN's subnet: traffic cannot be routed through it, change the LAN subnet")
+		}
+	}
+	if v := d["last_run"]; v != "" {
+		out = append(out, "last run: "+clip(v, 30))
+	}
+	return out
 }
 
 // ---------------------------------------------------------------- zerotier

@@ -491,7 +491,7 @@ func TestUsteerSeesAPeerHostOnItsRealData(t *testing.T) {
 	f.on("ubus call usteer remote_hosts", captured(t, "usteer-peer", "04.txt"))
 	f.on("ubus call usteer get_clients", captured(t, "usteer-peer", "05.txt"))
 	got := body(t, "usteer")
-	wantAll(t, got, "local nodes (1):", "1 other usteer host seen")
+	wantAll(t, got, "local nodes (1):", "1 client, load 0%", "1 other usteer host seen")
 	mustNotContain(t, got, "02:00:00", "does not answer", "192.168.1.151")
 }
 
@@ -502,7 +502,7 @@ func TestDAWNSeesAPeerAccessPointOnItsRealData(t *testing.T) {
 	f.on("ubus call dawn get_network", captured(t, "dawn-peer", "03.txt"))
 	f.on("ubus call dawn get_hearing_map", captured(t, "dawn-peer", "04.txt"))
 	got := body(t, "dawn")
-	wantAll(t, got, "dawn: running", "network view: 2 access points on 1 SSID (1 local)", "hearing map: 0 clients heard")
+	wantAll(t, got, "dawn: running", "network view: 2 access points on 1 SSID (1 local)", "hearing map: 1 client heard")
 	mustNotContain(t, got, "02:00:00", "Niiiiiiiiiiiiick", "ow2512")
 }
 
@@ -514,4 +514,32 @@ func TestZeroTierOnARealNetworkItCannotJoin(t *testing.T) {
 	f.on("zerotier-cli listnetworks", captured(t, "zerotier-notfound", "01.txt"))
 	got := body(t, "zerotier")
 	wantAll(t, got, "networks (1):", "8056c2e21c000001: NOT_FOUND, PRIVATE, dev ztmjfmfyq5, addresses -")
+}
+
+// travelmate 2.2.1 on the 24.10.8 VM, associated with a WPA2 access point on a virtual radio. The
+// access point's network is the router's own LAN subnet, which travelmate itself complains about.
+func TestTravelmateOnARealConnectedUplink(t *testing.T) {
+	f, root := wave1Router(t)
+	addRC(f, "travelmate")
+	f.on("pidof travelmate.sh", "1234\n")
+	f.on("uci -q show travelmate", captured(t, "travelmate-connected", "01.txt"))
+	writeFixture(t, root, "tmp/trm_runtime.json", captured(t, "travelmate-connected", "02.txt"))
+	got := body(t, "travelmate")
+	wantAll(t, got, "status: connected (net ok/100), travelmate 2.2.1-r6", "uplink: radio radio1, SSID owlab-roam, interface trm_wwan",
+		"WARNING: the uplink's subnet 192.168.1.0 is the LAN's subnet", "configured uplinks: 1")
+	mustNotContain(t, got, "redacted", "02:00:00")
+}
+
+// travelmate 2.4.9 on the 25.12.6 VM: another runtime file and another version key; the uplink is
+// associated but the internet check fails.
+func TestTravelmateOnItsReal25RuntimeFile(t *testing.T) {
+	f, root := wave1Router(t)
+	addRC(f, "travelmate")
+	f.on("pidof travelmate.sh", "")
+	f.on("uci -q show travelmate", captured(t, "travelmate-2512", "01.txt"))
+	writeFixture(t, root, "var/run/travelmate/travelmate.runtime.json", captured(t, "travelmate-2512", "02.txt"))
+	got := body(t, "travelmate")
+	wantAll(t, got, "status: connected, net nok/100, travelmate 2.4.9-r6", "uplink: radio radio1, SSID owlab-roam",
+		"WARNING: associated, but travelmate's internet check fails", "WARNING: the uplink's subnet 192.168.1.0")
+	mustNotContain(t, got, "redacted", "memory:")
 }

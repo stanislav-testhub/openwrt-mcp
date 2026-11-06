@@ -3,9 +3,16 @@
 ## Unreleased
 
 Added
+- **travelmate reads its own state.** The adapter used to print only the config (enabled, captive check, uplink count). It now reads the runtime
+  file travelmate writes and prints its status and version, the uplink in use (radio, SSID marked untrusted, interface), `last run`, a warning
+  when the uplink's subnet equals the LAN's (travelmate itself complains about that) and one when the internet check fails (`net nok`). The
+  file differs per release: 2.2.1 on 24.10 writes `/tmp/trm_runtime.json` and `travelmate_version`, 2.4.9 on 25.12 writes
+  `/var/run/travelmate/travelmate.runtime.json` and `backend_ver`; both are read. Seen on both VMs with a real WPA2 association to a
+  virtual (hwsim) access point and a DHCP lease (`travelmate-connected`, `travelmate-2512`). A stub `sta` section whose SSID equals the
+  `uplink` is what makes travelmate act; without it the process runs and scans nothing.
 - **usteer and DAWN with a peer, ZeroTier on a real network.** Two OpenWrt VMs on one network, each with a virtual `mac80211_hwsim` radio and
   its own access point (`owlab-roam`, 5 GHz): the 24.10.8 VM (usteer 2022.08, DAWN 2023.05) sees the 25.12.6 VM's node and AP as a remote
-  host (`usteer-peer`, `dawn-peer` captures). The reverse direction showed no peer (the packets reach the 25.12.6 VM; why it ignores them was not looked into,
+  host and tracks the client associated to it (`usteer-peer`, `dawn-peer` captures: one client, two APs, two hearing-map rows). The reverse direction showed no peer (the packets reach the 25.12.6 VM; why it ignores them was not looked into,
   the different versions are the likely cause), so both views come from the 24.10.8 host. Hwsim radios now start under hostapd: the cause earlier was
   `/etc/capabilities/wpad.json` (ujail), not the radio.
   - DAWN `network view` and `hearing map` counted SSIDs (the top-level keys), so two access points showed as "1 entry". They now read

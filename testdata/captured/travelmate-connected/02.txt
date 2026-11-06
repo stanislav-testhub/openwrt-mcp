@@ -1,0 +1,2 @@
+# cat /tmp/trm_runtime.json
+{ "data": { "travelmate_status": "connected (net ok\/100)", "travelmate_version": "2.2.1-r6", "station_id": "radio1\/owlab-roam\/-", "station_mac": "02:00:00:00:00:01", "station_interfaces": "trm_wwan, -", "station_subnet": "192.168.1.0 (lan: 192.168.1.0)", "run_flags": "scan: active, captive: ✔, proactive: ✘, netcheck: ✘, autoadd: ✘, randomize: ✘", "ext_hooks": "ntp: ✔, vpn: ✘, mail: ✘", "last_run": "2026.11.06-16:52:09", "system": "QEMU Standard PC (Q35 + ICH9, 2009), x86\/64, OpenWrt 24.10.8 r29233-443ec4032a " } }

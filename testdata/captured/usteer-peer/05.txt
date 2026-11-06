@@ -1,4 +1,13 @@
 # ubus call usteer get_clients
 {
-	
+	"02:00:00:00:00:01": {
+		"192.168.1.151#hostapd.phy0-ap0": {
+			"connected": true,
+			"signal": -30
+		},
+		"hostapd.phy0-ap0": {
+			"connected": true,
+			"signal": -30
+		}
+	}
 }

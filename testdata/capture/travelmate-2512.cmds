@@ -1,0 +1,3 @@
+# travelmate 2.4.9 on 25.12.6, associated with a virtual (hwsim) access point, no working internet behind it
+uci -q show travelmate
+cat /var/run/travelmate/travelmate.runtime.json
