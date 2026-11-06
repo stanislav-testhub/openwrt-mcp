@@ -330,7 +330,7 @@ func TestDAWNOnItsRealIdleState(t *testing.T) {
 	f.on("ubus call dawn get_hearing_map", captured(t, "dawn-active", "04.txt"))
 	got := body(t, "dawn")
 	wantAll(t, got, "dawn: running", "AP discovery: TCP with umdns discovery", "traffic between APs is not encrypted",
-		"no hostapd interface on ubus", "network view: 0 entries", "hearing map: 0 entries")
+		"no hostapd interface on ubus", "network view: 0 access points on 0 SSIDs (0 local)", "hearing map: 0 clients heard")
 }
 
 func TestDAWNWarnsAboutTheShippedKeyAndNeverPrintsKeys(t *testing.T) {
@@ -477,9 +477,41 @@ func TestDAWNWithARealRadioAndAConnectedPhone(t *testing.T) {
 	f.on("ubus call dawn get_network", captured(t, "dawn-ap", "03.txt"))
 	f.on("ubus call dawn get_hearing_map", captured(t, "dawn-ap", "04.txt"))
 	got := body(t, "dawn")
-	wantAll(t, got, "dawn: running", "1 hostapd interface on ubus", "network view: 1 entry")
+	wantAll(t, got, "dawn: running", "1 hostapd interface on ubus", "network view: 1 access point on 1 SSID (1 local)")
 	mustNotContain(t, got, "02:00:00", "Niiiiiiiiiiiiick")
-	if strings.Contains(got, "hearing map: 0 entries") {
-		t.Errorf("the hearing map had entries:\n%s", got)
+	if strings.Contains(got, "hearing map: 0 clients") {
+		t.Errorf("the hearing map had no client:\n%s", got)
 	}
+}
+
+func TestUsteerSeesAPeerHostOnItsRealData(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("ubus call usteer get_config", captured(t, "usteer-peer", "02.txt"))
+	f.on("ubus call usteer local_info", captured(t, "usteer-peer", "03.txt"))
+	f.on("ubus call usteer remote_hosts", captured(t, "usteer-peer", "04.txt"))
+	f.on("ubus call usteer get_clients", captured(t, "usteer-peer", "05.txt"))
+	got := body(t, "usteer")
+	wantAll(t, got, "local nodes (1):", "1 other usteer host seen")
+	mustNotContain(t, got, "02:00:00", "does not answer", "192.168.1.151")
+}
+
+func TestDAWNSeesAPeerAccessPointOnItsRealData(t *testing.T) {
+	f := wifiRoamRouter(t)
+	f.on("uci -q show dawn", captured(t, "dawn-peer", "01.txt"))
+	f.on("ubus list hostapd.*", captured(t, "dawn-peer", "02.txt"))
+	f.on("ubus call dawn get_network", captured(t, "dawn-peer", "03.txt"))
+	f.on("ubus call dawn get_hearing_map", captured(t, "dawn-peer", "04.txt"))
+	got := body(t, "dawn")
+	wantAll(t, got, "dawn: running", "network view: 2 access points on 1 SSID (1 local)", "hearing map: 0 clients heard")
+	mustNotContain(t, got, "02:00:00", "Niiiiiiiiiiiiick", "ow2512")
+}
+
+func TestZeroTierOnARealNetworkItCannotJoin(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "zerotier")
+	f.on("pidof zerotier-one", "60\n")
+	f.on("zerotier-cli listnetworks", captured(t, "zerotier-notfound", "01.txt"))
+	got := body(t, "zerotier")
+	wantAll(t, got, "networks (1):", "8056c2e21c000001: NOT_FOUND, PRIVATE, dev ztmjfmfyq5, addresses -")
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -193,10 +194,30 @@ func readDAWN(ctx context.Context) string {
 	} else {
 		lines = append(lines, "no hostapd interface on ubus: dawn has no access point to manage (Wi-Fi is down, or wpad is not running)")
 	}
-	for _, c := range []struct{ method, what string }{{"get_network", "network view"}, {"get_hearing_map", "hearing map"}} {
-		if m, err := ubusMap(ctx, "dawn", c.method); err == nil {
-			lines = append(lines, fmt.Sprintf("%s: %d %s", c.what, len(m), pick(len(m) == 1, "entry", "entries")))
+	// Both answers are keyed by SSID first: get_network holds access points (the local ones carry
+	// "local": true), get_hearing_map holds the clients each AP has heard.
+	if m, err := ubusMap(ctx, "dawn", "get_network"); err == nil {
+		aps, local := 0, 0
+		for _, ssid := range m {
+			byAP, _ := ssid.(map[string]any)
+			for _, v := range byAP {
+				aps++
+				if ap, _ := v.(map[string]any); ap["local"] == true {
+					local++
+				}
+			}
 		}
+		lines = append(lines, "network view: "+plural(aps, "access point")+" on "+plural(len(m), "SSID")+" ("+strconv.Itoa(local)+" local)")
+	}
+	if m, err := ubusMap(ctx, "dawn", "get_hearing_map"); err == nil {
+		clients := map[string]bool{}
+		for _, ssid := range m {
+			byClient, _ := ssid.(map[string]any)
+			for mac := range byClient {
+				clients[mac] = true
+			}
+		}
+		lines = append(lines, "hearing map: "+plural(len(clients), "client")+" heard")
 	}
 	return strings.Join(lines, "\n")
 }

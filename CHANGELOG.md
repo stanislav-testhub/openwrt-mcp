@@ -3,6 +3,16 @@
 ## Unreleased
 
 Added
+- **usteer and DAWN with a peer, ZeroTier on a real network.** Two OpenWrt VMs on one network, each with a virtual `mac80211_hwsim` radio and
+  its own access point (`owlab-roam`, 5 GHz): the 24.10.8 VM (usteer 2022.08, DAWN 2023.05) sees the 25.12.6 VM's node and AP as a remote
+  host (`usteer-peer`, `dawn-peer` captures). The reverse direction showed no peer (the packets reach the 25.12.6 VM; why it ignores them was not looked into,
+  the different versions are the likely cause), so both views come from the 24.10.8 host. Hwsim radios now start under hostapd: the cause earlier was
+  `/etc/capabilities/wpad.json` (ujail), not the radio.
+  - DAWN `network view` and `hearing map` counted SSIDs (the top-level keys), so two access points showed as "1 entry". They now read
+    "network view: 2 access points on 1 SSID (1 local)" and "hearing map: N clients heard".
+  - ZeroTier on a real 25.12.6 VM (1.16.2): a joined network the controller does not answer (`NOT_FOUND`, empty name, no address) is listed. The
+    package's stock `earth` network (8056c2e21c000001) is no longer served, and this build has no local controller (`/controller` is 404),
+    so an `OK` network with an address is still fixture-tested only.
 - **Exposure, mark owners, structured status, wave 4 checked.**
   - `wan-exposure` now lists UPnP mappings next to the forwards and, for each reachable port, the process behind it (inode in `/proc/net`
     matched to `/proc/<pid>/fd`) and whether it asks for a login (dropbear, uhttpd, ttyd, smbd/ksmbd, transmission, aria2, mosquitto,
