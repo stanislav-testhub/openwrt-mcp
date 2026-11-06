@@ -1,0 +1,2 @@
+# NetBird 0.82.0 client in a container (the OpenWrt VM client failed to dial: connect: invalid argument), a peer of a NetBird cloud account
+netbird status

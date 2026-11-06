@@ -1,0 +1,2 @@
+# the same network after the controller withdrew the authorization
+zerotier-cli listnetworks

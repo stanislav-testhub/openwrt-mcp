@@ -543,3 +543,41 @@ func TestTravelmateOnItsReal25RuntimeFile(t *testing.T) {
 		"WARNING: associated, but travelmate's internet check fails", "WARNING: the uplink's subnet 192.168.1.0")
 	mustNotContain(t, got, "redacted", "memory:")
 }
+
+// zerotier 1.16.2 on the 25.12.6 VM, joined to a private network served by a local controller
+// (the official zerotier/zerotier image). After the controller withdraws the authorization the
+// client keeps the address it was given, so ACCESS_DENIED still lists one.
+func TestZeroTierOnAJoinedAndAuthorizedNetwork(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "zerotier")
+	f.on("pidof zerotier-one", "60\n")
+	f.on("zerotier-cli listnetworks", captured(t, "zerotier-ok", "01.txt"))
+	got := body(t, "zerotier")
+	wantAll(t, got, "networks (1):", "1877ac0fee65a3b6: OK, PRIVATE, dev ztc6m4tlcy, addresses 10.147.20.13/24")
+	mustNotContain(t, got, "owlab-test", "02:00:00")
+}
+
+func TestZeroTierWhenTheControllerWithdrewTheAuthorization(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "zerotier")
+	f.on("pidof zerotier-one", "60\n")
+	f.on("zerotier-cli listnetworks", captured(t, "zerotier-denied", "01.txt"))
+	got := body(t, "zerotier")
+	wantAll(t, got, "1877ac0fee65a3b6: ACCESS_DENIED, PRIVATE")
+	mustNotContain(t, got, "owlab-test")
+}
+
+// NetBird 0.82.0, status of a connected peer of a cloud account (taken from a container: the 0.59.13
+// client on the 24.10 VM could not dial the management service, "connect: invalid argument").
+func TestNetBirdOnARealConnectedPeer(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "netbird")
+	f.on("pidof netbird", "70\n")
+	f.on("netbird status", captured(t, "netbird-connected", "01.txt"))
+	got := body(t, "netbird")
+	wantAll(t, got, "Daemon version: 0.82.0", "Management: Connected", "Signal: Connected", "NetBird IP: 100.65.141.182/16", "Peers count: 0/1 Connected")
+	mustNotContain(t, got, "owlab-test-container", "netbird.cloud", "2001:db8")
+}

@@ -1,0 +1,3 @@
+# zerotier-cli listnetworks
+200 listnetworks <nwid> <name> <mac> <status> <type> <dev> <ZT assigned ips>
+200 listnetworks 1877ac0fee65a3b6 owlab-test 02:00:00:00:00:01 OK PRIVATE ztc6m4tlcy 10.147.20.13/24

@@ -1,0 +1,2 @@
+# zerotier 1.16.2 on 25.12.6, joined to a private network of a local controller, authorized
+zerotier-cli listnetworks

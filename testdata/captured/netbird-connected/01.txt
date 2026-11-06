@@ -1,0 +1,19 @@
+# netbird status
+OS: linux/amd64
+Daemon version: 0.82.0
+CLI version: 0.82.0
+Profile: default
+Management: Connected
+Signal: Connected
+Relays: 4/4 Available
+Nameservers: 0/0 Available
+FQDN: owlab-test-container.netbird.cloud
+NetBird IP: 100.65.141.182/16
+NetBird IPv6: 2001:db8::1/64
+Interface type: Kernel
+Wireguard port: 51820
+Quantum resistance: false
+Lazy connection: true
+SSH Server: Disabled
+Networks: -
+Peers count: 0/1 Connected

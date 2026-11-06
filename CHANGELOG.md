@@ -3,6 +3,12 @@
 ## Unreleased
 
 Added
+- **ZeroTier and NetBird with a real peer.** ZeroTier 1.16.2 on the 25.12.6 VM joined a private network served by a local controller (the
+  `zerotier/zerotier` container, 1.14.2): `OK` with an address, then `ACCESS_DENIED` after the controller withdrew the authorization (the client
+  keeps its old address; the adapter lists it as it is). The OpenWrt build has no controller of its own, so the controller ran in a container.
+  NetBird status taken from a 0.82.0 client connected to a cloud account (`netbird-connected`); the parser reads the same text on every
+  platform. The 0.59.13 client from the 24.10 feed could not start on the VM: `dial tcp ...:443: connect: invalid argument` (the cause was not
+  found), so the OpenWrt package itself was not run connected.
 - **travelmate reads its own state.** The adapter used to print only the config (enabled, captive check, uplink count). It now reads the runtime
   file travelmate writes and prints its status and version, the uplink in use (radio, SSID marked untrusted, interface), `last run`, a warning
   when the uplink's subnet equals the LAN's (travelmate itself complains about that) and one when the internet check fails (`net nok`). The
