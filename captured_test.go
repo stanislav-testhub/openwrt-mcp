@@ -581,3 +581,16 @@ func TestNetBirdOnARealConnectedPeer(t *testing.T) {
 	wantAll(t, got, "Daemon version: 0.82.0", "Management: Connected", "Signal: Connected", "NetBird IP: 100.65.141.182/16", "Peers count: 0/1 Connected")
 	mustNotContain(t, got, "owlab-test-container", "netbird.cloud", "2001:db8")
 }
+
+// samba4 4.22.7 on 25.12.6 with a share that lists one user. The password hash and the user's
+// name stay out of the detail.
+func TestSamba4OnARealShareThatNeedsALogin(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "samba4")
+	f.on("pidof smbd", captured(t, "samba4-login", "02.txt"))
+	f.on("uci -q show samba4", captured(t, "samba4-login", "01.txt"))
+	got := body(t, "samba4")
+	wantAll(t, got, "bound to: lan", "shares (1):", "data (/srv/data): login required, writable")
+	mustNotContain(t, got, "smbtest", "guest access")
+}

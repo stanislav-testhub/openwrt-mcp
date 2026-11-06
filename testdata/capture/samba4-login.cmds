@@ -1,0 +1,4 @@
+# samba4 4.22.7 on 25.12.6, one share that needs a login, a user connected
+uci -q show samba4
+pidof smbd
+cat /etc/samba/smb.conf

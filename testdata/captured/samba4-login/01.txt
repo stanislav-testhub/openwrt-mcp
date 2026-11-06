@@ -1,0 +1,12 @@
+# uci -q show samba4
+samba4.@samba[0]=samba
+samba4.@samba[0].workgroup='WORKGROUP'
+samba4.@samba[0].charset='UTF-8'
+samba4.@samba[0].description='Samba on OpenWRT'
+samba4.@samba[0].interface='lan'
+samba4.@sambashare[0]=sambashare
+samba4.@sambashare[0].name='data'
+samba4.@sambashare[0].path='/srv/data'
+samba4.@sambashare[0].read_only='no'
+samba4.@sambashare[0].users='smbtest'
+samba4.@sambashare[0].guest_ok='no'

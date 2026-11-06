@@ -3,6 +3,10 @@
 ## Unreleased
 
 Added
+- **samba4 with a real login.** samba4 4.22.7 ran on the 25.12.6 VM (root grown to 3 GB; the old 98 MB root could not hold it) with one share
+  that lists a user (`users`, `guest_ok 'no'`): a login with the right password listed the share, a wrong one got `NT_STATUS_LOGON_FAILURE`.
+  The adapter reads the config only and says `login required, writable`; the generated `smb.conf` has `valid users` and `guest ok = no` for it
+  (capture `samba4-login`). The user's name and hash stay out of the detail.
 - **ZeroTier and NetBird with a real peer.** ZeroTier 1.16.2 on the 25.12.6 VM joined a private network served by a local controller (the
   `zerotier/zerotier` container, 1.14.2): `OK` with an address, then `ACCESS_DENIED` after the controller withdrew the authorization (the client
   keeps its old address; the adapter lists it as it is). The OpenWrt build has no controller of its own, so the controller ran in a container.
