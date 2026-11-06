@@ -1,0 +1,3 @@
+# luci-app-v2raya 26.304 with v2raya from the official 25.12.6 feed, enabled with the stock config
+pidof v2raya
+uci -q show v2raya

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -12,6 +13,10 @@ import (
 // fixed config flags, and how many nodes or subscriptions are configured. Names, links and
 // secrets are never read into the output. Built from each project's documented layout, not run
 // against the project; they are dropped rather than patched when upstream changes.
+
+// reListenAddr is the shape of a listen address option (host:port, a bracketed IPv6 form): a value of
+// another shape, a link or a path, is not printed.
+var reListenAddr = regexp.MustCompile(`^[0-9A-Za-z._:\[\]-]{1,64}$`)
 
 type stack struct {
 	config  string      // UCI config name ("" if none is read)
@@ -94,7 +99,11 @@ func (st stack) read(ctx context.Context) string {
 		return strings.Join(append(lines, st.config+" config unreadable: "+clip(err.Error(), 160)), "\n")
 	}
 	for _, f := range st.flags {
-		if v := tree.get(f[0], f[1]); v != "" && reVersion.MatchString(v) {
+		shape := reVersion
+		if f[1] == "address" {
+			shape = reListenAddr
+		}
+		if v := tree.get(f[0], f[1]); v != "" && shape.MatchString(v) {
 			lines = append(lines, f[2]+": "+v)
 		} else {
 			lines = append(lines, f[2]+": not set")

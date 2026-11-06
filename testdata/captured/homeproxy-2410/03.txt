@@ -1,0 +1,2 @@
+# cat /var/run/homeproxy/homeproxy.log
+2026-11-06 19:11:19 [DAEMON] sing-box 1.12.22 started.

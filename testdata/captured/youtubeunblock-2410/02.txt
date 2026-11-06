@@ -1,0 +1,8 @@
+# nft list chain inet fw4 youtubeUnblock
+table inet fw4 {
+	chain youtubeUnblock {
+		type filter hook postrouting priority mangle - 1; policy accept;
+		tcp dport 443 ct original packets < 20 counter packets 0 bytes 0 queue flags bypass to 537
+		meta l4proto udp ct original packets < 9 counter packets 0 bytes 0 queue flags bypass to 537
+	}
+}

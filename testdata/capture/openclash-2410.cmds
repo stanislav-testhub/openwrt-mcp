@@ -1,0 +1,3 @@
+# luci-app-openclash 0.48.002 (project ipk) with mihomo as its core on 24.10.8 (dnsmasq-full), enabled with a local profile
+pidof clash
+uci -q show openclash

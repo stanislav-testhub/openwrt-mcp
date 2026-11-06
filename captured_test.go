@@ -704,3 +704,92 @@ func TestHomeProxyShowsWhyItStoppedOnItsRealLog(t *testing.T) {
 	wantAll(t, got, "sing-box: not running", "last error: wrong client configuration detected", "legacy inbound fields", "removed in sing-box 1.13.0")
 	mustNotContain(t, got, "\x1b")
 }
+
+// v2rayA from the official 25.12.6 feed, stock config: the web API listens on all addresses by default.
+func TestV2rayAOnItsRealStockInstall(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "v2raya")
+	f.on("pidof v2raya", captured(t, "v2raya-running", "01.txt"))
+	f.on("uci -q show v2raya", captured(t, "v2raya-running", "02.txt"))
+	got := body(t, "v2raya")
+	wantAll(t, got, "v2raya: running", "enabled in config: 1", "API address: 0.0.0.0:2017")
+}
+
+// luci-app-passwall2 26.11.3 from the project's release (apk), stock config on 25.12.6, unpacked only:
+// this checks the layout the adapter reads (@global[0], named nodes and shunt rules).
+func TestPasswall2OnItsRealStockConfig(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "passwall2")
+	f.fail("pidof xray", "")
+	f.fail("pidof sing-box", "")
+	f.fail("nft list table inet passwall2", "no such table")
+	f.on("uci -q show passwall2", captured(t, "passwall2-stock", "01.txt"))
+	got := body(t, "passwall2")
+	wantAll(t, got, "enabled in config: 0", "remote DNS protocol: tcp", "nodes: 2", "shunt rules: 8", "nft table passwall2: not loaded")
+}
+
+// The wave 4 stacks on 24.10.8 (opkg), from the projects' own packages: the same adapters read the same
+// layouts there as on 25.12. The detail of each running stack is checked against what its capture holds.
+func TestWave4OnItsReal2410Installs(t *testing.T) {
+	cases := []struct {
+		svc  string
+		on   func(f *fakeRouter)
+		want []string
+		not  []string
+	}{
+		{"youtubeUnblock", func(f *fakeRouter) {
+			f.on("pidof youtubeUnblock", captured(t, "youtubeunblock-2410", "01.txt"))
+			f.on("nft list chain inet fw4 youtubeUnblock", captured(t, "youtubeunblock-2410", "02.txt"))
+			f.on("uci -q show youtubeUnblock", captured(t, "youtubeunblock-2410", "03.txt"))
+		}, []string{"youtubeUnblock: running", "nft chain youtubeUnblock in fw4: loaded", "queue number: 537"}, []string{"googlevideo"}},
+		{"nikki", func(f *fakeRouter) {
+			f.on("pidof mihomo", captured(t, "nikki-2410", "01.txt"))
+			f.on("nft list table inet nikki", captured(t, "nikki-2410", "02.txt"))
+			f.on("uci -q show nikki", captured(t, "nikki-2410", "03.txt"))
+		}, []string{"mihomo: running", "nft table nikki: loaded", "TCP mode: redirect", "subscriptions: 1"}, []string{"example.com", "redacted"}},
+		{"zapret", func(f *fakeRouter) {
+			f.on("pidof nfqws", captured(t, "zapret-2410", "01.txt"))
+			f.fail("pidof tpws", "")
+			f.on("nft list table inet zapret", captured(t, "zapret-2410", "03.txt"))
+		}, []string{"nfqws: running", "tpws: not running", "nft table zapret: loaded"}, nil},
+		{"openclash", func(f *fakeRouter) {
+			f.on("pidof clash", captured(t, "openclash-2410", "01.txt"))
+			f.on("uci -q show openclash", captured(t, "openclash-2410", "02.txt"))
+		}, []string{"clash: running", "enabled in config: 1", "dashboard secret: set (not shown)"}, []string{"redacted", "jsdelivr"}},
+		{"homeproxy", func(f *fakeRouter) {
+			f.on("pidof sing-box", captured(t, "homeproxy-2410", "01.txt"))
+			f.on("uci -q show homeproxy", captured(t, "homeproxy-2410", "02.txt"))
+		}, []string{"sing-box: running", "routing mode: gfwlist", "nodes: 1"}, []string{"last error", "sing-box said"}},
+		{"passwall", func(f *fakeRouter) {
+			f.fail("pidof xray", "")
+			f.fail("pidof sing-box", "")
+			f.fail("nft list table inet passwall", "no such table")
+			f.on("uci -q show passwall", captured(t, "passwall-2410", "01.txt"))
+		}, []string{"enabled in config: 0", "nodes: 1", "shunt rules: 6"}, nil},
+		{"passwall2", func(f *fakeRouter) {
+			f.fail("pidof xray", "")
+			f.fail("pidof sing-box", "")
+			f.fail("nft list table inet passwall2", "no such table")
+			f.on("uci -q show passwall2", captured(t, "passwall2-2410", "01.txt"))
+		}, []string{"enabled in config: 0", "nodes: 2", "shunt rules: 8"}, nil},
+		{"v2raya", func(f *fakeRouter) {
+			f.on("pidof v2raya", captured(t, "v2raya-2410", "01.txt"))
+			f.on("uci -q show v2raya", captured(t, "v2raya-2410", "02.txt"))
+		}, []string{"v2raya: running", "API address: 0.0.0.0:2017"}, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.svc, func(t *testing.T) {
+			withFixtureRoot(t)
+			f := newFakeRouter(t)
+			addRC(f, c.svc)
+			c.on(f)
+			got := body(t, c.svc)
+			wantAll(t, got, c.want...)
+			if len(c.not) > 0 {
+				mustNotContain(t, got, c.not...)
+			}
+		})
+	}
+}

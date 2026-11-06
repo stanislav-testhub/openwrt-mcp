@@ -1,0 +1,2 @@
+# luci-app-passwall 26.11.3-r1 (project ipk), stock config on 24.10.8; unpacked, not started (dependencies are not in the official feed)
+uci -q show passwall

@@ -1,0 +1,4 @@
+# luci-app-homeproxy 26.187 with sing-box 1.12.22 from the 24.10.8 feed, a node and main_node set: it starts
+pidof sing-box
+uci -q show homeproxy
+cat /var/run/homeproxy/homeproxy.log

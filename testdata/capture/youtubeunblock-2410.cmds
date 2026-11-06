@@ -1,0 +1,4 @@
+# youtubeUnblock 1.3.1 (project ipk) on 24.10.8, running with the stock config
+pidof youtubeUnblock
+nft list chain inet fw4 youtubeUnblock
+uci -q show youtubeUnblock

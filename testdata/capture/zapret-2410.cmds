@@ -1,0 +1,4 @@
+# zapret v72.13 (project openwrt-embedded bundle) on 24.10.8, nfqws mode running, tpws off
+pidof nfqws
+pidof tpws
+nft list table inet zapret

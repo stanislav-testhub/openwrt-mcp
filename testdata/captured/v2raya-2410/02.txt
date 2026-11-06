@@ -1,0 +1,10 @@
+# uci -q show v2raya
+v2raya.config=v2raya
+v2raya.config.enabled='1'
+v2raya.config.address='0.0.0.0:2017'
+v2raya.config.ipv6_support='auto'
+v2raya.config.nftables_support='auto'
+v2raya.config.log_level='info'
+v2raya.config.log_max_days='3'
+v2raya.config.log_disable_color='1'
+v2raya.config.log_disable_timestamp='0'

@@ -1,0 +1,2 @@
+# luci-app-passwall2 26.11.3-r1 (project release, apk), stock config on 25.12.6; unpacked, not started (its dependencies are not in the official feed)
+uci -q show passwall2

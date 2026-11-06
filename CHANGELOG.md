@@ -3,6 +3,16 @@
 ## Unreleased
 
 Added
+- **Wave 4 finished on both releases.** passwall2 26.11.3 (unpacked like passwall: stock layout read, 2 nodes, 8 shunt rules) and v2rayA
+  (official feeds: 2.2.7.3 on 24.10.8, a newer build on 25.12.6, running with the stock config) were added; the whole of wave 4 also ran on
+  24.10.8 from the projects' ipk files: youtubeUnblock, nikki, zapret, OpenClash (needs `dnsmasq-full` in place of `dnsmasq`) and passwall
+  and passwall2 unpacked. The adapters read the same layouts there. homeproxy 26.187 **starts** on 24.10.8 with the feed's sing-box 1.12.22,
+  so the 25.12 failure is sing-box 1.13 against homeproxy's generated config, not homeproxy itself. Real traffic: on 25.12.6 nikki sent
+  `1.1.1.1` through a shadowsocks server (sing-box on loopback, run as a uid nikki exempts, or its own output loops until `too many open
+  files`): `curl` got `301` with the server up and nothing (`000`) with it stopped. Not done: traffic through the other stacks.
+- **Fix: the v2rayA API address was always `not set`.** The wave 4 reader printed a config value only if it looked like a version string
+  (no `:`), so `0.0.0.0:2017` never passed. Options named `address` now accept a host:port shape (letters, digits, `.`, `:`, `[`, `]`, `-`).
+  Found by the first capture of a real v2rayA config. Note the stock value listens on all addresses.
 - **Wave 4 run from the projects' own packages (25.12.6 VM, x86_64; unsigned, installed with `--allow-untrusted` on the isolated VM).**
   nikki 2026.10.10 with mihomo-meta 1.19.32, OpenClash 0.48.002 (mihomo copied in as its core), zapret v72.13 (nfqws) and youtubeUnblock 1.3.1
   ran with local profiles and stock configs; the adapters' guesses from source (process names, `inet nikki` and `inet zapret`, the chains in
