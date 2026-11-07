@@ -27,7 +27,7 @@ var (
 		"wg":     {"wg_list_clients", "wg_new_client", "wg_remove_client"},
 	}
 	wantCoreTools         = []string{"system_status", "mfa_unlock", "request_access"} // listed whatever toolsets are selected
-	wantUnrestrictedTools = []string{"exec"}                        // in no toolset: only a session that selects none has it
+	wantUnrestrictedTools = []string{"exec"}                                          // in no toolset: only a session that selects none has it
 	// What the @readonly preset grants, plus ubus_list (introspection, ungated).
 	wantReadOnlyTools = []string{"system_status", "logread", "network_clients", "firewall_show", "service_list",
 		"pkg_query", "pkg_config_diff", "wg_list_clients", "uci_get", "ubus_call", "net_diag", "sysupgrade", "ubus_list"}
