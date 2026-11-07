@@ -308,6 +308,7 @@ type readCloser struct {
 
 func (s *Server) Serve() error {
 	cfg := s.cfg()
+	applyMemoryLimit(cfg.MemoryLimitMiB)
 	// Refuse to bind anything but loopback. This is a deliberate hard stop rather than a
 	// default: reaching the router is SSH's job, and a mis-edited config must not silently
 	// expose a root-equivalent RPC surface to the LAN.

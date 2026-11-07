@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 	"time"
@@ -206,5 +207,38 @@ func TestPolicyOptionSpellingsAreAcceptedAndMeanTheSameThing(t *testing.T) {
 		if _, err := LoadConfig(p); err == nil {
 			t.Errorf("accepted %q", bad)
 		}
+	}
+}
+
+func TestMemoryLimitOption(t *testing.T) {
+	write := func(v string) *Config {
+		p := filepath.Join(t.TempDir(), "c")
+		body := "config server\n\toption socket ''\n"
+		if v != "" {
+			body += "\toption memory_limit '" + v + "'\n"
+		}
+		if err := os.WriteFile(p, []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		c, err := LoadConfig(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	for v, want := range map[string]int{"": 0, "16": 16, "1": 8, "999999": 4096, "abc": 0, "-5": 0, "0": 0} {
+		if got := write(v).MemoryLimitMiB; got != want {
+			t.Errorf("memory_limit %q gave %d, want %d", v, got, want)
+		}
+	}
+	old := debug.SetMemoryLimit(-1)
+	defer debug.SetMemoryLimit(old)
+	applyMemoryLimit(0)
+	if debug.SetMemoryLimit(-1) != old {
+		t.Error("an unset limit changed the runtime limit")
+	}
+	applyMemoryLimit(16)
+	if got := debug.SetMemoryLimit(-1); got != 16<<20 {
+		t.Errorf("limit %d, want 16 MiB", got)
 	}
 }

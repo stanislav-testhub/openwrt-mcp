@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"path"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -132,7 +133,9 @@ type Config struct {
 	Socket     string // unix socket for the stdio bridge; "" disables it
 	AuditPath  string
 	AuditMaxMB int
-	Policies   []*Policy
+	// MemoryLimitMiB is Go's soft memory limit for the daemon; 0 leaves the runtime default (no limit).
+	MemoryLimitMiB int
+	Policies       []*Policy
 
 	// Failed-attempt limiter for mfa_unlock (see MFAStore.Unlock).
 	MFAMaxFailures int
@@ -215,6 +218,9 @@ func LoadConfig(configPath string) (*Config, error) {
 			}
 			if v, err := strconv.Atoi(s.Options["audit_max_mb"]); err == nil && v > 0 {
 				c.AuditMaxMB = v
+			}
+			if v, err := strconv.Atoi(s.Options["memory_limit"]); err == nil && v > 0 {
+				c.MemoryLimitMiB = clampInt(v, v, minMemoryLimitMiB, maxMemoryLimitMiB)
 			}
 			if v, err := strconv.Atoi(s.Options["mfa_max_failures"]); err == nil && v > 0 {
 				c.MFAMaxFailures = min(v, maxMFAMaxFailures)
@@ -619,4 +625,18 @@ func (ts *TokenStore) save() error {
 		return err
 	}
 	return os.Rename(tmp, ts.path)
+}
+
+// Bounds of option memory_limit (MiB). Below the floor the collector runs back to back and starves the
+// daemon; above the ceiling the setting means nothing on a router.
+const (
+	minMemoryLimitMiB = 8
+	maxMemoryLimitMiB = 4096
+)
+
+// applyMemoryLimit sets the runtime's soft limit (ROADMAP 10.3); 0 keeps today's behaviour.
+func applyMemoryLimit(mib int) {
+	if mib > 0 {
+		debug.SetMemoryLimit(int64(mib) << 20)
+	}
 }
