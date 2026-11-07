@@ -129,7 +129,7 @@ type Policy struct {
 }
 
 type Config struct {
-	Listen     string
+	Listen     string // loopback TCP address of the HTTP transport; "" disables it
 	Socket     string // unix socket for the stdio bridge; "" disables it
 	AuditPath  string
 	AuditMaxMB int
@@ -197,8 +197,8 @@ func LoadConfig(configPath string) (*Config, error) {
 	for _, s := range parseUCI(bufio.NewScanner(f)) {
 		switch s.Type {
 		case "server":
-			if v := s.Options["listen"]; v != "" {
-				c.Listen = v
+			if v, ok := s.Options["listen"]; ok {
+				c.Listen = v // '' turns the loopback HTTP listener off
 			}
 			// A path under the web root or a CGI directory keeps the default, like any other
 			// nonsense value: publishing the audit log or a root-owned socket is never wanted.

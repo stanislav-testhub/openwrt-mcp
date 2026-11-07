@@ -309,31 +309,43 @@ type readCloser struct {
 func (s *Server) Serve() error {
 	cfg := s.cfg()
 	applyMemoryLimit(cfg.MemoryLimitMiB)
-	// Refuse to bind anything but loopback. This is a deliberate hard stop rather than a
-	// default: reaching the router is SSH's job, and a mis-edited config must not silently
-	// expose a root-equivalent RPC surface to the LAN.
-	host, _, err := net.SplitHostPort(cfg.Listen)
-	if err != nil {
-		return fmt.Errorf("bad listen address %q: %w", cfg.Listen, err)
+	if cfg.Listen == "" && cfg.Socket == "" {
+		return fmt.Errorf("both option listen and option socket are empty: the daemon would have no way to be reached")
 	}
-	if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
-		return fmt.Errorf("listen address %q is not loopback; openwrt-mcp refuses to bind a routable address (reach it with: ssh -L %s:%s root@router)", cfg.Listen, cfg.Listen, cfg.Listen)
-	}
-	ln, err := net.Listen("tcp", cfg.Listen)
-	if err != nil {
-		return err
-	}
-	if cfg.Socket != "" {
-		sl, err := s.listenSocket(cfg.Socket)
+	var ln net.Listener
+	if cfg.Listen != "" {
+		// Refuse to bind anything but loopback. This is a deliberate hard stop rather than a
+		// default: reaching the router is SSH's job, and a mis-edited config must not silently
+		// expose a root-equivalent RPC surface to the LAN.
+		host, _, err := net.SplitHostPort(cfg.Listen)
 		if err != nil {
+			return fmt.Errorf("bad listen address %q: %w", cfg.Listen, err)
+		}
+		if ip := net.ParseIP(host); ip == nil || !ip.IsLoopback() {
+			return fmt.Errorf("listen address %q is not loopback; openwrt-mcp refuses to bind a routable address (reach it with: ssh -L %s:%s root@router)", cfg.Listen, cfg.Listen, cfg.Listen)
+		}
+		if ln, err = net.Listen("tcp", cfg.Listen); err != nil {
+			return err
+		}
+	}
+	var sl net.Listener
+	if cfg.Socket != "" {
+		var err error
+		if sl, err = s.listenSocket(cfg.Socket); err != nil {
 			return fmt.Errorf("socket %s: %w", cfg.Socket, err)
 		}
-		go s.serveSocket(sl)
+		if ln != nil {
+			go s.serveSocket(sl)
+		}
 	}
 	// The old daemon could not write anything as it died, so `status` reads a restart off this line.
 	s.audit.Record(AuditEvent{Time: nowISO(), Client: "<daemon>", Tool: "daemon", Outcome: OutcomeOK, Summary: "daemon started " + version})
 	log.Printf("openwrt-mcp %s listening on %s and %s (%d policies, %d paired clients)",
-		version, cfg.Listen, orDefault(cfg.Socket, "(no socket)"), len(cfg.Policies), len(s.tokens.Clients()))
+		version, orDefault(cfg.Listen, "(HTTP off)"), orDefault(cfg.Socket, "(no socket)"), len(cfg.Policies), len(s.tokens.Clients()))
+	if ln == nil {
+		s.serveSocket(sl) // only the socket: serve it on this goroutine
+		return nil
+	}
 	srv := &http.Server{
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 10 * time.Second,

@@ -105,6 +105,9 @@ func main() {
 		must(err)
 		// Printed once and never recoverable: only the SHA-256 digest is stored.
 		fmt.Println(raw)
+		if cfg, err := LoadConfig(*configPath); err == nil && cfg.Listen == "" {
+			fmt.Fprintln(os.Stderr, "note: option listen is empty, so the HTTP transport is off and this token has nothing to open")
+		}
 
 	case "unpair":
 		if len(args) != 2 {

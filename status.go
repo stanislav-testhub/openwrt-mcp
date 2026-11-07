@@ -109,7 +109,7 @@ func buildStatus(configPath, statePath string, auditLines int) (statusReport, er
 		Source:  sourceURL,
 		Listen:  cfg.Listen,
 		Socket:  cfg.Socket,
-		Running: daemonRunning(cfg.Listen),
+		Running: daemonUp(cfg),
 		Counts:  map[string]int{},
 	}
 
@@ -164,6 +164,19 @@ func buildStatus(configPath, statePath string, auditLines int) (statusReport, er
 // perfectly ordinary port for something else to hold -- an ssh -L on a workstation will
 // answer it happily -- and reporting that as "running" would be a lie in exactly the case a
 // status pane exists to catch. So ask /health and require it to identify itself.
+// daemonUp asks the HTTP listener, or the bridge socket when HTTP is off.
+func daemonUp(cfg *Config) bool {
+	if cfg.Listen != "" {
+		return daemonRunning(cfg.Listen)
+	}
+	c, err := net.DialTimeout("unix", cfg.Socket, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	c.Close()
+	return true
+}
+
 func daemonRunning(listen string) bool {
 	if listen == "" {
 		listen = defaultListen
@@ -243,7 +256,7 @@ func writeStatusText(w io.Writer, r statusReport, all bool) error {
 	if r.Running {
 		state = "running"
 	}
-	fmt.Fprintf(w, "openwrt-mcp %s -- %s on %s\n", r.Version, state, r.Listen)
+	fmt.Fprintf(w, "openwrt-mcp %s -- %s on %s\n", r.Version, state, orDefault(r.Listen, "the socket only (HTTP off)"))
 	fmt.Fprintf(w, "%d paired client(s), %d policy/policies\n", len(r.Clients), len(r.Policies))
 	for _, c := range r.Clients {
 		fmt.Fprintf(w, "  %s (%d policy/policies)\n", c.Name, c.Policies)

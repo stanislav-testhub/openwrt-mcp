@@ -1,5 +1,6 @@
 config server
 	# Loopback only, always. The daemon refuses to start on a routable address.
+	# Set to '' to turn the HTTP transport off and serve the socket only (saves a listener on a small router).
 	# HTTP transport, reached from a workstation with:
 	#   ssh -N -L 8730:127.0.0.1:8730 root@router
 	option listen '127.0.0.1:8730'

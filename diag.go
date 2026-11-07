@@ -205,14 +205,14 @@ func runDiag(w io.Writer, configPath string, nAudit int, detail bool) error {
 	p("version    %s (%s %s/%s)", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	p("board      %s", boardLine(ctx))
 	state := "stopped"
-	if daemonRunning(cfg.Listen) {
+	if daemonUp(cfg) {
 		state = "running"
 	}
 	sock := "disabled"
 	if cfg.Socket != "" {
 		sock = "enabled"
 	}
-	p("daemon     %s on %s; stdio bridge socket %s", state, orDefault(cfg.Listen, defaultListen), sock)
+	p("daemon     %s on %s; stdio bridge socket %s", state, orDefault(cfg.Listen, "(HTTP off)"), sock)
 	p("tools      %d registered", len(allToolNames))
 	p("settings   output masking %s, history keeps %d, audit log up to %d MB", onOff(cfg.RedactOutput), cfg.HistoryKeep, cfg.AuditMaxMB)
 
