@@ -221,3 +221,14 @@ grep -E '^(VmRSS|VmHWM|RssAnon|RssFile)' /proc/$(pidof -s openwrt-mcp)/status
 
 The size floors come from three throwaway programs built for mipsle softfloat: a go-sdk stdio server with one tool,
 a net/http server that runs one command, and a stdin JSON loop with `os/exec`, `regexp` and a unix socket dial.
+
+### MIPS under qemu-user (measured 2026-11-07)
+
+`qemu-mipsel` 10.2 on the build host runs the stripped mipsle-softfloat binary (12.4 MB). The idle daemon starts in
+under a second and reads 27.3 MB resident, 14.7 MB anonymous; a trivial Go program under the same emulator reads
+8.7 MB, so those numbers include the emulator and are an upper bound, not the router's figure.
+
+The first request over the bridge kills the daemon with SIGBUS in `github.com/segmentio/encoding/json`
+(`escapeIndex` reads a string as `[]uint64`, an unaligned load). qemu-user does not emulate the kernel's fix-up of
+unaligned accesses, which stock Linux MIPS does by default, so this is probably an emulator artefact, but it has not
+been run on a MIPS router. Until it is, the bridge and call paths have no MIPS figure.
