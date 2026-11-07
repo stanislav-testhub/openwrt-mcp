@@ -28,9 +28,9 @@ import (
 // the masker about is not masked; the test for that is in diag_test.go.
 
 var (
-	reDiagMAC  = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?:[:-][0-9a-f]{2}){5}\b`)
-	reDiagIPv4 = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
-	reDiagIPv6 = regexp.MustCompile(`[0-9A-Fa-f:]{2,}(?:%[A-Za-z0-9_.-]+)?`)
+	reDiagMAC  = lazyRegexp(`(?i)\b[0-9a-f]{2}(?:[:-][0-9a-f]{2}){5}\b`)
+	reDiagIPv4 = lazyRegexp(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)
+	reDiagIPv6 = lazyRegexp(`[0-9A-Fa-f:]{2,}(?:%[A-Za-z0-9_.-]+)?`)
 )
 
 // genericClients are client names that say which program connected and nothing about who runs it.
@@ -137,7 +137,7 @@ func (m *masker) Client(name string) string {
 	return placeholder(m.clients, name, "client")
 }
 
-var reUCIValue = regexp.MustCompile(`^([A-Za-z0-9_@\[\].-]+)\.([A-Za-z0-9_]+)='(.*)'$`)
+var reUCIValue = lazyRegexp(`^([A-Za-z0-9_@\[\].-]+)\.([A-Za-z0-9_]+)='(.*)'$`)
 
 // harvestNames reads the names that identify this network from UCI and the lease file: the host
 // name, static and leased DHCP names, the domain, SSIDs and WireGuard peer names. Only these

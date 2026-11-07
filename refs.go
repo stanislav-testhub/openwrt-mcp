@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -168,7 +167,7 @@ func renderRefs(name string, r refResult, searched, absent []string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-var reRefName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
+var reRefName = lazyRegexp(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 // uciRefs is uci_get with refs set. Its scope is "refs" whatever the name, so a grant on the
 // configs it reads does not cover it.

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -13,7 +12,7 @@ import (
 // of /etc/config/<name>. uci_get prints it, uci_apply can require it (expected_revisions), and
 // a config edited in between -- in LuCI, or by another client -- is refused instead of being
 // silently overwritten. It comes from the file, so the server keeps no state for it.
-var reRevision = regexp.MustCompile(`^[0-9a-f]{12}$`)
+var reRevision = lazyRegexp(`^[0-9a-f]{12}$`)
 
 func configRevision(name string) (string, error) {
 	b, err := os.ReadFile(filepath.Join(uciConfDir, name))

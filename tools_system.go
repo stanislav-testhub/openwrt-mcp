@@ -407,7 +407,7 @@ var (
 
 func serviceControlScope(in serviceControlIn) []string { return []string{in.Name + "." + in.Action} }
 
-var reServiceName = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+var reServiceName = lazyRegexp(`^[A-Za-z0-9._-]+$`)
 
 func serviceControl(ctx context.Context, in serviceControlIn) (string, string, error) {
 	if !reServiceName.MatchString(in.Name) {
@@ -674,8 +674,8 @@ type netDiagIn struct {
 
 // A target is passed as an argument, never through a shell, but it must still not start
 // with '-': ping and traceroute would read it as an option.
-var reNetTarget = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._:%-]{0,252}$`)
-var reNetName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9._@-]{0,31}$`)
+var reNetTarget = lazyRegexp(`^[A-Za-z0-9_][A-Za-z0-9._:%-]{0,252}$`)
+var reNetName = lazyRegexp(`^[A-Za-z0-9_][A-Za-z0-9._@-]{0,31}$`)
 
 func netDiagScope(in netDiagIn) []string {
 	if in.Target != "" {
@@ -853,7 +853,7 @@ func sysupgradeTool(ctx context.Context, in sysupgradeIn) (string, string, error
 
 // reBackupName is exactly what the backup action names its archives. Only files with such a
 // name are ever removed, so nothing an operator put in /tmp is touched.
-var reBackupName = regexp.MustCompile(`^backup-[A-Za-z0-9_-]+-\d{8}-\d{6}\.tar\.gz$`)
+var reBackupName = lazyRegexp(`^backup-[A-Za-z0-9_-]+-\d{8}-\d{6}\.tar\.gz$`)
 
 // removeOldBackups deletes the archives the backup action made earlier, except keep, and
 // returns how many it removed. Each one holds every secret on the router, so one at a time is

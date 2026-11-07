@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -410,7 +409,7 @@ func checkRootPassword(sn *snapshot) ([]finding, error) {
 	return nil, fmt.Errorf("no root entry in /etc/shadow")
 }
 
-var reApkAudit = regexp.MustCompile(`^([AUD]) (\S.*)$`)
+var reApkAudit = lazyRegexp(`^([AUD]) (\S.*)$`)
 
 // Changes under these are configuration and state, not the packages' own files.
 var apkAuditBenign = []string{"etc/", "tmp/", "var/", "overlay/", "root/", "mnt/"}

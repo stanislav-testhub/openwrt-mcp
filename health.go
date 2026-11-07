@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -364,7 +363,7 @@ func checkNTP(sn *snapshot) ([]finding, error) {
 	return nil, nil
 }
 
-var reKernelPkg = regexp.MustCompile(`(?m)^kernel-([0-9]+(?:\.[0-9]+)+)`)
+var reKernelPkg = lazyRegexp(`(?m)^kernel-([0-9]+(?:\.[0-9]+)+)`)
 
 // checkKernel compares the kernel that is running with the one the package manager has
 // installed. After an upgrade they differ until the router restarts.

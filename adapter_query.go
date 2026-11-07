@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 )
 
@@ -127,7 +126,7 @@ const (
 	adblockAllowlist = "/etc/adblock/adblock.allowlist"
 )
 
-var adblockDNSDir = regexp.MustCompile(`dns: (/[^,\s]+)`)
+var adblockDNSDir = lazyRegexp(`dns: (/[^,\s]+)`)
 
 // adblockListPath is where the merged list is. adblock 4.4 writes it into dnsmasq's own conf dir
 // (named in the runtime file's run_directories) as `local=/name/` lines; older layouts used /tmp.

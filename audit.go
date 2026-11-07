@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"os"
 	"path"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -28,7 +27,7 @@ const redacted = "<redacted>"
 // reSecretOption matches UCI option names that hold a secret without saying so in a way
 // isSecretKey can see: wireless `key` (and WEP's key1..key4). A bare "key" is not in
 // secretKeySubstrings because keyId or publicKey are identifiers; here the context is known.
-var reSecretOption = regexp.MustCompile(`(?i)^key[0-9]*$`)
+var reSecretOption = lazyRegexp(`(?i)^key[0-9]*$`)
 
 // isSecretOption is the one rule for "does this option or key hold a secret". The audit log and
 // the output masker both call it, so they cannot drift apart.

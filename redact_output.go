@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"regexp"
 	"strings"
 )
 
@@ -99,7 +98,7 @@ func secretOptionNamed(name string, extra []string) bool {
 
 var (
 	// option key 'v' | list key v | -\toption key 'v' (a diff line). The name may be quoted.
-	reUCIDecl = regexp.MustCompile(`^([-+ ]?[ \t]*(?:option|list)[ \t]+)('[^']*'|"[^"]*"|[^\s'"]+)([ \t]+)(\S.*)$`)
+	reUCIDecl = lazyRegexp(`^([-+ ]?[ \t]*(?:option|list)[ \t]+)('[^']*'|"[^"]*"|[^\s'"]+)([ \t]+)(\S.*)$`)
 
 	// pkg.section.option followed by =, += or -=. A segment is any run of characters but space,
 	// dot, equals and quotes: UCI itself only prints letters, digits and underscores (and the
@@ -107,7 +106,7 @@ var (
 	// something else, which is how a long fuzz run found `!pwd`. A segment may not end in '-' or
 	// '+', so that `dns-='x'` reads as option dns with operator -=.
 	// Needs three segments: pkg.section=type is a section, not an option.
-	reUCIPath = regexp.MustCompile(`([^\s.='"]*[^\s.='"+-](?:\.[^\s.='"]*[^\s.='"+-]){2,})(\+=|-=|=)`)
+	reUCIPath = lazyRegexp(`([^\s.='"]*[^\s.='"+-](?:\.[^\s.='"]*[^\s.='"+-]){2,})(\+=|-=|=)`)
 )
 
 const maskedValue = "'" + redacted + "'"

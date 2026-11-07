@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -279,7 +278,7 @@ func (opkgManager) verify(ctx context.Context, action string, pkgs []string) (st
 func (opkgManager) newConfigSuffix() string { return "-opkg" }
 func (opkgManager) oldConfigSuffix() string { return ".pre-opkg-new" }
 
-var reKernelOpkg = regexp.MustCompile(`(?m)^kernel - ([0-9]+(?:\.[0-9]+)+)`)
+var reKernelOpkg = lazyRegexp(`(?m)^kernel - ([0-9]+(?:\.[0-9]+)+)`)
 
 func (opkgManager) installedKernel(ctx context.Context) (string, error) {
 	out, err := run(ctx, defaultCmdTimeout, "opkg", "list-installed", "kernel")

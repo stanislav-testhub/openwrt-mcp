@@ -14,11 +14,11 @@ import (
 // maxStrippedMipsleBytes: stripped, trimpath, GOOS=linux GOARCH=mipsle GOMIPS=softfloat, the build a
 // 128 MB / 16 MB-flash router gets. Measured 12 976 319 bytes after Milestone 9 (1.5.0 was 11.9 MB).
 // maxStartupHeapBytes: heap bytes allocated by our own package init, from GODEBUG=inittrace=1. Measured
-// 2 557 528 bytes: mostly package-level regexps that the bridge never uses. Milestone 10.2 moves them
-// behind sync.OnceValue and lowers this to 100 000.
+// 54 936 bytes after Milestone 10.2 moved the package-level regexps behind lazyRegexp (it was 2 557 528).
+// New package-level work belongs behind lazyRegexp or sync.OnceValue.
 const (
 	maxStrippedMipsleBytes = 13_300_000
-	maxStartupHeapBytes    = 2_800_000
+	maxStartupHeapBytes    = 100_000
 )
 
 func buildTo(t *testing.T, out string, env []string, flags ...string) {

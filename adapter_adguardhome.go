@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
 	"strings"
 )
 
@@ -21,7 +20,7 @@ const (
 
 // reAGConfigPath is what the config_file option must look like to be opened: it is
 // root-writable configuration, and what it names is read.
-var reAGConfigPath = regexp.MustCompile(`^/[A-Za-z0-9._/+-]+\.ya?ml$`)
+var reAGConfigPath = lazyRegexp(`^/[A-Za-z0-9._/+-]+\.ya?ml$`)
 
 func readAdGuardHome(ctx context.Context) string {
 	var lines []string

@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -375,7 +374,7 @@ func topTalkers() string {
 
 // ---------------------------------------------------------------- usage (nlbwmon)
 
-var reNlbwPeriod = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
+var reNlbwPeriod = lazyRegexp(`^[0-9]{4}-[0-9]{2}-[0-9]{2}$`)
 
 const usageRows = 25
 
@@ -606,4 +605,4 @@ func nlbwClientUsage(ctx context.Context, period, src string) (string, string, e
 	return strings.TrimRight(b.String(), "\n"), "nlbwmon usage " + src, nil
 }
 
-var reUsageMAC = regexp.MustCompile(`^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`)
+var reUsageMAC = lazyRegexp(`^[0-9a-f]{2}(:[0-9a-f]{2}){5}$`)

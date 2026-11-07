@@ -7,7 +7,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,8 +21,8 @@ import (
 //   - `apk audit` reports files changed since installation.
 
 var (
-	rePkgName    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
-	rePkgPattern = regexp.MustCompile(`^[A-Za-z0-9*][A-Za-z0-9._+*-]{0,127}$`)
+	rePkgName    = lazyRegexp(`^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$`)
+	rePkgPattern = lazyRegexp(`^[A-Za-z0-9*][A-Za-z0-9._+*-]{0,127}$`)
 )
 
 // ---------------------------------------------------------------- pkg_query
@@ -37,7 +36,7 @@ type pkgQueryIn struct {
 }
 
 func pkgQuery(ctx context.Context, in pkgQueryIn) (string, string, error) {
-	needPkg := func(re *regexp.Regexp) error {
+	needPkg := func(re interface{ MatchString(string) bool }) error {
 		if !re.MatchString(in.Package) {
 			return fmt.Errorf("%s needs a valid package name", in.Action)
 		}
@@ -107,9 +106,9 @@ func pkgQuery(ctx context.Context, in pkgQueryIn) (string, string, error) {
 }
 
 var (
-	rePkgListLine = regexp.MustCompile(`^([^\s\[\]()]+)(?: \[upgradable from: ([^\]]+)\])?$`)
-	rePkgVersion  = regexp.MustCompile(`^(.+?)-(\d[^\s]*)$`)
-	rePkgTotal    = regexp.MustCompile(`^\((\d+) packages\)$`)
+	rePkgListLine = lazyRegexp(`^([^\s\[\]()]+)(?: \[upgradable from: ([^\]]+)\])?$`)
+	rePkgVersion  = lazyRegexp(`^(.+?)-(\d[^\s]*)$`)
+	rePkgTotal    = lazyRegexp(`^\((\d+) packages\)$`)
 )
 
 // pkgListData is the structured form of one page of a compacted installed or upgradable list:

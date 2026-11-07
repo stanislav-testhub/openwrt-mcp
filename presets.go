@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"os"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -197,7 +196,7 @@ func rewritePolicyBlocks(configPath string, edit func(uciSection, []string) ([]s
 
 // The comment may hold anything printable: no control character (a bare CR or NUL) can ride
 // into a file whose lines other tools split in their own ways.
-var reSSHKey = regexp.MustCompile(`^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/=]{40,}( [^\x00-\x1f\x7f]*)?$`)
+var reSSHKey = lazyRegexp(`^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/=]{40,}( [^\x00-\x1f\x7f]*)?$`)
 
 // authorizedKeyLine binds a public key to one MCP client: dropbear runs the stdio bridge for
 // that key and nothing else -- no shell, no port forwarding, no pty.

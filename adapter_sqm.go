@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -12,9 +11,9 @@ import (
 // offloading moves established flows past the qdisc, so with it on the shaper sees little.
 
 var (
-	reTcSent    = regexp.MustCompile(`Sent (\d+) bytes (\d+) pkt \(dropped (\d+), overlimits (\d+)`)
-	reTcBacklog = regexp.MustCompile(`backlog (\d+)b (\d+)p`)
-	reTcQdisc   = regexp.MustCompile(`^qdisc (\S+) \S+ `)
+	reTcSent    = lazyRegexp(`Sent (\d+) bytes (\d+) pkt \(dropped (\d+), overlimits (\d+)`)
+	reTcBacklog = lazyRegexp(`backlog (\d+)b (\d+)p`)
+	reTcQdisc   = lazyRegexp(`^qdisc (\S+) \S+ `)
 )
 
 const sqmMaxQueues = 8

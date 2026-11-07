@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 )
@@ -110,7 +109,7 @@ func dnsPath(ctx context.Context) (string, string, error) {
 
 // ---------------------------------------------------------------- path
 
-var reFwmarkRule = regexp.MustCompile(`^(\d+):\s+.*fwmark (0x[0-9a-fA-F]+)(?:/(0x[0-9a-fA-F]+))?\s+(?:lookup|.*lookup)\s+(\S+)`)
+var reFwmarkRule = lazyRegexp(`^(\d+):\s+.*fwmark (0x[0-9a-fA-F]+)(?:/(0x[0-9a-fA-F]+))?\s+(?:lookup|.*lookup)\s+(\S+)`)
 
 type markEntry struct {
 	prio, mark, mask, table string

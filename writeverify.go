@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -114,7 +113,7 @@ func quoted(opt string, vals []string) string {
 
 // reGeneratedName is the name libuci invents for an anonymous section (cfg + 6 hex digits). It
 // comes from the section's place in the file, so it can differ after the commit.
-var reGeneratedName = regexp.MustCompile(`^cfg[0-9a-f]{6}$`)
+var reGeneratedName = lazyRegexp(`^cfg[0-9a-f]{6}$`)
 
 // expectationMismatches compares the tree `uci show` printed for one config with what changes
 // (all of them for that config, in the order they were staged) must have left in it. Sections

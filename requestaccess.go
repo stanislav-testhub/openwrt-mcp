@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -20,7 +19,7 @@ const maxAccessWants = 8
 
 // accessScope is what a scope looks like: the characters real scopes use, nothing a card could be
 // made to render as markup or a line break.
-var accessScope = regexp.MustCompile(`^[A-Za-z0-9_.*@\[\]:/ -]{1,300}$`)
+var accessScope = lazyRegexp(`^[A-Za-z0-9_.*@\[\]:/ -]{1,300}$`)
 
 type requestAccessIn struct {
 	Wants []string `json:"wants" jsonschema:"1 to 8 coming calls, each 'tool scope scope', e.g. 'uci_apply wireless.radio1.channel'"`

@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"regexp"
 	"strings"
 	"unicode/utf8"
 )
@@ -54,8 +53,8 @@ var (
 	errEntryJSON    = errors.New("call arguments must be one JSON object")
 	errEntryForm    = errors.New("call takes TOOL [JSON], TOOL --help or --list")
 
-	reEntryHeadToken = regexp.MustCompile(`^[A-Za-z0-9_=,-]+$`)
-	reEntryTool      = regexp.MustCompile(`^[a-z][a-z0-9_]{0,39}$`)
+	reEntryHeadToken = lazyRegexp(`^[A-Za-z0-9_=,-]+$`)
+	reEntryTool      = lazyRegexp(`^[a-z][a-z0-9_]{0,39}$`)
 )
 
 func parseEntry(cmd string) (entry, error) {

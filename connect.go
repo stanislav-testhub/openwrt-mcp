@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
@@ -35,8 +34,8 @@ type connectParams struct {
 }
 
 var (
-	reHost = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:%\[\]-]*$`)
-	reUser = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+	reHost = lazyRegexp(`^[A-Za-z0-9][A-Za-z0-9._:%\[\]-]*$`)
+	reUser = lazyRegexp(`^[a-z_][a-z0-9_-]{0,31}$`)
 )
 
 func (p connectParams) validate() error {
@@ -129,7 +128,7 @@ func ensureKey(path, name string, out io.Writer) (created bool, err error) {
 	return true, nil
 }
 
-var rePublicKey = regexp.MustCompile(`^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/]+={0,3}$`)
+var rePublicKey = lazyRegexp(`^(ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(?:256|384|521)|sk-ssh-ed25519@openssh\.com) [A-Za-z0-9+/]+={0,3}$`)
 
 // publicKey returns "<type> <base64>" for the key at path: the .pub next to it, or derived from
 // the private key. The comment is dropped on purpose: it is free text that ends up inside a

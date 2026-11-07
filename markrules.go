@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"net"
-	"regexp"
 	"strings"
 )
 
@@ -14,7 +13,7 @@ import (
 // Ports, protocols and connection state are not evaluated, so a "yes" means "if the port and
 // protocol fit".
 
-var reNFTName = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
+var reNFTName = lazyRegexp(`^[A-Za-z0-9_.-]{1,64}$`)
 
 type nftRule struct {
 	family, table, chain string
@@ -30,12 +29,12 @@ const (
 )
 
 var (
-	reNFTBase    = regexp.MustCompile(`^\s+type \S+ hook `)
-	reNFTSetOpen = regexp.MustCompile(`^\s+(set|map|flowtable|counter|quota|limit) \S+ \{`)
-	reAddrCond   = regexp.MustCompile(`\bip (saddr|daddr) (!= )?(\{[^}]*\}|@[A-Za-z0-9_.-]+|[0-9./]+)`)
-	reIifCond    = regexp.MustCompile(`\biifname (!= )?(\{[^}]*\}|"[^"]*"|@[A-Za-z0-9_.-]+)`)
-	reJump       = regexp.MustCompile(`\b(?:jump|goto) ([A-Za-z0-9_.-]+)\s*$`)
-	reRuleNoise  = regexp.MustCompile(`\s*counter packets \d+ bytes \d+|\s*comment "[^"]*"`)
+	reNFTBase    = lazyRegexp(`^\s+type \S+ hook `)
+	reNFTSetOpen = lazyRegexp(`^\s+(set|map|flowtable|counter|quota|limit) \S+ \{`)
+	reAddrCond   = lazyRegexp(`\bip (saddr|daddr) (!= )?(\{[^}]*\}|@[A-Za-z0-9_.-]+|[0-9./]+)`)
+	reIifCond    = lazyRegexp(`\biifname (!= )?(\{[^}]*\}|"[^"]*"|@[A-Za-z0-9_.-]+)`)
+	reJump       = lazyRegexp(`\b(?:jump|goto) ([A-Za-z0-9_.-]+)\s*$`)
+	reRuleNoise  = lazyRegexp(`\s*counter packets \d+ bytes \d+|\s*comment "[^"]*"`)
 )
 
 type nftModel struct {

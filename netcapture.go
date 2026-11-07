@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/netip"
 	"os/exec"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -100,7 +99,7 @@ var bpfWords = map[string]bool{"host": true, "net": true, "port": true, "portran
 	"tcp": true, "udp": true, "icmp": true, "icmp6": true, "ip": true, "ip6": true, "arp": true,
 	"and": true, "or": true, "not": true}
 
-var reBPFValue = regexp.MustCompile(`^(?:\d{1,5}(?:-\d{1,5})?|[0-9A-Fa-f:.]{2,45}(?:/\d{1,3})?)$`)
+var reBPFValue = lazyRegexp(`^(?:\d{1,5}(?:-\d{1,5})?|[0-9A-Fa-f:.]{2,45}(?:/\d{1,3})?)$`)
 
 // captureFilter checks a filter and returns it as the argv words tcpdump gets.
 func captureFilter(f string) ([]string, error) {
@@ -130,9 +129,9 @@ func captureFilter(f string) ([]string, error) {
 }
 
 var (
-	reCapLine = regexp.MustCompile(`^(\d+\.\d+) (IP6?|ARP)\b(.*)$`)
-	reCapPair = regexp.MustCompile(`^ (\S+) > (\S+?):(.*)$`)
-	reCapDNS  = regexp.MustCompile(`\b(?:A|AAAA|HTTPS|PTR|MX|TXT|SRV|CNAME)\? ([A-Za-z0-9._-]{1,253})\.? `)
+	reCapLine = lazyRegexp(`^(\d+\.\d+) (IP6?|ARP)\b(.*)$`)
+	reCapPair = lazyRegexp(`^ (\S+) > (\S+?):(.*)$`)
+	reCapDNS  = lazyRegexp(`\b(?:A|AAAA|HTTPS|PTR|MX|TXT|SRV|CNAME)\? ([A-Za-z0-9._-]{1,253})\.? `)
 )
 
 // hostOfEndpoint drops the port: "192.168.1.5.443" and "2001:db8::1.443" both name a host.

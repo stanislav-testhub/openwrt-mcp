@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,9 +38,9 @@ const (
 )
 
 var (
-	reRRDDir  = regexp.MustCompile(`^/[A-Za-z0-9._/-]{1,118}$`)
-	reRRDName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$`)
-	reRRDRow  = regexp.MustCompile(`^(\d+):\s+(.*)$`)
+	reRRDDir  = lazyRegexp(`^/[A-Za-z0-9._/-]{1,118}$`)
+	reRRDName = lazyRegexp(`^[A-Za-z0-9][A-Za-z0-9._-]{0,60}$`)
+	reRRDRow  = lazyRegexp(`^(\d+):\s+(.*)$`)
 )
 
 type series struct {

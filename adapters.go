@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -44,7 +43,7 @@ type adapterQuery struct {
 	fn   func(ctx context.Context, value string) string
 }
 
-var reQueryDomain = regexp.MustCompile(`^[a-z0-9_]([a-z0-9_.-]{0,251}[a-z0-9_])?$`)
+var reQueryDomain = lazyRegexp(`^[a-z0-9_]([a-z0-9_.-]{0,251}[a-z0-9_])?$`)
 
 // cleanQuery validates and normalises a query value of the given kind.
 func cleanQuery(kind, v string) (string, error) {
@@ -251,10 +250,10 @@ func dnsmasqServers(ctx context.Context) []string {
 
 // uciName matches what UCI allows in a section name, the only thing built into a file path or an
 // ubus object name from the config.
-var uciName = regexp.MustCompile(`^[A-Za-z0-9_]{1,40}$`)
+var uciName = lazyRegexp(`^[A-Za-z0-9_]{1,40}$`)
 
 // ifaceName is a network interface or device name as the kernel and netifd allow it.
-var ifaceName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,15}$`)
+var ifaceName = lazyRegexp(`^[A-Za-z0-9._-]{1,15}$`)
 
 // runtimeDir accepts a directory or file path that an add-on's config names only when it is in
 // RAM-backed storage, so a config option cannot point an adapter at /etc/shadow.

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -16,7 +15,7 @@ import (
 
 // reListenAddr is the shape of a listen address option (host:port, a bracketed IPv6 form): a value of
 // another shape, a link or a path, is not printed.
-var reListenAddr = regexp.MustCompile(`^[0-9A-Za-z._:\[\]-]{1,64}$`)
+var reListenAddr = lazyRegexp(`^[0-9A-Za-z._:\[\]-]{1,64}$`)
 
 type stack struct {
 	config  string      // UCI config name ("" if none is read)

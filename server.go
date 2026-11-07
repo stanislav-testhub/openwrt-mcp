@@ -13,7 +13,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -210,7 +209,7 @@ type bridgeHello struct {
 	Peer    string `json:"peer,omitempty"`    // the client's address from SSH_CLIENT; the daemon keeps it only if it is an address
 }
 
-var reClientName = regexp.MustCompile(`^[A-Za-z0-9._-]{1,64}$`)
+var reClientName = lazyRegexp(`^[A-Za-z0-9._-]{1,64}$`)
 
 func (s *Server) listenSocket(sock string) (net.Listener, error) {
 	dir := path.Dir(sock)

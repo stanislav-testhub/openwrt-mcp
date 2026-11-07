@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"regexp"
 	"strings"
 	"sync"
 )
@@ -100,7 +99,7 @@ var derivedStructured = map[string]func(body string) any{
 	"exec":    deriveLines,
 }
 
-var reUCIEntry = regexp.MustCompile(`^([A-Za-z0-9_.@\[\]-]+)=(.*)$`)
+var reUCIEntry = lazyRegexp(`^([A-Za-z0-9_.@\[\]-]+)=(.*)$`)
 
 // deriveUCI splits `config.section.option='value'` lines into key and value (quotes removed from
 // a single value; a list keeps its quotes). Anything else, such as the revision line, goes to notes.
@@ -120,7 +119,7 @@ func deriveUCI(body string) any {
 	return map[string]any{"entries": entries, "notes": notes}
 }
 
-var reLogLine = regexp.MustCompile(`^([A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d \d{4}) (\S+\.\S+) (.*)$`)
+var reLogLine = lazyRegexp(`^([A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d \d{4}) (\S+\.\S+) (.*)$`)
 
 // deriveLog: one object per log line, with the time and level when the line has the syslog shape.
 func deriveLog(body string) any {

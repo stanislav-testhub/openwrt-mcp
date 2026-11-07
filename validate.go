@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -61,7 +60,7 @@ func checkAll(ctx context.Context, names []string) map[string][]string {
 
 // Section indexes shift when an earlier section goes, so "@rule[3]" and "@rule[2]" are the same
 // warning. Counting, not set membership, still notices a second copy of one.
-var reSectionIndex = regexp.MustCompile(`@([A-Za-z0-9_-]+)\[-?[0-9]+\]`)
+var reSectionIndex = lazyRegexp(`@([A-Za-z0-9_-]+)\[-?[0-9]+\]`)
 
 func newProblems(base, cand []string) []string {
 	seen := map[string]int{}

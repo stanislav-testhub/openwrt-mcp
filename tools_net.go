@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/netip"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -295,7 +294,7 @@ func clientData(c *netClient, lease string) map[string]any {
 	return m
 }
 
-var reMAC = regexp.MustCompile(`^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`)
+var reMAC = lazyRegexp(`^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$`)
 
 func isMAC(s string) bool { return reMAC.MatchString(s) }
 
@@ -329,7 +328,7 @@ type firewallShowIn struct {
 
 // A name is passed to nft as its own argument, so it must not begin with '-': nft would read
 // it as an option wherever it sits on the command line.
-var reNftName = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$`)
+var reNftName = lazyRegexp(`^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$`)
 
 // firewallShow reads the firewall. OpenWrt 22.03+ is fw4 on nftables: iptables is gone, and
 // the rules an agent needs to reason about are fw4's rendered ruleset plus whatever other

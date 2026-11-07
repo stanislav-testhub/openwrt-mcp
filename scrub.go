@@ -14,12 +14,12 @@ import (
 // by the hygiene test); only the `scrub` command is behind the `capture` build tag.
 
 var (
-	reFixtureIPv4     = regexp.MustCompile(`(?:^|[^0-9.])((?:\d{1,3}\.){3}\d{1,3})(?:$|[^0-9.]|\.(?:$|[^0-9]))`)
-	reFixtureMAC      = regexp.MustCompile(`(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b`)
-	reV6Token  = regexp.MustCompile(`[0-9a-fA-F:.]{3,}`)
-	reWGKey    = regexp.MustCompile(`\b[A-Za-z0-9+/]{43}=`)
-	reBearer   = regexp.MustCompile(`(?i)(bearer\s+|token[=:]\s*|apikey[=:]\s*|api_key[=:]\s*|password[=:]\s*)[^\s'",]+`)
-	standInMAC = regexp.MustCompile(`(?i)^(?:02:00:00:00:00:[0-9a-f]{2}|00:00:5e:00:5[23]:[0-9a-f]{2})$`) // ours, and the RFC 7042 documentation range
+	reFixtureIPv4 = lazyRegexp(`(?:^|[^0-9.])((?:\d{1,3}\.){3}\d{1,3})(?:$|[^0-9.]|\.(?:$|[^0-9]))`)
+	reFixtureMAC  = lazyRegexp(`(?i)\b(?:[0-9a-f]{2}:){5}[0-9a-f]{2}\b`)
+	reV6Token     = lazyRegexp(`[0-9a-fA-F:.]{3,}`)
+	reWGKey       = lazyRegexp(`\b[A-Za-z0-9+/]{43}=`)
+	reBearer      = lazyRegexp(`(?i)(bearer\s+|token[=:]\s*|apikey[=:]\s*|api_key[=:]\s*|password[=:]\s*)[^\s'",]+`)
+	standInMAC    = lazyRegexp(`(?i)^(?:02:00:00:00:00:[0-9a-f]{2}|00:00:5e:00:5[23]:[0-9a-f]{2})$`) // ours, and the RFC 7042 documentation range
 )
 
 type scrubber struct {
@@ -91,7 +91,7 @@ func (s *scrubber) scrubV6(text string) string {
 		if strings.Count(tok, ":") < 2 {
 			return tok
 		}
-		a, err := netip.ParseAddr(strings.Trim(tok, ".:")+"")
+		a, err := netip.ParseAddr(strings.Trim(tok, ".:") + "")
 		if err != nil || !a.Is6() || a.Is4In6() || a.IsLoopback() || a.IsUnspecified() {
 			return tok
 		}
@@ -132,7 +132,7 @@ func (s *scrubber) scrubHosts(text string) string {
 			v = fmt.Sprintf("host-%d", len(s.name)+1)
 			s.name[strings.ToLower(h)] = v
 		}
-		text = regexp.MustCompile(`(?i)`+regexp.QuoteMeta(h)).ReplaceAllString(text, v)
+		text = lazyRegexp(`(?i)`+regexp.QuoteMeta(h)).ReplaceAllString(text, v)
 	}
 	return text
 }

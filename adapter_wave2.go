@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -310,7 +309,7 @@ func readZeroTier(ctx context.Context) string {
 // EINVAL; mwan3's default "fwmark 0x3d00/0x3f00 blackhole" does (seen on 24.10.8, netbird 0.59.13).
 const netbirdSocketMark = 0x1bd00
 
-var discardingMarkRule = regexp.MustCompile(`fwmark (0x[0-9a-fA-F]+)(?:/(0x[0-9a-fA-F]+))?\s+(blackhole|unreachable|prohibit)`)
+var discardingMarkRule = lazyRegexp(`fwmark (0x[0-9a-fA-F]+)(?:/(0x[0-9a-fA-F]+))?\s+(blackhole|unreachable|prohibit)`)
 
 func netbirdMarkWarnings(rules string) []string {
 	var out []string

@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,13 +21,13 @@ type markUse struct {
 }
 
 var (
-	reNFTTable   = regexp.MustCompile(`^table (\S+) (\S+) \{`)
-	reNFTChain   = regexp.MustCompile(`^\s+chain (\S+) \{`)
-	reMarkMatch  = regexp.MustCompile(`\bmeta mark & (0x[0-9a-fA-F]+) (?:==|!=) 0x[0-9a-fA-F]+`)
-	reMarkSetOr  = regexp.MustCompile(`\bmeta mark set meta mark & (0x[0-9a-fA-F]+) \| (0x[0-9a-fA-F]+)`)
-	reMarkSetRaw = regexp.MustCompile(`\bmeta mark set (0x[0-9a-fA-F]+)(?:\s|$)`) // counter and comment may follow
-	reMarkAddRaw = regexp.MustCompile(`\bmeta mark set meta mark \| (0x[0-9a-fA-F]+)(?:\s|$)`)
-	reMarkExact  = regexp.MustCompile(`\bmeta mark (0x[0-9a-fA-F]+)(?:\s|$)`)
+	reNFTTable   = lazyRegexp(`^table (\S+) (\S+) \{`)
+	reNFTChain   = lazyRegexp(`^\s+chain (\S+) \{`)
+	reMarkMatch  = lazyRegexp(`\bmeta mark & (0x[0-9a-fA-F]+) (?:==|!=) 0x[0-9a-fA-F]+`)
+	reMarkSetOr  = lazyRegexp(`\bmeta mark set meta mark & (0x[0-9a-fA-F]+) \| (0x[0-9a-fA-F]+)`)
+	reMarkSetRaw = lazyRegexp(`\bmeta mark set (0x[0-9a-fA-F]+)(?:\s|$)`) // counter and comment may follow
+	reMarkAddRaw = lazyRegexp(`\bmeta mark set meta mark \| (0x[0-9a-fA-F]+)(?:\s|$)`)
+	reMarkExact  = lazyRegexp(`\bmeta mark (0x[0-9a-fA-F]+)(?:\s|$)`)
 )
 
 // markOwner attributes a rule to an add-on from its table and chain names; "" means not a

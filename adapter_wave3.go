@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 )
@@ -164,7 +163,7 @@ func readTor(ctx context.Context) string {
 
 // ---------------------------------------------------------------- acme
 
-var reDomain = regexp.MustCompile(`^[A-Za-z0-9*][A-Za-z0-9.*-]{0,251}$`)
+var reDomain = lazyRegexp(`^[A-Za-z0-9*][A-Za-z0-9.*-]{0,251}$`)
 
 func readACME(ctx context.Context) string {
 	lines := []string{"acme: renewals run from cron (acme.sh)"}

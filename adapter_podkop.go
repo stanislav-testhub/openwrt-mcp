@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"strings"
 )
 
@@ -21,8 +20,8 @@ const (
 )
 
 var (
-	reVersion       = regexp.MustCompile(`^[0-9A-Za-z._+-]{1,32}$`)
-	rePodkopVersion = regexp.MustCompile(`(?m)^\s*(?:export\s+)?PODKOP_VERSION=["']?([^"'\s]*)["']?\s*$`)
+	reVersion       = lazyRegexp(`^[0-9A-Za-z._+-]{1,32}$`)
+	rePodkopVersion = lazyRegexp(`(?m)^\s*(?:export\s+)?PODKOP_VERSION=["']?([^"'\s]*)["']?\s*$`)
 )
 
 func readPodkop(ctx context.Context) string {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -129,9 +128,9 @@ func pbrConfig(t *uciTree, known map[string]bool) []string {
 }
 
 var (
-	pbrTableRule   = regexp.MustCompile(`^(\d+):\s+from all fwmark \S+ lookup pbr_`)
-	numTableRule   = regexp.MustCompile(`^(\d+):\s+from all fwmark (0x[0-9a-fA-F]+)(?:/(0x[0-9a-fA-F]+))? lookup (\d+)\s*$`)
-	discardingRule = regexp.MustCompile(`^\d+:\s+from all fwmark \S+ (blackhole|unreachable)`)
+	pbrTableRule   = lazyRegexp(`^(\d+):\s+from all fwmark \S+ lookup pbr_`)
+	numTableRule   = lazyRegexp(`^(\d+):\s+from all fwmark (0x[0-9a-fA-F]+)(?:/(0x[0-9a-fA-F]+))? lookup (\d+)\s*$`)
+	discardingRule = lazyRegexp(`^\d+:\s+from all fwmark \S+ (blackhole|unreachable)`)
 )
 
 // pbrMwan3Warnings: mwan3 and pbr both steer by fwmark, and the kernel takes the first matching

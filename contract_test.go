@@ -781,7 +781,7 @@ func hostileValuesCheck(t *testing.T, binaries ...string) {
 
 // The same rule at the validators, where the failure is cheap to read.
 func TestNamesThatFeedACommandRefuseALeadingDash(t *testing.T) {
-	for name, re := range map[string]*regexp.Regexp{
+	for name, re := range map[string]*lazyRE{
 		"nft name": reNftName, "uci config": reUCIConfig, "package": rePkgName, "package pattern": rePkgPattern,
 		"net target": reNetTarget, "net name": reNetName, "uci section": reUCISection, "uci option": reUCIOption,
 	} {

@@ -10,7 +10,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -38,7 +37,7 @@ var historyNow = time.Now
 
 // An id is "<config>:<UTC yyyymmdd-HHMMSS.mmm>-<8 hex>". It names a file under the state dir,
 // so the grammar is strict: nothing in it can be a path separator or a dot-dot.
-var reHistoryID = regexp.MustCompile(`^([A-Za-z0-9_][A-Za-z0-9_-]*):([0-9]{8}-[0-9]{6}\.[0-9]{3}-[0-9a-f]{8})$`)
+var reHistoryID = lazyRegexp(`^([A-Za-z0-9_][A-Za-z0-9_-]*):([0-9]{8}-[0-9]{6}\.[0-9]{3}-[0-9a-f]{8})$`)
 
 func parseHistoryID(id string) (config, stamp string, err error) {
 	m := reHistoryID.FindStringSubmatch(id)

@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"hash/fnv"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -72,15 +71,15 @@ func parseLogLine(line string) logLine {
 }
 
 var (
-	reKernelStamp = regexp.MustCompile(`^\[\s*\d+\.\d+\]\s*`)
-	reLogMAC      = regexp.MustCompile(`(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){5}\b`)
-	reLogClock    = regexp.MustCompile(`\b\d{1,2}:\d{2}:\d{2}\b`)
-	reLogIPv4     = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}\b`)
-	reLogIPv6     = regexp.MustCompile(`(?i)(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,6})?`)
-	reLogHex0x    = regexp.MustCompile(`\b0[xX][0-9a-fA-F]+\b`)
-	reLogLongHex  = regexp.MustCompile(`\b[0-9a-fA-F]{8,}\b`)
-	reLogDuration = regexp.MustCompile(`\b\d+[dhms](?:\d+[dhms])*\b`) // 90s, 12h, 8d7h34m
-	reLogSpace    = regexp.MustCompile(`\s+`)
+	reKernelStamp = lazyRegexp(`^\[\s*\d+\.\d+\]\s*`)
+	reLogMAC      = lazyRegexp(`(?i)\b[0-9a-f]{2}(?::[0-9a-f]{2}){5}\b`)
+	reLogClock    = lazyRegexp(`\b\d{1,2}:\d{2}:\d{2}\b`)
+	reLogIPv4     = lazyRegexp(`\b\d{1,3}(?:\.\d{1,3}){3}\b`)
+	reLogIPv6     = lazyRegexp(`(?i)(?:[0-9a-f]{1,4}:){2,7}[0-9a-f]{1,4}|(?:[0-9a-f]{1,4}:){1,7}:(?:[0-9a-f]{1,4}(?::[0-9a-f]{1,4}){0,6})?`)
+	reLogHex0x    = lazyRegexp(`\b0[xX][0-9a-fA-F]+\b`)
+	reLogLongHex  = lazyRegexp(`\b[0-9a-fA-F]{8,}\b`)
+	reLogDuration = lazyRegexp(`\b\d+[dhms](?:\d+[dhms])*\b`) // 90s, 12h, 8d7h34m
+	reLogSpace    = lazyRegexp(`\s+`)
 )
 
 // normaliseLogMessage replaces what varies between two occurrences of the same message with a
@@ -283,7 +282,7 @@ const (
 	maxBaselineKeys = 20000 // distinct messages in one baseline
 )
 
-var reBaselineToken = regexp.MustCompile(`^[0-9a-f]{8}$`)
+var reBaselineToken = lazyRegexp(`^[0-9a-f]{8}$`)
 
 // baseline is the set of messages that existed when it was saved, as 64-bit fingerprints. It
 // holds no log text on purpose: a log line can carry a secret, and a fingerprint cannot be read
