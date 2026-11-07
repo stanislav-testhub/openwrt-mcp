@@ -1,0 +1,5 @@
+# luci-app-passwall 26.11.3 on 25.12.6 started from the unpacked project package (no chinadns-ng: dns_shunt dnsmasq), one socks node: a LAN client reached 1.1.1.1 through it (301 with the node up, 000 without)
+pidof xray
+pidof sing-box
+nft list table inet passwall
+uci -q show passwall

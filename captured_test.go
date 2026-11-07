@@ -886,3 +886,59 @@ func TestPbrAloneHasNoMwan3Warning(t *testing.T) {
 	got := pbrOnRealRules(t, "pbr-alone")
 	mustNotContain(t, got, "mwan3")
 }
+
+// homeproxy 26.298 with sing-box 1.12.22 on 25.12.6: it runs and carries a LAN client's traffic (301 with
+// the socks node up, 000 with it stopped). The log still holds the earlier failure with sing-box 1.13, so the
+// detail must not call a running service broken: its last lines say "started".
+func TestHomeProxyRunningOnItsRealLogThatStillHoldsAnOldFailure(t *testing.T) {
+	root := withFixtureRoot(t)
+	writeFixture(t, root, "var/run/homeproxy/homeproxy.log", captured(t, "homeproxy-proxying", "03.txt"))
+	f := newFakeRouter(t)
+	addRC(f, "homeproxy")
+	f.on("pidof sing-box", captured(t, "homeproxy-proxying", "01.txt"))
+	f.on("uci -q show homeproxy", captured(t, "homeproxy-proxying", "02.txt"))
+	got := body(t, "homeproxy")
+	wantAll(t, got, "sing-box: running", "routing mode: global")
+	mustNotContain(t, got, "last error", "sing-box said")
+}
+
+// passwall 26.11.3 started from the unpacked project package on 25.12.6 (dns_shunt dnsmasq, one socks
+// node): xray runs, the nft table is loaded and a LAN client's request went through the node.
+func TestPasswallOnItsRealRunningInstall(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "passwall")
+	f.on("pidof xray", captured(t, "passwall-running", "01.txt"))
+	f.on("pidof sing-box", captured(t, "passwall-running", "02.txt"))
+	f.on("nft list table inet passwall", captured(t, "passwall-running", "03.txt"))
+	f.on("uci -q show passwall", captured(t, "passwall-running", "04.txt"))
+	got := body(t, "passwall")
+	wantAll(t, got, "xray: running", "enabled in config: 1", "nodes: 2")
+	mustNotContain(t, got, "not loaded")
+}
+
+// passwall2 26.11.3 started from the unpacked project package on 25.12.6. Without coreutils-nohup it
+// loads its nft rules and redirects DNS and TCP to an xray that never started, so the LAN loses name
+// resolution; with it, a client's request went through the node.
+func TestPasswall2OnItsRealRunningInstall(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "passwall2")
+	f.on("pidof xray", captured(t, "passwall2-running", "01.txt"))
+	f.on("pidof sing-box", captured(t, "passwall2-running", "02.txt"))
+	f.on("nft list table inet passwall2", captured(t, "passwall2-running", "03.txt"))
+	f.on("uci -q show passwall2", captured(t, "passwall2-running", "04.txt"))
+	got := body(t, "passwall2")
+	wantAll(t, got, "xray: running", "enabled in config: 1", "nft table passwall2: loaded")
+}
+
+func TestPasswall2WarnsWhenItsRulesAreLoadedButNothingRuns(t *testing.T) {
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "passwall2")
+	f.fail("pidof xray", "")
+	f.fail("pidof sing-box", "")
+	f.on("nft list table inet passwall2", captured(t, "passwall2-no-nohup", "03.txt"))
+	f.on("uci -q show passwall2", captured(t, "passwall2-no-nohup", "04.txt"))
+	wantAll(t, body(t, "passwall2"), "xray: not running", "nft table passwall2: loaded", "WARNING: its firewall rules are loaded", "coreutils-nohup")
+}

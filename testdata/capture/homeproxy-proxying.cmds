@@ -1,0 +1,4 @@
+# luci-app-homeproxy 26.298 on 25.12.6 with sing-box 1.12.22 (the feed's 1.13 refuses its config), global routing to a socks node, started: a LAN client reached 1.1.1.1 through it (301 with the node up, 000 without)
+pidof sing-box
+uci -q show homeproxy
+cat /var/run/homeproxy/homeproxy.log

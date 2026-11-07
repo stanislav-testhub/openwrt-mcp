@@ -3,6 +3,15 @@
 ## Unreleased
 
 Added
+- **passwall and passwall2 run and carry traffic; a stack with rules but no process is flagged.** Started from the unpacked project packages on
+  25.12.6 (`dns_shunt dnsmasq`, `chinadns-ng` absent; the node is chosen by the global option `node`, not `tcp_node`), each sent a LAN client's
+  request through a socks node (`301`; `000` with the node stopped). passwall2 needs `coreutils-nohup` (25.12's BusyBox has no `nohup`); without
+  it, its nft rules load, xray never starts and DNS is redirected to nothing. Every proxy stack's detail now says so when its rules are loaded and
+  none of its processes runs.
+- **homeproxy carries traffic; its detail no longer shows an old failure.** With sing-box 1.12.22 in place of the feed's 1.13, homeproxy 26.298 on
+  25.12.6 started and a LAN client reached `1.1.1.1` through its socks node (`301` with the node up, `000` with it stopped). The log still held the
+  earlier 1.13 failure and the detail printed it for a running service; a `started.` line after an error now clears it. Also learned: the 24.10
+  feed has no `kmod-veth`, so a client namespace needs the 25.12 VM.
 - **pbr warns when mwan3 is active too.** Checked with a real second uplink (a veth pair into a namespace acting as the upstream, 25.12.6): with
   mwan3 stopped, a pbr policy sent a LAN client out of wan2 and the request reached the upstream; with mwan3 running the same request timed out,
   because mwan3's fwmark rules (priority 2001, plus its blackhole/unreachable rules) are checked before pbr's (29997 and up). The pbr detail now

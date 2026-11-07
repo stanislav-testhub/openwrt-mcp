@@ -31,7 +31,7 @@ type stack struct {
 
 // lastErrors returns the last "Error:" line of a stack's log and the last FATAL line before it, which
 // carries the cause (homeproxy logs sing-box's refusal on its own line). Control characters are
-// dropped; a log that is missing or has no such line adds nothing.
+// dropped; a log that is missing or has no such line adds nothing, and a "started." line after an error clears it.
 func lastErrors(path string) []string {
 	text, err := readSys(path)
 	if err != nil {
@@ -45,7 +45,9 @@ func lastErrors(path string) []string {
 			}
 			return r
 		}, l)
-		if _, after, ok := strings.Cut(l, "Error: "); ok {
+		if strings.Contains(l, "[DAEMON]") && strings.HasSuffix(l, " started.") {
+			errLine, fatal = "", "" // it started after that failure: the old lines are history
+		} else if _, after, ok := strings.Cut(l, "Error: "); ok {
 			errLine = after
 		} else if _, after, ok := strings.Cut(l, "FATAL"); ok {
 			if i := strings.Index(after, "] "); i >= 0 && i < 12 { // the colour codes and the "[0000]" time stamp
@@ -64,6 +66,17 @@ func lastErrors(path string) []string {
 	return out
 }
 
+func anyRunning(lines, procs []string) bool {
+	for _, l := range lines {
+		for _, p := range procs {
+			if strings.HasPrefix(l, p+": running") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (st stack) read(ctx context.Context) string {
 	var lines []string
 	for _, p := range st.procs {
@@ -79,6 +92,9 @@ func (st stack) read(ctx context.Context) string {
 		} else {
 			lines = append(lines, "nft table "+name+": not loaded")
 		}
+	}
+	if len(st.procs) > 0 && len(st.tables) > 0 && !anyRunning(lines, st.procs) && strings.Contains(strings.Join(lines, "\n"), ": loaded") {
+		lines = append(lines, "WARNING: its firewall rules are loaded but none of its processes ("+strings.Join(st.procs, ", ")+") runs, so what the rules redirect (and DNS, if they redirect it) goes nowhere. Read its own log; passwall2 on 25.12 needs the package coreutils-nohup (BusyBox has no nohup) and stays in this state without it.")
 	}
 	for _, c := range st.chains {
 		f := strings.Fields(c)

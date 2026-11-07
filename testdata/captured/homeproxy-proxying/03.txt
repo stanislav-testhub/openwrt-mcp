@@ -1,0 +1,5 @@
+# cat /var/run/homeproxy/homeproxy.log
+[31mFATAL[0m[0000] decode config at /var/run/homeproxy/sing-box-c.json: inbounds[1]: legacy inbound fields are deprecated in sing-box 1.11.0 and removed in sing-box 1.13.0, checkout migration: https://sing-box.sagernet.org/migration/#migrate-legacy-inbound-fields-to-rule-actions
+2026-11-07 00:26:03 [DAEMON] Error: wrong client configuration detected.
+2026-11-07 00:26:26 [DAEMON] Service stopped.
+2026-11-07 00:26:29 [DAEMON] sing-box 1.12.22 started.

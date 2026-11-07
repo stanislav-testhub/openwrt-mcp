@@ -1,0 +1,5 @@
+# luci-app-passwall2 26.11.3 on 25.12.6 without coreutils-nohup: the nft rules load, xray never starts (nohup: not found), DNS and TCP are redirected to nothing
+pidof xray
+pidof sing-box
+nft list table inet passwall2
+uci -q show passwall2
