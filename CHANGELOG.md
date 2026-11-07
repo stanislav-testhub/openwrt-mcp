@@ -3,6 +3,11 @@
 ## Unreleased
 
 Added
+- **Structured output for `uci_get`, `logread` and `exec`, masking-aware.** These tools can carry secrets, so their `structuredContent` is
+  never built from the raw output: it is parsed from the text after sanitising, masking and bounding (`presentBody`), so it shows exactly what
+  the text shows. `uci_get` returns `entries` (`key`, `value`) and `notes` (the revision line); `logread` returns `lines` (`time`, `level`,
+  `text`); `exec` returns `lines`. The catalogue budget rises by 409 bytes (27,140) and `uci_get`'s own to 1,790; item objects are left loose.
+  A test puts a Wi-Fi key through `uci_get` and checks it is absent from the data.
 - **passwall and passwall2 run and carry traffic; a stack with rules but no process is flagged.** Started from the unpacked project packages on
   25.12.6 (`dns_shunt dnsmasq`, `chinadns-ng` absent; the node is chosen by the global option `node`, not `tcp_node`), each sent a LAN client's
   request through a socks node (`301`; `000` with the node stopped). passwall2 needs `coreutils-nohup` (25.12's BusyBox has no `nohup`); without

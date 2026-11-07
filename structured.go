@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"regexp"
+	"strings"
 	"sync"
 )
 
@@ -73,10 +75,76 @@ var outputSchemas = map[string]any{
 		"board": objL, "uptime_s": intT, "load": arrT(map[string]any{"type": "number"}), "memory_mib": objL, "conntrack": objL,
 		"temperatures": arrT(objL), "interfaces": arrT(objL), "radios": arrT(objL), "outstanding": strsT,
 	}),
+	"uci_get": objT([]string{"entries"}, map[string]any{
+		"entries": arrT(objL), "notes": strsT,
+	}),
+	"logread": objT([]string{"lines"}, map[string]any{
+		"lines": arrT(objL),
+	}),
+	"exec": objT([]string{"lines"}, map[string]any{"lines": strsT}),
 	"pkg_query": objT([]string{"packages"}, map[string]any{
 		"total": intT, "packages": arrT(objT([]string{"name"}, map[string]any{"name": strT, "version": strT, "upgradable_from": strT})),
 	}),
 	"service_list": objT([]string{"services"}, map[string]any{
 		"services": arrT(objT([]string{"name"}, map[string]any{"name": strT, "enabled": boolT, "running": boolT})), "add_ons": strsT,
 	}),
+}
+
+// derivedStructured: tools whose text can carry secrets. Their data is parsed from the text
+// AFTER sanitising, masking and bounding (presentBody), never from the raw output, so
+// structuredContent shows exactly what the text shows and the masker stays the only place a
+// secret is decided. A tool in this map does not call setStructured.
+var derivedStructured = map[string]func(body string) any{
+	"uci_get": deriveUCI,
+	"logread": deriveLog,
+	"exec":    deriveLines,
+}
+
+var reUCIEntry = regexp.MustCompile(`^([A-Za-z0-9_.@\[\]-]+)=(.*)$`)
+
+// deriveUCI splits `config.section.option='value'` lines into key and value (quotes removed from
+// a single value; a list keeps its quotes). Anything else, such as the revision line, goes to notes.
+func deriveUCI(body string) any {
+	entries, notes := []map[string]any{}, []string{}
+	for _, l := range splitLines(body) {
+		if m := reUCIEntry.FindStringSubmatch(l); m != nil {
+			v := m[2]
+			if len(v) >= 2 && v[0] == '\'' && v[len(v)-1] == '\'' && !strings.Contains(v[1:len(v)-1], "' '") {
+				v = v[1 : len(v)-1]
+			}
+			entries = append(entries, map[string]any{"key": m[1], "value": v})
+		} else {
+			notes = append(notes, l)
+		}
+	}
+	return map[string]any{"entries": entries, "notes": notes}
+}
+
+var reLogLine = regexp.MustCompile(`^([A-Z][a-z]{2} [A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d \d{4}) (\S+\.\S+) (.*)$`)
+
+// deriveLog: one object per log line, with the time and level when the line has the syslog shape.
+func deriveLog(body string) any {
+	lines := []map[string]any{}
+	for _, l := range splitLines(body) {
+		if m := reLogLine.FindStringSubmatch(l); m != nil {
+			lines = append(lines, map[string]any{"time": m[1], "level": m[2], "text": m[3]})
+		} else {
+			lines = append(lines, map[string]any{"text": l})
+		}
+	}
+	return map[string]any{"lines": lines}
+}
+
+func deriveLines(body string) any {
+	return map[string]any{"lines": splitLines(body)}
+}
+
+func splitLines(s string) []string {
+	out := []string{}
+	for _, l := range strings.Split(s, "\n") {
+		if strings.TrimSpace(l) != "" {
+			out = append(out, l)
+		}
+	}
+	return out
 }

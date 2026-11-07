@@ -175,3 +175,31 @@ func TestPkgQueryListsReturnDataAndKeepTheText(t *testing.T) {
 		t.Errorf("a free-text action returned data: %v", res.StructuredContent)
 	}
 }
+
+// A secret the text masker hides must be hidden in structuredContent too: for uci_get, logread and
+// exec the data is parsed from the masked text, never from the raw output.
+func TestStructuredFromMaskedTextHidesSecrets(t *testing.T) {
+	f := newFakeRouter(t)
+	f.on("uci show wireless", "wireless.wlan0=wifi-iface\nwireless.wlan0.ssid='home'\nwireless.wlan0.key='hunter2-secret'\n")
+	f.on("logread", "Tue Sep 30 10:00:00 2026 daemon.info proc[1]: hello\nnot a syslog line\n")
+	cs := connectClient(t, testServer(t, grantAll()), "c")
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "uci_get", Arguments: map[string]any{"config": "wireless"}})
+	if err != nil || res.IsError {
+		t.Fatalf("uci_get: %v %+v", err, res)
+	}
+	b, _ := json.Marshal(res.StructuredContent)
+	if strings.Contains(string(b), "hunter2") {
+		t.Fatalf("secret in structuredContent: %s", b)
+	}
+	if !strings.Contains(string(b), `"wireless.wlan0.ssid"`) || !strings.Contains(string(b), `"home"`) {
+		t.Errorf("ssid entry missing: %s", b)
+	}
+	res, err = cs.CallTool(context.Background(), &mcp.CallToolParams{Name: "logread", Arguments: map[string]any{}})
+	if err != nil || res.IsError {
+		t.Fatalf("logread: %v %+v", err, res)
+	}
+	b, _ = json.Marshal(res.StructuredContent)
+	if !strings.Contains(string(b), `"level":"daemon.info"`) || !strings.Contains(string(b), `"text":"not a syslog line"`) {
+		t.Errorf("log lines: %s", b)
+	}
+}

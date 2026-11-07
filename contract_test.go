@@ -218,7 +218,7 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 26720 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264)
+	catalogueBudgetBytes = 27140 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose)
 	catalogueProseBudget = 13200 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
@@ -227,7 +227,7 @@ const (
 // carries a nested request with its own options; wg_new_client has nine parameters, one of
 // which (reveal) keeps a private key out of the conversation by default; uci_get reads, shows history and
 // searches references, each with its own parameter.
-var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700, "net_diag": 1900, "uci_get": 1650}
+var toolBudgets = map[string]int{"uci_apply": 4000, "wg_new_client": 1700, "net_diag": 1900, "uci_get": 1790}
 
 func TestCatalogueStaysWithinBudget(t *testing.T) {
 	cs := connectClient(t, testServer(t, ""), "c")

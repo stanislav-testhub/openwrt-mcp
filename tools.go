@@ -220,6 +220,13 @@ func (s *Server) maskOutput(tool string, in any, out string) string {
 // zero-width character inside an option name cannot hide a secret line from the masker; the
 // marker comes last so that nothing can cut it off.
 func (s *Server) presentOutput(tool string, in any, text string) string {
+	return labelUntrusted(tool, s.presentBody(tool, in, text))
+}
+
+// presentBody is presentOutput without the marker: sanitised, masked and bounded text. What a
+// tool derives from its text for structuredContent (derivedStructured) is built from this, so
+// the data can never show what the text hides.
+func (s *Server) presentBody(tool string, in any, text string) string {
 	text = sanitizeText(text)
 	text = s.maskOutput(tool, in, text)
 	if _, uncapped := uncappedTools[tool]; !uncapped {
@@ -229,7 +236,7 @@ func (s *Server) presentOutput(tool string, in any, text string) string {
 				"narrow the request or filter the output")
 		}
 	}
-	return labelUntrusted(tool, text)
+	return text
 }
 
 // noteRedaction records, as a system event, that output redaction was switched on or off by
@@ -388,7 +395,11 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 				return finish(errResultCoded(msg, codeLine(errCode(err))), outcome, summary, errMsg)
 			}
 			structured = sink.value()
-			res := textResult(s.presentOutput(name, in, out))
+			body := s.presentBody(name, in, out)
+			if derive := derivedStructured[name]; derive != nil && structured == nil {
+				structured = derive(body)
+			}
+			res := textResult(labelUntrusted(name, body))
 			if approvedNote != "" {
 				res.Content = append(res.Content, &mcp.TextContent{Text: approvedNote})
 			}
