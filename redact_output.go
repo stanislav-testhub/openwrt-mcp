@@ -263,10 +263,7 @@ func (m *jsonMasker) hide(v any) (any, bool) {
 func (m *jsonMasker) walk(v any) any {
 	switch t := v.(type) {
 	case map[string]any:
-		sibling := m.valuesSecret
-		if o, ok := t["option"].(string); ok && secretOptionNamed(o, m.extra) {
-			sibling = true
-		}
+		sibling := valueIsSecret(t, m.valuesSecret, func(n string) bool { return secretOptionNamed(n, m.extra) })
 		for k, e := range t {
 			if secretOptionNamed(k, m.extra) || (sibling && (k == "value" || k == "values")) {
 				if hidden, ok := m.hide(e); ok {

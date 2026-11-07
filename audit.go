@@ -42,10 +42,7 @@ func redact(v any) any {
 		// A uci_apply change names the option in one field and carries its value in another:
 		// {"option":"key","value":"<wifi password>"}. Redacting by field name alone would log
 		// that password, so a secret-named option hides the value that goes with it.
-		secretOption := false
-		if o, ok := t["option"].(string); ok {
-			secretOption = isSecretOption(o)
-		}
+		secretOption := valueIsSecret(t, false, isSecretOption)
 		out := make(map[string]any, len(t))
 		for k, val := range t {
 			switch {
@@ -65,6 +62,16 @@ func redact(v any) any {
 	default:
 		return v
 	}
+}
+
+// valueIsSecret says whether the "value"/"values" fields of t hold a secret: the request named a
+// secret option, or t itself names one in "option" ({"option":"key","value":"<wifi password>"}).
+// The audit log and the output masker both ask it, with their own idea of a secret name.
+func valueIsSecret(t map[string]any, inherited bool, secretName func(string) bool) bool {
+	if o, ok := t["option"].(string); ok && secretName(o) {
+		return true
+	}
+	return inherited
 }
 
 func isSecretKey(k string) bool {
