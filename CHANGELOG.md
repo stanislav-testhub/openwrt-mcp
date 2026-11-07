@@ -16,6 +16,7 @@ Added
   choice (15 minutes, 1 hour, 8 hours) instead of 15 minutes only. The catalogue grows by 636 bytes (budget raised, documented).
 - LuCI: the Status › Overview widget offers the same duration choice (15 minutes, 1 hour, 8 hours) beside Allow, not 15 minutes only.
 - `system_status` prints the daemon's resident and peak memory (ROADMAP 10.1); `footprint_test.go` fails when the stripped mipsle-softfloat binary (12.98 MB measured) or our start-up heap (2.56 MB measured, 10.2 lowers it) passes its budget.
+- `bench/footprint.sh` measures VmRSS, VmHWM and RssAnon of an idle daemon, one bridge and the daemon after initialize, tools/list and system_status. Measured on the 25.12.6 x86 VM (stripped amd64 binary, 11.9 MB): daemon idle 13.0 MB resident (4.5 MB anonymous), bridge 12.7 MB (4.4 MB anonymous), daemon after the calls 17.9 MB (7.7 MB anonymous). There is no MIPS emulator on the build server, so mipsle itself is not measured.
 - **One approval request per call, not one per scope.** When a client holds a tool but some scopes of a call are uncovered, the refusal and
   the request named only the first one, so a call with several (a `uci_apply` touching two configs) needed one request, one wait and one tap
   for each. It now names every scope no policy covers, in one request and one `allow` line. A new request also replaces the client's older open
