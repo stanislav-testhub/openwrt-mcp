@@ -93,3 +93,12 @@ jobs:
         run: |
           docker run --rm -v "$PWD:/w" -e REALTARGET_PKG=${{ matrix.pkg }} openwrt/rootfs:${{ matrix.tag }} \
             sh -c 'mkdir -p /var/lock /var/run /var/state && exec /w/realtarget.test -test.v -test.run ^TestReal -test.timeout 10m'
+      # ROADMAP 10.1: VmRSS, VmHWM and RssAnon of the idle daemon, of one bridge and of the daemon
+      # after the golden calls, in the same rootfs. The numbers go to the job summary, which is
+      # what the README footprint table is regenerated from.
+      - name: footprint in the ${{ matrix.tag }} rootfs
+        run: |
+          CGO_ENABLED=0 go build -ldflags "-s -w" -o owm .
+          docker run --rm -v "$PWD:/w" openwrt/rootfs:${{ matrix.tag }} \
+            sh -c 'mkdir -p /var/lock /var/run /var/state && cp /w/owm /tmp/owm && exec sh /w/bench/footprint.sh' | tee footprint.txt
+          { echo "### footprint, ${{ matrix.tag }} (stripped binary $(( $(stat -c%s owm) / 1024 )) KiB)"; echo '```'; cat footprint.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"

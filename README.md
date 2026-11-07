@@ -24,6 +24,15 @@ conversation unless you ask for it.
 (9.6 MB on arm64, about 3.7 MB compressed in the release archive), about 10 MB resident on a
 GL-MT6000 right after start, and 23 tools in about 22 KB of tool descriptions. Every release file is checksummed and carries a build attestation.
 
+| Measured | Idle daemon | One bridge | Daemon after the golden calls |
+|---|---|---|---|
+| resident (VmRSS) | 10.9 MB | 10.9 MB | 17.6 MB |
+| anonymous (RssAnon) | 1.8 MB | 2.1 MB | 7.3 MB |
+
+amd64, stripped binary 11.6 MB, `bench/footprint.sh`. Resident includes the mapped binary, so anonymous memory is what
+`memory_limit` and the `small` profile act on. CI repeats the run in the 24.10.8 and 25.12.5 rootfs and prints it in the
+job summary; mipsle-softfloat (12.4 MB binary) has no emulator on the build host and is not measured.
+
 > **Based on [GlassOnTin/openwrt-mcp](https://github.com/GlassOnTin/openwrt-mcp)** by Ian
 > Williams, which targets GL.iNet firmware 4.x (OpenWrt 21.02, `opkg`). This is a port to
 > **stock OpenWrt 25.12** (`apk`, fw4/nftables, procd, netifd, LuCI JS). The security core is
@@ -287,7 +296,7 @@ it can harm you, and each switch is audited.
 | Channel | Option | What it does | How it can harm you |
 |---|---|---|---|
 | Pair from LuCI | `pairing` | A *Clients* tab: paste the key that `openwrt-mcp connect` prints, name the client, pick a starting preset (Read-only by default). Writes the same forced-command line as `authorize-key`. | Anyone with LuCI write access can add a key that reaches the router over SSH. |
-| Push hook | `push_hook` | Each new request fires the ubus event `openwrt-mcp.request` and runs the executables in `/etc/openwrt-mcp/hooks.d/` with the redacted request as JSON on stdin (10 s limit; group- or world-writable, non-executable and dot files are skipped). For Telegram, ntfy or Home Assistant. A notification does not approve; it points at LuCI. | Request details leave the router, and a hook runs as root. |
+| Push hook | `push_hook` | Each new request fires the ubus event `openwrt-mcp.request` and runs the executables in `/etc/openwrt-mcp/hooks.d/` with the redacted request as JSON on stdin (10 s limit; group- or world-writable, non-executable and dot files are skipped). For Telegram, ntfy or Home Assistant; `examples/hooks/telegram` and `examples/hooks/ntfy` are ready to copy, with credentials read from UCI. A notification does not approve; it points at LuCI. | Request details leave the router, and a hook runs as root. |
 | Approve in chat | `chat_approve`, `list chat_approve_client` | A client that negotiates elicitation also shows the request in its own prompt. Exact scope only, 15 minutes, 1 hour or 8 hours, never for a root-shell tool or *Permit all*. | The client relays your answer. A client or agent that auto-answers prompts would grant itself. |
 
 **What an agent cannot do.** A LuCI administrator is already root, so a button gives no person more power. What

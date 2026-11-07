@@ -1,0 +1,22 @@
+#!/bin/sh
+# Push hook: tell a Telegram chat that an access request is waiting. Install as an executable,
+# not writable by group or others, in /etc/openwrt-mcp/hooks.d/ and switch on `option push_hook '1'`.
+# The message names the client, the tool and the scope; it never approves anything, approving stays in LuCI.
+# Credentials are read from UCI, never from argv, so they stay out of `ps` and the logs:
+#   uci set openwrt-mcp.notify=notify
+#   uci set openwrt-mcp.notify.telegram_bot_token='<token from @BotFather>'
+#   uci set openwrt-mcp.notify.telegram_chat_id='<chat id>'
+#   uci commit openwrt-mcp
+# CRED_SECTION can point at another UCI section that holds the same two options.
+CRED_SECTION=${CRED_SECTION:-openwrt-mcp.notify}
+API=${TELEGRAM_API:-https://api.telegram.org}
+req="$(head -c 8192)"
+tok="$(uci -q get "$CRED_SECTION.telegram_bot_token")"
+chat="$(uci -q get "$CRED_SECTION.telegram_chat_id")"
+[ -n "$tok" ] && [ -n "$chat" ] || { echo "telegram hook: credentials missing in $CRED_SECTION" >&2; exit 3; }
+field() { printf '%s' "$req" | jsonfilter -e "@.$1"; }
+text="openwrt-mcp: $(field client) asks for $(field tool) on $(field scope)
+Approve or refuse in LuCI: Services, MCP Server (request $(field id), until $(field expires))"
+printf 'url = "%s/bot%s/sendMessage"\n' "$API" "$tok" |
+	curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 8 -K - \
+		--data-urlencode "chat_id=$chat" --data-urlencode "text=$text" | grep -q '^200$'

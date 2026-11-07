@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+Added
+- **CI records the footprint (ROADMAP 10.1).** The real-target job runs `bench/footprint.sh` in each rootfs and prints VmRSS, VmHWM and RssAnon of the idle daemon, of one bridge and of the daemon after the golden calls into the job summary. README has the first table (amd64: idle daemon 10.9 MB resident, 1.8 MB anonymous; after the calls 17.6 MB, 7.3 MB anonymous). mipsle is still not measured.
+- **Example push hooks for Telegram and ntfy** (`examples/hooks/`). Each reads its credentials from UCI (never argv), names the client, tool and scope, and points at LuCI; none approves. `examples/hooks/hooks_test.sh` runs them against a local stand-in server with shimmed `uci` and `jsonfilter`: delivery, missing credentials (exit 3), HTTP 500 as failure, token kept out of the message.
+
 Fixed
 - **Atomic replaces are flushed before the rename.** The policy config, the token store, the MFA secrets and the request records were written with `os.WriteFile` and renamed into place, so a power cut on flash could leave the new name on an empty file. They now go through `writeSynced`; `TestAtomicReplacesAreSynced` fails on any new write-then-rename that does not.
 - **Cuts no longer split a character.** The audit log, the push hook and the request record cut long text by bytes and could leave invalid UTF-8 (Cyrillic or CJK host names, SSIDs, messages). They now back up to a character boundary; the log summary's second cutter is gone, both use `truncate`.

@@ -1,0 +1,15 @@
+#!/bin/sh
+# Push hook: publish "an access request is waiting" to an ntfy topic. Install as an executable,
+# not writable by group or others, in /etc/openwrt-mcp/hooks.d/ and switch on `option push_hook '1'`.
+# The topic is the only secret (anyone who knows it can read the message), so it comes from UCI:
+#   uci set openwrt-mcp.notify=notify
+#   uci set openwrt-mcp.notify.ntfy_url='https://ntfy.sh/<long random topic>'
+#   uci commit openwrt-mcp
+req="$(head -c 8192)"
+url="$(uci -q get openwrt-mcp.notify.ntfy_url)"
+[ -n "$url" ] || { echo "ntfy hook: openwrt-mcp.notify.ntfy_url is not set" >&2; exit 3; }
+field() { printf '%s' "$req" | jsonfilter -e "@.$1"; }
+printf '%s\nApprove or refuse in LuCI: Services, MCP Server (request %s)\n' \
+	"$(field client) asks for $(field tool) on $(field scope)" "$(field id)" |
+	curl -s -o /dev/null -w '%{http_code}' --connect-timeout 5 --max-time 8 \
+		-H 'Title: openwrt-mcp request' -H 'Priority: high' --data-binary @- "$url" | grep -q '^200$'
