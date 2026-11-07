@@ -1,0 +1,4 @@
+# nlbwmon 2025.06.02 on 25.12.6: a LAN client (192.168.1.50) downloaded 20 MB over HTTPS through the router, plus the router's own traffic
+nlbw -c json -g mac,ip
+nlbw -c json -g mac,ip,layer7
+nlbw -c list

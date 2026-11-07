@@ -78,7 +78,7 @@ func TestCheckedInFixturesHoldNoRealAddressesOrSecrets(t *testing.T) {
 }
 
 // A capture manifest can only name commands that read: the oracle of the contract test, or a
-// `cat` of one file under /etc, /tmp or /var/run.
+// `cat` of one file under /etc, /tmp, /var/run or /proc/net.
 func TestCaptureManifestsAreReadOnly(t *testing.T) {
 	files, _ := filepath.Glob("testdata/capture/*.cmds")
 	if len(files) == 0 {
@@ -94,9 +94,9 @@ func TestCaptureManifestsAreReadOnly(t *testing.T) {
 			a := strings.Fields(line)
 			if a[0] == "cat" {
 				ok := len(a) == 2 && !strings.Contains(a[1], "..")
-				ok = ok && (strings.HasPrefix(a[1], "/etc/") || strings.HasPrefix(a[1], "/tmp/") || strings.HasPrefix(a[1], "/var/run/"))
+				ok = ok && (strings.HasPrefix(a[1], "/etc/") || strings.HasPrefix(a[1], "/tmp/") || strings.HasPrefix(a[1], "/var/run/") || strings.HasPrefix(a[1], "/proc/net/"))
 				if !ok {
-					t.Errorf("%s: %q reads more than one file under /etc, /tmp or /var/run", f, line)
+					t.Errorf("%s: %q reads more than one file under /etc, /tmp, /var/run or /proc/net", f, line)
 				}
 				continue
 			}

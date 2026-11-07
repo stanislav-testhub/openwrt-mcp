@@ -1,0 +1,7 @@
+# frpc with its server stopped, 25.12.6 (frp 0.66.0)
+pidof frpc
+uci -q show frpc
+pidof frps
+uci -q show frps
+cat /proc/net/tcp
+cat /proc/net/tcp6

@@ -1,0 +1,16 @@
+# uci -q show frpc
+frpc.@init[0]=init
+frpc.@init[0].stdout='1'
+frpc.@init[0].stderr='1'
+frpc.@init[0].user='frpc'
+frpc.@init[0].group='frpc'
+frpc.@init[0].respawn='1'
+frpc.common=conf
+frpc.common.server_addr='127.0.0.1'
+frpc.common.server_port='7000'
+frpc.ssh=conf
+frpc.ssh.type='tcp'
+frpc.ssh.local_ip='127.0.0.1'
+frpc.ssh.local_port='22'
+frpc.ssh.remote_port='6000'
+frpc.ssh.name='ssh'

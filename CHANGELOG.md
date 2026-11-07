@@ -3,13 +3,26 @@
 ## Unreleased
 
 Added
+- **pbr warns when mwan3 is active too.** Checked with a real second uplink (a veth pair into a namespace acting as the upstream, 25.12.6): with
+  mwan3 stopped, a pbr policy sent a LAN client out of wan2 and the request reached the upstream; with mwan3 running the same request timed out,
+  because mwan3's fwmark rules (priority 2001, plus its blackhole/unreachable rules) are checked before pbr's (29997 and up). The pbr detail now
+  says so, from `ip -4 rule show`. Also fixed: the reader skipped this check when pbr had no procd *running* instance (it never has one).
+- **`usage` (nlbwmon) checked against a real database.** A LAN client downloaded 20 MB through the router; the per-client totals, the
+  per-protocol view of `src=` (a `null` layer7 reads as `other`) and the period list parse as written. No code change; the real output is now a test.
+- **frpc and frps show whether they are connected.** frpc reports `connection to the server` (an established TCP connection to its server port, or
+  why it has none: the client keeps running and retrying while its server is down), frps reports `clients connected` on its bind port. Both read
+  `/proc/net/tcp` and `tcp6`; checked on 25.12.6 with frp 0.66.0 client and server on one router, then with the server stopped.
 - **Wave 4 finished on both releases.** passwall2 26.11.3 (unpacked like passwall: stock layout read, 2 nodes, 8 shunt rules) and v2rayA
   (official feeds: 2.2.7.3 on 24.10.8, a newer build on 25.12.6, running with the stock config) were added; the whole of wave 4 also ran on
   24.10.8 from the projects' ipk files: youtubeUnblock, nikki, zapret, OpenClash (needs `dnsmasq-full` in place of `dnsmasq`) and passwall
   and passwall2 unpacked. The adapters read the same layouts there. homeproxy 26.187 **starts** on 24.10.8 with the feed's sing-box 1.12.22,
   so the 25.12 failure is sing-box 1.13 against homeproxy's generated config, not homeproxy itself. Real traffic: on 25.12.6 nikki sent
   `1.1.1.1` through a shadowsocks server (sing-box on loopback, run as a uid nikki exempts, or its own output loops until `too many open
-  files`): `curl` got `301` with the server up and nothing (`000`) with it stopped. Not done: traffic through the other stacks.
+  files`): `curl` got `301` with the server up and nothing (`000`) with it stopped. OpenClash (mihomo core, fake-ip) and v2rayA
+  (Xray, transparent mode, node imported through its API) carried the same kind of request on 25.12.6, each with the same server-up/server-down
+  control. What a router owner must know, seen while doing it: the proxy server on the same box has to be exempt from the redirect (OpenClash:
+  group 65534; v2rayA: socket mark 0x80, which needs root), and a running openNDS silently drops redirected LAN traffic. Not done: traffic
+  through homeproxy, passwall and passwall2.
 - **Fix: the v2rayA API address was always `not set`.** The wave 4 reader printed a config value only if it looked like a version string
   (no `:`), so `0.0.0.0:2017` never passed. Options named `address` now accept a host:port shape (letters, digits, `.`, `:`, `[`, `]`, `-`).
   Found by the first capture of a real v2rayA config. Note the stock value listens on all addresses.

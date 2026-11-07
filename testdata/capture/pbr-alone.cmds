@@ -1,0 +1,4 @@
+# pbr 1.2.2 on 25.12.6 with a second uplink, mwan3 stopped: a policy sends a LAN client out of wan2 (checked with a request that reached the upstream)
+ubus call service list '{"name":"pbr"}'
+uci -q show pbr
+ip -4 rule show

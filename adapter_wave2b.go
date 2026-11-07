@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -99,6 +100,9 @@ func readFrpc(ctx context.Context) string {
 	lines = append(lines,
 		"server: "+pick(tree.get(sec, "server_addr") != "", hostOnly(tree.get(sec, "server_addr"))+":"+clip(tree.get(sec, "server_port"), 6), "not set"),
 		"token: "+pick(tree.get(sec, "token") != "", "set (not shown)", "not set"))
+	if port, err := strconv.Atoi(tree.get(sec, "server_port")); err == nil && !strings.HasSuffix(lines[0], "not running") {
+		lines = append(lines, tcpLine("connection to the server", establishedTCP(false, port), "no established connection to port "+strconv.Itoa(port)+": the server is down, unreachable or refuses the login (read logread for frpc)"))
+	}
 	proxies := frpProxies(tree)
 	lines = append(lines, fmt.Sprintf("proxies: %d", len(proxies)))
 	for i, p := range proxies {
@@ -120,6 +124,41 @@ func readFrpc(ctx context.Context) string {
 		lines = append(lines, "  "+strings.Join(parts, ", "))
 	}
 	return strings.Join(lines, "\n")
+}
+
+// establishedTCP counts ESTABLISHED TCP sockets (state 01 in /proc/net/tcp and tcp6) whose local
+// port (local=true, a server's side) or remote port (a client's side) is port.
+func establishedTCP(local bool, port int) int {
+	n := 0
+	for _, file := range []string{"/proc/net/tcp", "/proc/net/tcp6"} {
+		text, err := readSys(file)
+		if err != nil {
+			continue
+		}
+		for i, line := range strings.Split(text, "\n") {
+			f := strings.Fields(line)
+			if i == 0 || len(f) < 4 || f[3] != "01" {
+				continue
+			}
+			end := f[2]
+			if local {
+				end = f[1]
+			}
+			if _, p, ok := strings.Cut(end, ":"); ok {
+				if v, err := strconv.ParseUint(p, 16, 16); err == nil && int(v) == port {
+					n++
+				}
+			}
+		}
+	}
+	return n
+}
+
+func tcpLine(label string, n int, none string) string {
+	if n == 0 {
+		return label + ": " + none
+	}
+	return label + ": " + plural(n, "established TCP connection")
 }
 
 // frpCommon is the section the package writes as [common] (stock config: `config conf 'common'`);
@@ -155,6 +194,13 @@ func readFrps(ctx context.Context) string {
 		"bind port: "+pick(tree.get(sec, "bind_port") != "", clip(tree.get(sec, "bind_port"), 6), "default"),
 		"token: "+pick(tree.get(sec, "token") != "", "set (not shown)", "not set (any client may connect)"),
 		"dashboard: "+pick(tree.get(sec, "dashboard_port") != "", "port "+clip(tree.get(sec, "dashboard_port"), 6)+", password "+pick(tree.get(sec, "dashboard_pwd") != "", "set", "not set"), "off"))
+	port := 7000
+	if v, err := strconv.Atoi(tree.get(sec, "bind_port")); err == nil {
+		port = v
+	}
+	if !strings.HasSuffix(lines[0], "not running") {
+		lines = append(lines, tcpLine("clients connected", establishedTCP(true, port), "none (no established connection on port "+strconv.Itoa(port)+")"))
+	}
 	return strings.Join(lines, "\n")
 }
 

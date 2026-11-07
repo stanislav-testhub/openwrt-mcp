@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -33,6 +35,11 @@ func readPBR(ctx context.Context) string {
 	}
 	if w := dataCodes(data, "warnings"); len(w) > 0 {
 		lines = append(lines, "warnings: "+strings.Join(w, ", "))
+	}
+	if found {
+		if out, err := run(ctx, defaultCmdTimeout, "ip", "-4", "rule", "show"); err == nil {
+			lines = append(lines, pbrMwan3Warnings(out)...)
+		}
 	}
 	tree, err := uciShow(ctx, "pbr", false)
 	if err != nil {
@@ -119,4 +126,46 @@ func pbrConfig(t *uciTree, known map[string]bool) []string {
 		lines = append(lines, fmt.Sprintf("  %s: via %s%s%s", name, pick(iface != "", clip(iface, 30), "(no interface)"), pick(on, "", ", disabled"), note))
 	}
 	return lines
+}
+
+var (
+	pbrTableRule   = regexp.MustCompile(`^(\d+):\s+from all fwmark \S+ lookup pbr_`)
+	numTableRule   = regexp.MustCompile(`^(\d+):\s+from all fwmark (0x[0-9a-fA-F]+)(?:/(0x[0-9a-fA-F]+))? lookup (\d+)\s*$`)
+	discardingRule = regexp.MustCompile(`^\d+:\s+from all fwmark \S+ (blackhole|unreachable)`)
+)
+
+// pbrMwan3Warnings: mwan3 and pbr both steer by fwmark, and the kernel takes the first matching
+// rule. mwan3's rules (priorities 1001-3999, numbered tables, plus its blackhole and unreachable
+// rules) come before pbr's at 29997 and up, so traffic mwan3 marks never reaches a pbr table.
+// Seen on 25.12.6: a policy sending a client out of wan2 left through wan until mwan3 was stopped.
+func pbrMwan3Warnings(rules string) []string {
+	first, last := 0, 0 // lowest priority of a pbr table rule; highest priority of an mwan3-style rule before it
+	discards := false
+	var mine []int
+	for _, l := range strings.Split(rules, "\n") {
+		if m := pbrTableRule.FindStringSubmatch(l); m != nil {
+			if n, _ := strconv.Atoi(m[1]); first == 0 || n < first {
+				first = n
+			}
+		}
+		if discardingRule.MatchString(l) {
+			discards = true
+		}
+		if m := numTableRule.FindStringSubmatch(l); m != nil {
+			n, _ := strconv.Atoi(m[1])
+			mine = append(mine, n)
+		}
+	}
+	if first == 0 || !discards {
+		return nil
+	}
+	for _, n := range mine {
+		if n < first && n > last {
+			last = n
+		}
+	}
+	if last == 0 {
+		return nil
+	}
+	return []string{fmt.Sprintf("WARNING: mwan3 is active too: its fwmark rules (priority up to %d) are checked before pbr's (from %d), so traffic mwan3 marks is routed by mwan3 and a pbr policy for it has no effect. Use one of the two, or give the traffic to mwan3 policies.", last, first)}
 }

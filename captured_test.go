@@ -793,3 +793,96 @@ func TestWave4OnItsReal2410Installs(t *testing.T) {
 		})
 	}
 }
+
+// frpc and frps on one 25.12.6 router (frp 0.66.0, stock config): the client logged in to the server
+// and the sockets say so. The server's side of the connection is an IPv6 socket (it listens on ":::7000").
+func TestFrpWhenTheClientHasLoggedInToTheServer(t *testing.T) {
+	root := withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "frpc", "frps")
+	writeFixture(t, root, "proc/net/tcp", captured(t, "frp-connected", "05.txt"))
+	writeFixture(t, root, "proc/net/tcp6", captured(t, "frp-connected", "06.txt"))
+	f.on("pidof frpc", captured(t, "frp-connected", "01.txt"))
+	f.on("uci -q show frpc", captured(t, "frp-connected", "02.txt"))
+	f.on("pidof frps", captured(t, "frp-connected", "03.txt"))
+	f.on("uci -q show frps", captured(t, "frp-connected", "04.txt"))
+	wantAll(t, body(t, "frpc"), "connection to the server: 1 established TCP connection", "server: 127.0.0.1:7000")
+	wantAll(t, body(t, "frps"), "clients connected: 1 established TCP connection")
+}
+
+// The client keeps running and retrying while its server is stopped: "running" alone would hide that.
+func TestFrpcSaysWhenItHasNoConnectionToItsServer(t *testing.T) {
+	root := withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "frpc")
+	writeFixture(t, root, "proc/net/tcp", captured(t, "frp-server-down", "05.txt"))
+	writeFixture(t, root, "proc/net/tcp6", captured(t, "frp-server-down", "06.txt"))
+	f.on("pidof frpc", captured(t, "frp-server-down", "01.txt"))
+	f.on("uci -q show frpc", captured(t, "frp-server-down", "02.txt"))
+	got := body(t, "frpc")
+	wantAll(t, got, "frpc: running", "no established connection to port 7000")
+	mustNotContain(t, got, "1 established")
+}
+
+// nlbwmon 2025.06.02 on 25.12.6, real output: a LAN client downloaded 20 MB over HTTPS through the
+// router. The router's own traffic and a row whose layer7 is null (plain IP) sit next to it.
+func nlbwmonOnRealOutput(t *testing.T) {
+	t.Helper()
+	root := withFixtureRoot(t)
+	writeFixture(t, root, "usr/sbin/nlbw", "x")
+	f := newFakeRouter(t)
+	f.on("nlbw -c json -g mac,ip", captured(t, "nlbwmon-usage", "01.txt"))
+	f.on("nlbw -c json -g mac,ip,layer7", captured(t, "nlbwmon-usage", "02.txt"))
+	f.on("nlbw -c list", captured(t, "nlbwmon-usage", "03.txt"))
+}
+
+func TestNlbwmonUsagePerClientOnRealOutput(t *testing.T) {
+	nlbwmonOnRealOutput(t)
+	got, _, err := nlbwUsage(context.Background(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAll(t, got, "2 clients", "192.168.1.50", "periods available: 2026-11-01")
+	if strings.Index(got, "192.168.1.50") > strings.Index(got, "192.168.1.100") {
+		t.Errorf("the heaviest client is not first:\n%s", got)
+	}
+}
+
+func TestNlbwmonUsageOfOneClientByProtocolOnRealOutput(t *testing.T) {
+	nlbwmonOnRealOutput(t)
+	got, _, err := nlbwClientUsage(context.Background(), "", "192.168.1.50")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAll(t, got, "nlbwmon usage of 192.168.1.50", "HTTPS", "ICMP")
+	mustNotContain(t, got, "192.168.1.100")
+	other, _, err := nlbwClientUsage(context.Background(), "", "192.168.1.100")
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAll(t, other, "HTTPS", "ICMP", "other") // the null layer7 row is "other"
+}
+
+// pbr 1.2.2 on 25.12.6 with a second uplink. With mwan3 stopped, a policy sent a LAN client out of
+// wan2 and the request reached the upstream; with mwan3 running the same request timed out, because
+// mwan3's fwmark rules (priority 2001) are checked before pbr's (29997 and up).
+func pbrOnRealRules(t *testing.T, capture string) string {
+	t.Helper()
+	withFixtureRoot(t)
+	f := newFakeRouter(t)
+	addRC(f, "pbr")
+	f.on("ubus call service list", captured(t, capture, "01.txt"))
+	f.on("uci -q show pbr", captured(t, capture, "02.txt"))
+	f.on("ip -4 rule show", captured(t, capture, "03.txt"))
+	return body(t, "pbr")
+}
+
+func TestPbrWarnsWhenMwan3sRulesComeFirst(t *testing.T) {
+	got := pbrOnRealRules(t, "pbr-with-mwan3")
+	wantAll(t, got, "WARNING: mwan3 is active too", "priority up to 2001", "from 29997")
+}
+
+func TestPbrAloneHasNoMwan3Warning(t *testing.T) {
+	got := pbrOnRealRules(t, "pbr-alone")
+	mustNotContain(t, got, "mwan3")
+}

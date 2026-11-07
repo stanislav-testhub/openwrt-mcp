@@ -1,0 +1,4 @@
+# pbr 1.2.2 on 25.12.6 with a second uplink, mwan3 running: its rules come first, and the same policy no longer reaches wan2 (the request times out)
+ubus call service list '{"name":"pbr"}'
+uci -q show pbr
+ip -4 rule show
