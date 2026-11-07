@@ -140,6 +140,9 @@ func (s *Server) systemStatus(ctx context.Context, in systemStatusIn) (string, s
 			si.Memory.Available>>20, si.Memory.Total>>20, si.Root.Avail>>10, si.Root.Total>>10,
 			si.Tmp.Avail>>10, si.Tmp.Total>>10)
 	}
+	if line := selfMemoryLine(); line != "" {
+		b.WriteString(line + "\n")
+	}
 	if t := temperatures(); t != "" {
 		b.WriteString("temperatures: " + t + "\n")
 		sd.Temperatures = temperatureReadings()
@@ -955,4 +958,25 @@ type serviceRowData struct {
 type serviceListData struct {
 	Services []serviceRowData `json:"services"`
 	AddOns   []string         `json:"add_ons,omitempty"`
+}
+
+// selfMemoryLine reports this process's resident and peak memory (ROADMAP 10.1), so growth is visible
+// on a 128 MB router. Empty where /proc/self/status has no VmRSS (not Linux).
+func selfMemoryLine() string {
+	raw, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return ""
+	}
+	kib := map[string]int{}
+	for _, l := range strings.Split(string(raw), "\n") {
+		if k, v, ok := strings.Cut(l, ":"); ok && (k == "VmRSS" || k == "VmHWM") {
+			if n, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSpace(v), " kB")); err == nil {
+				kib[k] = n
+			}
+		}
+	}
+	if kib["VmRSS"] == 0 {
+		return ""
+	}
+	return fmt.Sprintf("openwrt-mcp memory %.1f MiB resident, %.1f MiB peak", float64(kib["VmRSS"])/1024, float64(kib["VmHWM"])/1024)
 }

@@ -229,15 +229,17 @@ return baseclass.extend({
 		}
 
 		// The line reports the outcome itself; the next poll drops it from the list.
-		function decide(r, line, decision, confirm) {
+		var WORDS = { '15m': _('15 minutes'), '1h': _('1 hour'), '8h': _('8 hours') };
+
+		function decide(r, line, decision, confirm, dur) {
 			var buttons = line.querySelectorAll ? line.querySelectorAll('button') : [];
 			buttons.forEach(function(b) { b.disabled = true; });
-			return callDecide(r.id, decision, 'exact', '15m', confirm || false).then(check).then(function() {
-				line.replaceChildren(E('em', {}, decision === 'allow' ? _('Allowed for 15 minutes.') : _('Denied.')));
+			return callDecide(r.id, decision, 'exact', dur || '15m', confirm || false).then(check).then(function() {
+				line.replaceChildren(E('em', {}, decision === 'allow' ? _('Allowed for %s.').format(WORDS[dur || '15m']) : _('Denied.')));
 			}).catch(function(e) {
 				buttons.forEach(function(b) { b.disabled = false; });
 				if (e.code === 'needs_confirm')
-					return confirmShell(e.message, function() { decide(r, line, decision, true); });
+					return confirmShell(e.message, function() { decide(r, line, decision, true, dur); });
 				fail(e);
 			});
 		}
