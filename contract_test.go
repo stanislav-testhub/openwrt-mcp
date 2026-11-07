@@ -81,6 +81,7 @@ var goldenCalls = []struct {
 		"reveal": true}},
 	{"wg_remove_client", map[string]any{"iface": "wg0", "name": "phone"}},
 	{"mfa_unlock", map[string]any{"code": "123456"}},
+	{"request_access", map[string]any{"wants": []string{"uci_apply wireless.radio1.channel"}}},
 }
 
 // everythingFake makes every program the tools might run succeed with empty-ish output, so a
@@ -218,8 +219,8 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 27140 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose)
-	catalogueProseBudget = 13200 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 27780 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose; 1.8: request_access, +636, wants is a plain list of strings)
+	catalogueProseBudget = 13440 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
@@ -457,6 +458,7 @@ func TestToolTitlesAndHints(t *testing.T) {
 		"ubus_call":          {"Call a ubus method", false, false, &yes, &yes},
 		"exec":               {"Run a command (no shell)", false, false, &yes, &yes},
 		"mfa_unlock":         {"Unlock MFA-gated tools", false, true, &no, &no},
+		"request_access":     {"Ask for several permissions at once", false, true, &no, &no},
 	}
 	str := func(b *bool) string {
 		if b == nil {
@@ -541,7 +543,7 @@ func TestPresetsNestAndKeepTheDangerousToolsOut(t *testing.T) {
 		}
 	}
 	// Anything not in a preset needs a stated reason.
-	reason := map[string]string{"exec": "a root shell", "ubus_list": "ungated introspection", "mfa_unlock": "ungated: it is how a factor is satisfied"}
+	reason := map[string]string{"exec": "a root shell", "ubus_list": "ungated introspection", "mfa_unlock": "ungated: it is how a factor is satisfied", "request_access": "ungated: it only opens requests the operator answers"}
 	for _, tool := range allToolNames {
 		if _, inOp := op[tool]; !inOp {
 			if reason[tool] == "" {

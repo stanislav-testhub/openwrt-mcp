@@ -22,7 +22,7 @@ var toolGroups = []struct {
 	{"configuration", "Configuration", []string{"uci_get", "uci_apply", "uci_confirm", "uci_rollback"}},
 	{"packages", "Packages", []string{"pkg_query", "pkg_config_diff", "pkg_change", "pkg_config_resolve"}},
 	{"vpn", "VPN", []string{"wg_list_clients", "wg_new_client", "wg_remove_client"}},
-	{"system", "System", []string{"service_control", "sysupgrade", "mfa_unlock"}},
+	{"system", "System", []string{"service_control", "sysupgrade", "mfa_unlock", "request_access"}},
 	{"raw", "Raw access", []string{"exec", "ubus_call"}},
 }
 

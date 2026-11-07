@@ -278,7 +278,7 @@ func (s *Server) mfaUnlock(client, code string, now time.Time) (string, string, 
 // types, never configuration data -- and without it an agent cannot discover what to ask
 // for. mfa_unlock is how you satisfy the second factor, so gating it would be a deadlock;
 // without a valid current code it does nothing but record a failed attempt.
-var ungatedTools = map[string]bool{"ubus_list": true, "mfa_unlock": true}
+var ungatedTools = map[string]bool{"ubus_list": true, "mfa_unlock": true, "request_access": true}
 
 // addTool registers one tool behind the shared policy+audit gate.
 //
@@ -436,7 +436,7 @@ func noScope[In any](In) []string { return nil }
 // unscopedTools are the tools registered with noScope: a call names nothing a limit could match,
 // so a grant is on or off and a limited one would never apply. Keep it in step with registry.go.
 var unscopedTools = map[string]bool{"ubus_list": true, "logread": true, "network_clients": true, "firewall_show": true,
-	"uci_confirm": true, "uci_rollback": true, "pkg_query": true, "pkg_config_diff": true, "mfa_unlock": true}
+	"uci_confirm": true, "uci_rollback": true, "pkg_query": true, "pkg_config_diff": true, "mfa_unlock": true, "request_access": true}
 
 // Tool annotations: hints to the client, never a security boundary (the policy is). They let
 // a client auto-approve reads and ask before writes.

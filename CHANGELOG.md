@@ -9,6 +9,11 @@ Fixed
   covered by some live policy of the client for that tool.
 
 Added
+- **`request_access`: ask for several grants at once.** A client that runs its calls one after another showed the owner one
+  card at a time, each held until it was answered. `request_access wants=['uci_apply wireless.radio1.channel', 'pkg_change add.usteer']`
+  opens every request first, without waiting (ungated, grants nothing, same caps and rate limit as a refused call), so LuCI shows
+  them under one "Allow all N" row; the real calls then find their requests answered. The "Allow all" row now has a duration
+  choice (15 minutes, 1 hour, 8 hours) instead of 15 minutes only. The catalogue grows by 636 bytes (budget raised, documented).
 - **One approval request per call, not one per scope.** When a client holds a tool but some scopes of a call are uncovered, the refusal and
   the request named only the first one, so a call with several (a `uci_apply` touching two configs) needed one request, one wait and one tap
   for each. It now names every scope no policy covers, in one request and one `allow` line. A new request also replaces the client's older open

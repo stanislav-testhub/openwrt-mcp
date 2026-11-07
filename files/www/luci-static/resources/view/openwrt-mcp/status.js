@@ -480,7 +480,7 @@ return view.extend({
 	},
 
 	render: function(data) {
-		var ui_ = { tab: savedTab() || 'overview', client: null, req: {}, answered: [], adv: false, editing: null, choice: null, duration: '1h',
+		var ui_ = { tab: savedTab() || 'overview', client: null, req: {}, bulk: {}, answered: [], adv: false, editing: null, choice: null, duration: '1h',
 			pa: { box: false, name: '', duration: '1h' }, filter: { client: '', kind: '', text: '' }, shown: ACTIVITY_PAGE,
 			raw: {}, sig: {}, draft: null, settingsDraft: null, settingsShape: '', channelBoxes: {}, anchor: null };
 		if (!data.tools) {
@@ -666,12 +666,12 @@ return view.extend({
 		// One answer for several waiting requests of one assistant: each gets the same narrow grant
 		// its own Allow for 15 minutes would write, one after another, and the page re-reads once.
 		// A request that needs full control never joins: it keeps its own card and confirmation.
-		function decideAll(list, decision) {
+		function decideAll(list, decision, duration) {
 			var client = list[0].client, before = clientPolicies(client).map(policyKey);
 			var done = [], stop = null;
 			return list.reduce(function(p, r) {
 				return p.then(function() {
-					return callDecide(r.id, decision, decision === 'allow' ? 'exact' : undefined, decision === 'allow' ? ONCE : undefined, false)
+					return callDecide(r.id, decision, decision === 'allow' ? 'exact' : undefined, decision === 'allow' ? duration : undefined, false)
 						.then(check).then(function() { done.push(r); });
 				});
 			}, Promise.resolve()).catch(function(e) { stop = e; }).then(function() {
@@ -682,7 +682,7 @@ return view.extend({
 				if (!done.length)
 					return;
 				var actions = done.map(requestAction).filter(function(a, i, all) { return all.indexOf(a) === i; });
-				ui_.answered.push({ id: 'all-' + done[0].id, client: client, decision: decision, duration: ONCE, at: Date.now(),
+				ui_.answered.push({ id: 'all-' + done[0].id, client: client, decision: decision, duration: duration, at: Date.now(),
 					action: actions.length === 1 ? _('%s (%d requests)').format(actions[0], done.length) : _('do %d things').format(done.length),
 					added: clientPolicies(client).map(policyKey).filter(function(k) { return before.indexOf(k) < 0; }) });
 				drawOverview(true);
@@ -695,11 +695,13 @@ return view.extend({
 				return [];
 			open.forEach(function(r) { if (!isFullControl(r)) (by[r.client] = by[r.client] || []).push(r); });
 			return Object.keys(by).filter(function(c) { return by[c].length > 1; }).map(function(c) {
-				var list = by[c], n = list.length;
+				var list = by[c], n = list.length, dur = ui_.bulk[c] || ONCE;
 				return E('div', { 'class': 'cbi-section-node mcp-card mcp-bulk', 'data-bulk': c }, [
 					E('div', { 'class': 'mcp-line' }, _('%s has %d requests waiting.').format(displayName(c), n)),
 					E('div', { 'class': 'mcp-row mcp-actions' }, [
-						btn('action', 'allow-all', _('Allow all %d for 15 minutes').format(n), function() { decideAll(list, 'allow'); }),
+						btn('action', 'allow-all', _('Allow all %d for %s').format(n, DURATION_WORDS[dur] || dur), function() { decideAll(list, 'allow', dur); }),
+						selectOf([ [ ONCE, _('15 minutes') ], [ '1h', _('1 hour') ], [ '8h', _('8 hours') ] ], dur,
+							function(v) { ui_.bulk[c] = v; drawOverview(true); }, { 'id': 'mcp-bulk-dur-' + c }),
 						btn('negative', 'deny-all', _('Deny all %d').format(n), function() { decideAll(list, 'deny'); }, { 'class': 'cbi-button cbi-button-negative mcp-sep' })
 					])
 				]);

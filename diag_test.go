@@ -219,7 +219,7 @@ func TestDiagBundleIsReadableAndLeaksNothing(t *testing.T) {
 	for _, want := range []string{
 		"openwrt-mcp diagnostic bundle", "Addresses, MACs and names are replaced", "version    " + version,
 		"board      Example Board X1; OpenWrt 25.12.5 r32000 (ramips/mt7621); kernel 6.12.74",
-		"daemon     stopped on 127.0.0.1:1", "tools      23 registered",
+		"daemon     stopped on 127.0.0.1:1", "tools      24 registered",
 		"policies   2 (1 expired)",
 		"  claude-code: system_status on *, ", "  client-1: exec on /bin/sh, ",
 		"expires 2099-01-01", "expires 2020-01-01 (expired)", "shell-equivalent: sh",

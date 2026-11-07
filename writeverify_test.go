@@ -809,6 +809,7 @@ func TestEveryWritePathVerifiesAfterWrite(t *testing.T) {
 		"exec":               "a generic hatch: the command's own output is the result",
 		"ubus_call":          "a generic hatch: the call's own reply is the result",
 		"mfa_unlock":         "changes daemon memory only",
+		"request_access":     "opens requests in daemon memory only",
 	}
 
 	covered := map[string]func(t *testing.T) (string, bool){

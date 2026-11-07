@@ -44,7 +44,7 @@ var (
 // slotExempt tools never queue. A rollback window ends in uci_confirm or uci_rollback, and a full
 // router is exactly when a pending change needs one of them; mfa_unlock is how the other tools
 // are unlocked at all. All three are quick.
-var slotExempt = map[string]bool{"uci_confirm": true, "uci_rollback": true, "mfa_unlock": true}
+var slotExempt = map[string]bool{"uci_confirm": true, "uci_rollback": true, "mfa_unlock": true, "request_access": true}
 
 // acquireSlot takes one of the server's slots, waiting up to inflightWait. It returns the function
 // that gives the slot back, or a refusal text when none came free (or the caller gave up first).

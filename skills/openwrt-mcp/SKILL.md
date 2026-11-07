@@ -38,6 +38,7 @@ Use the same ssh options as the user's MCP client entry (`openwrt-mcp connect` p
 - `pkg_config_diff`: Review new package configs
 - `pkg_config_resolve`: Resolve a package config
 - `pkg_query`: Query packages
+- `request_access`: Ask for several permissions at once
 - `service_control`: Control a service
 - `service_list`: List services
 - `system_status`: Router status

@@ -59,6 +59,7 @@ var rawTools = map[string]string{
 	"wg_remove_client": "a confirmation line only",
 	"ubus_list":        "object and method names with argument types: introspection, no values",
 	"mfa_unlock":       "returns an expiry time, never a secret",
+	"request_access":   "request ids and the scopes the caller itself named: no router data",
 }
 
 // maskForTool applies the tool's rule to out. in is the typed tool input: a ubus reply to a

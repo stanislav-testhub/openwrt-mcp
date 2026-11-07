@@ -221,6 +221,16 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 			return s.mfaUnlock(client, in.Code, time.Now())
 		})
 
+	// ---- asking for several permissions at once
+
+	addTool(s, srv, client, "request_access",
+		"Ask for several grants at once, before the calls: opens one request per entry without waiting, so the "+
+			"operator answers all in one tap. Grants nothing itself.",
+		annIdem, noScope[requestAccessIn],
+		func(ctx context.Context, in requestAccessIn) (string, string, error) {
+			return s.requestAccess(client, in, time.Now())
+		})
+
 	return srv
 }
 
@@ -229,7 +239,7 @@ var allToolNames = []string{
 	"ubus_list", "ubus_call", "exec", "system_status", "logread", "network_clients", "firewall_show",
 	"net_diag", "uci_get", "uci_apply", "uci_confirm", "uci_rollback", "service_list", "service_control",
 	"pkg_query", "pkg_change", "pkg_config_diff", "pkg_config_resolve", "sysupgrade", "wg_list_clients",
-	"wg_new_client", "wg_remove_client", "mfa_unlock",
+	"wg_new_client", "wg_remove_client", "mfa_unlock", "request_access",
 }
 
 // toolTitle is the display name; the package tools say which package manager they drive, so a
@@ -271,6 +281,7 @@ var toolTitles = map[string]string{
 	"wg_new_client":      "Add WireGuard peer",
 	"wg_remove_client":   "Remove WireGuard peer",
 	"mfa_unlock":         "Unlock MFA-gated tools",
+	"request_access":     "Ask for several permissions at once",
 }
 
 // openWorldTools can reach past the router itself: the internet, a host named in the

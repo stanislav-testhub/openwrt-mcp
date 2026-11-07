@@ -119,6 +119,7 @@ are welcome.
 | `ubus_call` | `<object>.<method>` | Anything else on the bus. Replies over 8 KB have long arrays pruned. |
 | `exec` | `argv[0]` | One program, no shell. A grant for `sh`, `find`, `awk`, `env`, `ssh` and the like is a root shell: `allow` refuses it without `--shell-equivalent`. |
 | `mfa_unlock` | *(ungated)* | Opens the TOTP window for MFA-gated tools. |
+| `request_access` | *(ungated)* | Opens one request per entry at once, without waiting, so the operator answers them together. Grants nothing. |
 
 **Prompts.** Clients that show MCP prompts (as slash commands, usually) get five recipes:
 `router-health`, `who-is-online`, `secure-my-router`, `wifi-doctor` and `upgrade-plan`. Each is a

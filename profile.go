@@ -57,7 +57,7 @@ var toolsetTools = map[string][]string{
 }
 
 var (
-	coreTools         = []string{"system_status", "mfa_unlock"}
+	coreTools         = []string{"system_status", "mfa_unlock", "request_access"}
 	unrestrictedTools = []string{"exec"}
 )
 

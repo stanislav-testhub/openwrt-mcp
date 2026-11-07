@@ -168,7 +168,10 @@ Open question: whether rpcd passes the LuCI user name to an exec plugin. If it d
 **Always on top, above the tabs** (rendered only when there is something to show):
 
 - **Requests**: one card per open request, newest first, with the countdown of a held call. Several requests from one
-  client get an "Allow all N" button that uses the narrowest breadth for each.
+  client get an "Allow all N" button that uses the narrowest breadth for each, for 15 minutes, 1 hour or 8 hours as chosen
+  next to it. A client that makes its calls one after another cannot show them together by itself (each call holds
+  until it is answered), so it calls `request_access` first with everything it will need: that opens all the requests
+  at once, without waiting, and grants nothing.
 - **Permit all active**: a red banner, "claude-code has full root access until 14:30 — [End now]".
 - **Rollback pending**: today's `uci_apply` deadline, now as a countdown.
 
