@@ -99,6 +99,25 @@ func runStatus(configPath, statePath string, auditLines int, asJSON, all bool) e
 	return enc.Encode(rep)
 }
 
+// policyReports lists the grants in file order. perClient receives how many each client has.
+func policyReports(cfg *Config, now time.Time, perClient map[string]int) []policyReport {
+	var out []policyReport
+	for _, p := range cfg.Policies {
+		pr := policyReport{
+			Index:  perClient[p.Client],
+			Client: p.Client, Tools: p.Tools, Scopes: p.Scopes,
+			MaxPerMin: p.MaxPerMin, Enabled: p.Enabled, ShellEquivalent: p.shellEquivalent(),
+		}
+		if !p.Expires.IsZero() {
+			pr.Expires = p.Expires.Format(time.RFC3339)
+			pr.Expired = now.After(p.Expires)
+		}
+		out = append(out, pr)
+		perClient[p.Client]++
+	}
+	return out
+}
+
 func buildStatus(configPath, statePath string, auditLines int) (statusReport, error) {
 	cfg, err := LoadConfig(configPath)
 	if err != nil {
@@ -116,21 +135,8 @@ func buildStatus(configPath, statePath string, auditLines int) (statusReport, er
 	}
 
 	perClient := map[string]int{}
-	now := time.Now()
-	rep.PermitAll = activePermitAll(cfg, now)
-	for _, p := range cfg.Policies {
-		pr := policyReport{
-			Index:  perClient[p.Client],
-			Client: p.Client, Tools: p.Tools, Scopes: p.Scopes,
-			MaxPerMin: p.MaxPerMin, Enabled: p.Enabled, ShellEquivalent: p.shellEquivalent(),
-		}
-		if !p.Expires.IsZero() {
-			pr.Expires = p.Expires.Format(time.RFC3339)
-			pr.Expired = now.After(p.Expires)
-		}
-		rep.Policies = append(rep.Policies, pr)
-		perClient[p.Client]++
-	}
+	rep.PermitAll = activePermitAll(cfg, time.Now())
+	rep.Policies = policyReports(cfg, time.Now(), perClient)
 
 	// Pairings come from the token store, not from the policy list: a client can be paired
 	// with nothing granted, and that is worth seeing rather than hiding.
@@ -253,13 +259,19 @@ func firstLine(s string) string {
 	return s
 }
 
-func writeStatusText(w io.Writer, r statusReport, all bool) error {
-	state := "stopped"
-	if r.Running {
-		state = "running"
-	} else if r.IdleExit > 0 {
-		state = "stopped (starts on demand)"
+// daemonState is how status and the diagnostic bundle word whether the daemon is up.
+func daemonState(running bool, idleExitMin int) string {
+	switch {
+	case running:
+		return "running"
+	case idleExitMin > 0:
+		return "stopped (starts on demand)"
 	}
+	return "stopped"
+}
+
+func writeStatusText(w io.Writer, r statusReport, all bool) error {
+	state := daemonState(r.Running, r.IdleExit)
 	fmt.Fprintf(w, "openwrt-mcp %s -- %s on %s\n", r.Version, state, orDefault(r.Listen, "the socket only (HTTP off)"))
 	fmt.Fprintf(w, "%d paired client(s), %d policy/policies\n", len(r.Clients), len(r.Policies))
 	for _, c := range r.Clients {

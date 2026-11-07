@@ -204,12 +204,7 @@ func runDiag(w io.Writer, configPath string, nAudit int, detail bool) error {
 	p := func(format string, a ...any) { fmt.Fprintf(&b, format+"\n", a...) }
 	p("version    %s (%s %s/%s)", version, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 	p("board      %s", boardLine(ctx))
-	state := "stopped"
-	if daemonUp(cfg) {
-		state = "running"
-	} else if cfg.IdleExitMin > 0 {
-		state = "stopped (starts on demand)"
-	}
+	state := daemonState(daemonUp(cfg), cfg.IdleExitMin)
 	sock := "disabled"
 	if cfg.Socket != "" {
 		sock = "enabled"
@@ -221,26 +216,27 @@ func runDiag(w io.Writer, configPath string, nAudit int, detail bool) error {
 		p("fit        %s", l)
 	}
 
+	pols := policyReports(cfg, time.Now(), map[string]int{})
 	expired := 0
-	for _, pol := range cfg.Policies {
-		if !pol.Expires.IsZero() && pol.Expires.Before(time.Now()) {
+	for _, pol := range pols {
+		if pol.Expired {
 			expired++
 		}
 	}
 	p("")
-	p("policies   %d (%d expired)", len(cfg.Policies), expired)
-	for _, pol := range cfg.Policies {
+	p("policies   %d (%d expired)", len(pols), expired)
+	for _, pol := range pols {
 		exp := "never"
-		if !pol.Expires.IsZero() {
-			exp = pol.Expires.Format("2006-01-02")
-			if pol.Expires.Before(time.Now()) {
+		if pol.Expires != "" {
+			exp = pol.Expires[:10]
+			if pol.Expired {
 				exp += " (expired)"
 			}
 		}
 		line := fmt.Sprintf("  %s: %s on %s, %d/min, expires %s", m.Client(pol.Client),
 			strings.Join(pol.Tools, ","), strings.Join(pol.Scopes, " "), pol.MaxPerMin, exp)
-		if hit := pol.shellEquivalent(); len(hit) > 0 {
-			line += "; shell-equivalent: " + describeShellEquivalent(hit)
+		if len(pol.ShellEquivalent) > 0 {
+			line += "; shell-equivalent: " + describeShellEquivalent(pol.ShellEquivalent)
 		}
 		p("%s", line)
 	}
