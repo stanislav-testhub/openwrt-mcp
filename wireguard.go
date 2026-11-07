@@ -612,8 +612,7 @@ func (s *Server) wgNewClient(ctx context.Context, client string, in wgNewClientI
 		warn += "\nNot verified: could not re-read the network config (" + err.Error() + ")."
 	} else if got == nil || !got.InUCI || got.Name != name || !contains(got.Allowed, cfg.Address) {
 		return "", "", notApplied("committed network, but peer %q (%s) is not in the network config when read "+
-			"back. Nothing was reloaded.\n\nThe rollback is still armed: it restores the previous config at %s, "+
-			"or undo it now with uci_rollback {\"token\": \"%s\"}. Do not confirm.", name, cfg.Address, pa.Deadline.Format(time.RFC3339), pa.Token)
+			"back. Nothing was reloaded.\n\n%s", name, cfg.Address, readBackFailure(pa))
 	} else {
 		verified = "Verified: the peer is in the network config."
 	}
@@ -793,8 +792,7 @@ func (s *Server) wgRemoveClient(ctx context.Context, client string, in wgRemoveI
 		notes = append(notes, "Not verified: could not re-read the network config ("+err.Error()+").")
 	} else if now != nil && now.InUCI {
 		return "", "", notApplied("committed network, but peer %q (section %s) is still in the network config when read "+
-			"back. Nothing was reloaded.\n\nThe rollback is still armed: it restores the previous config at %s, "+
-			"or undo it now with uci_rollback {\"token\": \"%s\"}. Do not confirm.", p.Name, p.Section, pa.Deadline.Format(time.RFC3339), pa.Token)
+			"back. Nothing was reloaded.\n\n%s", p.Name, p.Section, readBackFailure(pa))
 	} else {
 		gone = append(gone, "from the network config")
 	}

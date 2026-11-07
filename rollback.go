@@ -198,9 +198,8 @@ func (s *Server) uciApply(ctx context.Context, client string, in uciApplyIn) (st
 	mismatches, verified := verifyApplied(ctx, names, in.Changes)
 	if len(mismatches) > 0 {
 		return "", "", notApplied("committed %s, but re-reading it does not show what was asked for. "+
-			"Nothing was reloaded:\n  %s\n\nThe rollback is still armed: it restores the previous config at %s, "+
-			"or undo it now with uci_rollback {\"token\": \"%s\"}. Do not confirm.",
-			strings.Join(names, ", "), strings.Join(mismatches, "\n  "), p.Deadline.Format(time.RFC3339), p.Token)
+			"Nothing was reloaded:\n  %s\n\n%s",
+			strings.Join(names, ", "), strings.Join(mismatches, "\n  "), readBackFailure(p))
 	}
 	if verified != "" {
 		verified += "\n\n"
@@ -335,12 +334,7 @@ func (s *Server) uciRestore(ctx context.Context, client string, in uciApplyIn) (
 	}
 	s.arm(p, timeout)
 	undo := func(why error) (string, string, error) {
-		var rerr error
-		if s.take(p.Token) != nil {
-			rerr = s.restore(ctx, p, false)
-			s.savePending()
-		}
-		return "", "", fmt.Errorf("%w (restore of the previous version: %v)", why, rerr)
+		return "", "", fmt.Errorf("%w (restore of the previous version: %v)", why, s.abortArmed(ctx, p))
 	}
 	mode := os.FileMode(e.Mode)
 	if mode == 0 {
@@ -412,15 +406,28 @@ func (s *Server) commitArmed(ctx context.Context, p *pendingApply, names []strin
 	s.arm(p, timeout)
 	for _, c := range names {
 		if out, err := run(ctx, defaultCmdTimeout, "uci", "commit", c); err != nil {
-			var rerr error
-			if s.take(p.Token) != nil {
-				rerr = s.restore(ctx, p, false)
-				s.savePending()
-			}
-			return fmt.Errorf("commit %s failed: %w\n%s (restore: %v)", c, err, out, rerr)
+			return fmt.Errorf("commit %s failed: %w\n%s (restore: %v)", c, err, out, s.abortArmed(ctx, p))
 		}
 	}
 	return nil
+}
+
+// abortArmed undoes a change that failed after arm: it disarms the rollback and puts the snapshot
+// back at once. It returns the restore error, nil when the rollback had already fired.
+func (s *Server) abortArmed(ctx context.Context, p *pendingApply) error {
+	if s.take(p.Token) == nil {
+		return nil
+	}
+	err := s.restore(ctx, p, false)
+	s.savePending()
+	return err
+}
+
+// readBackFailure is the tail of the error for a change that was committed but does not read back
+// as asked: the rollback is still armed and the operator must not confirm.
+func readBackFailure(p *pendingApply) string {
+	return fmt.Sprintf("The rollback is still armed: it restores the previous config at %s, "+
+		"or undo it now with uci_rollback {\"token\": \"%s\"}. Do not confirm.", p.Deadline.Format(time.RFC3339), p.Token)
 }
 
 // arm registers a snapshotted change and starts its timer. The pending record is written

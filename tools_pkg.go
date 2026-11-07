@@ -493,10 +493,7 @@ func (s *Server) pkgConfigResolve(ctx context.Context, client string, in pkgConf
 			}
 		}
 		if err != nil {
-			if s.take(p.Token) != nil {
-				_ = s.restore(ctx, p, false)
-				s.savePending()
-			}
+			_ = s.abortArmed(ctx, p)
 			return "", "", err
 		}
 		out := reloadConfigs(ctx, []string{name}, false)
