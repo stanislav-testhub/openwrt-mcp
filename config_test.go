@@ -321,3 +321,30 @@ func TestAuthoriseNamesEveryUncoveredScopeAtOnce(t *testing.T) {
 		t.Errorf("reason does not offer the one grant for both: %q", reason)
 	}
 }
+
+// Grants add up: a call whose scopes are each covered by some live policy of the client for that tool
+// goes through, even when no single policy covers them all (a section grant from one approval, its
+// option grants from another). Refusing it left the page showing the request as already allowed, so
+// no card ever appeared and nothing could be answered.
+func TestAuthoriseAddsUpGrantsAcrossPolicies(t *testing.T) {
+	cfg := parse(t, `
+config policy
+	option client 'c'
+	list tools 'uci_apply'
+	list scopes 'network.usttest'
+
+config policy
+	option client 'c'
+	list tools 'uci_apply'
+	list scopes 'network.usttest.proto'
+	list scopes 'network.usttest.ipaddr'
+`)
+	now := time.Now()
+	if p, reason, _ := cfg.authorise("c", "uci_apply", []string{"network.usttest", "network.usttest.proto"}, now); p == nil {
+		t.Fatalf("two grants that together cover the call refused it: %s", reason)
+	}
+	p, reason, missing := cfg.authorise("c", "uci_apply", []string{"network.usttest", "network.usttest.proto", "wireless.x"}, now)
+	if p != nil || missing != "wireless.x" || !strings.Contains(reason, "'wireless.x'") {
+		t.Errorf("one uncovered scope must still refuse and be the only one named: p=%v missing=%q reason=%q", p != nil, missing, reason)
+	}
+}

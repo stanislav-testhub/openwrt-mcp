@@ -345,6 +345,7 @@ func (c *Config) authorise(client, tool string, scopes []string, now time.Time) 
 	var sawClientTool bool
 	var uncovered string
 	var live [][]string
+	var livePol []*Policy
 	for _, p := range c.Policies {
 		if !p.Enabled || p.Client != client || !contains(p.Tools, tool) {
 			continue
@@ -354,6 +355,7 @@ func (c *Config) authorise(client, tool string, scopes []string, now time.Time) 
 		}
 		sawClientTool = true
 		live = append(live, p.Scopes)
+		livePol = append(livePol, p)
 		if miss, ok := firstUncovered(p.Scopes, scopes); !ok {
 			uncovered = miss
 			continue
@@ -377,6 +379,17 @@ func (c *Config) authorise(client, tool string, scopes []string, now time.Time) 
 			}
 		}
 		if len(missing) == 0 {
+			// Grants add up: every scope is covered by some policy, though none covers them all (a
+			// section from one approval, its options from another). Charge the first policy that
+			// covers anything.
+			for _, p := range livePol {
+				if coversAny(p.Scopes, scopes) {
+					if !p.takeToken(now) {
+						return nil, fmt.Sprintf("rate limit: policy for %q allows %d calls/min to %s", client, p.MaxPerMin, tool), ""
+					}
+					return p, "", ""
+				}
+			}
 			missing = []string{uncovered}
 		}
 		all := strings.Join(missing, " ")
@@ -390,6 +403,16 @@ func (c *Config) authorise(client, tool string, scopes []string, now time.Time) 
 	all := orStar(strings.Join(scopes, " "))
 	return nil, fmt.Sprintf("denied: no policy grants %s to %q\n"+
 		"  grant it: openwrt-mcp allow %s %s '%s' 60m", tool, client, client, tool, all), all
+}
+
+// coversAny reports whether the globs cover at least one of the scopes.
+func coversAny(globs, scopes []string) bool {
+	for _, s := range scopes {
+		if matchAny(globs, s) {
+			return true
+		}
+	}
+	return false
 }
 
 // firstUncovered returns the first scope not matched by any glob. ok is true only when

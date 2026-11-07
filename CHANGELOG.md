@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+Fixed
+- **Grants from several approvals add up.** A call was refused unless one policy covered all its scopes, so a section
+  grant and its option grants approved separately never let `uci_apply` through, while the page, which checks each
+  request on its own, showed the request as already allowed and drew no card. A call now passes when every scope is
+  covered by some live policy of the client for that tool.
+
 Added
 - **One approval request per call, not one per scope.** When a client holds a tool but some scopes of a call are uncovered, the refusal and
   the request named only the first one, so a call with several (a `uci_apply` touching two configs) needed one request, one wait and one tap
