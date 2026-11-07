@@ -1,8 +1,11 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net"
 	"strings"
 	"testing"
 
@@ -201,5 +204,62 @@ func TestStructuredFromMaskedTextHidesSecrets(t *testing.T) {
 	b, _ = json.Marshal(res.StructuredContent)
 	if !strings.Contains(string(b), `"level":"daemon.info"`) || !strings.Contains(string(b), `"text":"not a syslog line"`) {
 		t.Errorf("log lines: %s", b)
+	}
+}
+
+// rawSession talks JSON-RPC lines to a server over a pipe, so a test can negotiate any protocol
+// version (the SDK's own client always asks for the newest).
+func rawSession(t *testing.T, s *Server, version string) func(method, params string) map[string]any {
+	t.Helper()
+	cli, srv := net.Pipe()
+	ss, err := s.serverFor("c").Connect(context.Background(), &mcp.IOTransport{Reader: srv, Writer: srv}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cli.Close(); ss.Close() })
+	br := bufio.NewReader(cli)
+	id := 0
+	call := func(method, params string) map[string]any {
+		id++
+		fmt.Fprintf(cli, `{"jsonrpc":"2.0","id":%d,"method":%q,"params":%s}`+"\n", id, method, params)
+		line, err := br.ReadBytes('\n')
+		if err != nil {
+			t.Fatalf("%s: %v", method, err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(line, &m); err != nil {
+			t.Fatalf("%s: %v: %s", method, err, line)
+		}
+		return m
+	}
+	call("initialize", `{"protocolVersion":"`+version+`","capabilities":{},"clientInfo":{"name":"t","version":"0"}}`)
+	fmt.Fprintln(cli, `{"jsonrpc":"2.0","method":"notifications/initialized"}`)
+	return call
+}
+
+// 10.9: a client that did not negotiate structured output (protocol before 2025-06-18) gets the
+// text alone: no outputSchema in tools/list and no structuredContent in the result.
+func TestStructuredOutputGoesOnlyToClientsThatNegotiateIt(t *testing.T) {
+	wgFake(t, 0)
+	for _, c := range []struct {
+		version string
+		want    bool
+	}{{"2024-11-05", false}, {"2025-03-26", false}, {"2025-06-18", true}, {"2025-11-25", true}} {
+		call := rawSession(t, testServer(t, grantAll()), c.version)
+		list := call("tools/list", `{}`)
+		schemas := 0
+		for _, tl := range list["result"].(map[string]any)["tools"].([]any) {
+			if _, ok := tl.(map[string]any)["outputSchema"]; ok {
+				schemas++
+			}
+		}
+		res := call("tools/call", `{"name":"wg_list_clients","arguments":{}}`)["result"].(map[string]any)
+		_, hasData := res["structuredContent"]
+		if (schemas > 0) != c.want || hasData != c.want {
+			t.Errorf("%s: outputSchemas=%d structuredContent=%v, want present=%v", c.version, schemas, hasData, c.want)
+		}
+		if text := res["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "ALLOWED IPS") {
+			t.Errorf("%s: the text table is missing:\n%s", c.version, text)
+		}
 	}
 }

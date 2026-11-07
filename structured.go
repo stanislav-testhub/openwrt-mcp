@@ -1,7 +1,10 @@
 package main
 
 import (
+	"slices"
+
 	"context"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"strings"
 	"sync"
 )
@@ -146,4 +149,41 @@ func splitLines(s string) []string {
 		}
 	}
 	return out
+}
+
+// structuredSince is the first MCP protocol version with outputSchema and structuredContent. A
+// client that negotiated an older one gets the text alone, so structured output costs it nothing
+// (ROADMAP 10.9): no schema in tools/list and no duplicate of the data in the result.
+const structuredSince = "2025-06-18"
+
+// negotiatesStructured reports whether the session's protocol version has structured output.
+// Versions are dates, so they compare as strings. A version the SDK does not know is negotiated
+// up to the latest, which has it; a session that has not initialised keeps it too.
+func negotiatesStructured(sess mcp.Session) bool {
+	ss, ok := sess.(*mcp.ServerSession)
+	if !ok || ss.InitializeParams() == nil {
+		return true
+	}
+	v := ss.InitializeParams().ProtocolVersion
+	return v >= structuredSince || !slices.Contains(mcp.SupportedProtocolVersions(), v)
+}
+
+// structuredGate removes outputSchema and structuredContent from what a client that does not
+// negotiate them would receive. It is presentation only, like profileCatalogue.
+func structuredGate(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		res, err := next(ctx, method, req)
+		if err != nil || negotiatesStructured(req.GetSession()) {
+			return res, err
+		}
+		switch r := res.(type) {
+		case *mcp.ListToolsResult:
+			for _, tl := range r.Tools {
+				tl.OutputSchema = nil
+			}
+		case *mcp.CallToolResult:
+			r.StructuredContent = nil
+		}
+		return res, err
+	}
 }

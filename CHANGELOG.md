@@ -9,6 +9,7 @@ Fixed
   covered by some live policy of the client for that tool.
 
 Added
+- **Structured output is sent only to clients that negotiate it** (ROADMAP 10.9). A client on a protocol older than 2025-06-18 gets no `outputSchema` in `tools/list` and no `structuredContent` in results, so for it the catalogue and every result stay as large as before structured output; the text table is unchanged for all clients.
 - **`option profile 'small'` and `option toolsets`** (ROADMAP 10.6, 10.7). `small` fills in `idle_exit 5`, `listen ''`, `memory_limit 16`, `audit_max_mb 1`, `history_keep 3` and `toolsets 'diag config'` for every option the config leaves unset; explicit options win, an unknown profile name is logged and ignored. `option toolsets` caps the catalogue of every client on the bridge, `call` and HTTP; a client's `--toolset` can only narrow it, `exec` is not listed under a cap, and the core tools stay. Measured with every tool granted: 24 tools and 27.8 KB of `tools/list` become 15 tools and 18.5 KB under `diag config`.
 - `audit_max_mb`, when unset, is at most 1/32 of the filesystem holding the audit log (at least 1, at most 16), so a 16 MB flash no longer takes up to 32 MB of log. An explicit value is never clamped.
 - The diagnostic bundle has a `fit` line (RAM, size of the audit log's filesystem, profile, toolset cap) and suggests the `small` profile under 256 MiB RAM; `install-router.sh` prints the same fit and the suggestion, and still refuses when the binary does not fit (now covered by `install-router_test.sh`).
