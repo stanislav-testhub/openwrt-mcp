@@ -313,20 +313,14 @@ func radioFindings(ctx context.Context, before, after *snapshot) []finding {
 // Wi-Fi or cannot be told): its MAC from the neighbour table, then every AP interface's association
 // list, which is how network_clients tells a Wi-Fi client from a wired one.
 func sessionWiFi(ctx context.Context, addr string) string {
-	out, err := run(ctx, defaultCmdTimeout, "ip", "neigh", "show")
+	neigh, err := neighbours(ctx)
 	if err != nil {
 		return ""
 	}
 	mac := ""
-	for _, line := range strings.Split(out, "\n") {
-		f := strings.Fields(line)
-		if len(f) == 0 || f[0] != addr {
-			continue
-		}
-		for i := 1; i+1 < len(f); i++ {
-			if f[i] == "lladdr" && isMAC(f[i+1]) {
-				mac = strings.ToLower(f[i+1])
-			}
+	for _, n := range neigh {
+		if n.Dst == addr && isMAC(n.LLAddr) {
+			mac = strings.ToLower(n.LLAddr)
 		}
 	}
 	if mac == "" {
