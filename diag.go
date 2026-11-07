@@ -207,6 +207,8 @@ func runDiag(w io.Writer, configPath string, nAudit int, detail bool) error {
 	state := "stopped"
 	if daemonUp(cfg) {
 		state = "running"
+	} else if cfg.IdleExitMin > 0 {
+		state = "stopped (starts on demand)"
 	}
 	sock := "disabled"
 	if cfg.Socket != "" {

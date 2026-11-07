@@ -29,6 +29,7 @@ type statusReport struct {
 	Version  string         `json:"version"`
 	Source   string         `json:"source"`
 	Listen   string         `json:"listen"`
+	IdleExit int            `json:"idle_exit_min,omitempty"` // minutes; the daemon stops itself when unused
 	Socket   string         `json:"socket"`
 	Running  bool           `json:"running"`
 	Pending  []pendingRow   `json:"pending"`
@@ -105,12 +106,13 @@ func buildStatus(configPath, statePath string, auditLines int) (statusReport, er
 	}
 
 	rep := statusReport{
-		Version: version,
-		Source:  sourceURL,
-		Listen:  cfg.Listen,
-		Socket:  cfg.Socket,
-		Running: daemonUp(cfg),
-		Counts:  map[string]int{},
+		Version:  version,
+		Source:   sourceURL,
+		Listen:   cfg.Listen,
+		IdleExit: cfg.IdleExitMin,
+		Socket:   cfg.Socket,
+		Running:  daemonUp(cfg),
+		Counts:   map[string]int{},
 	}
 
 	perClient := map[string]int{}
@@ -255,6 +257,8 @@ func writeStatusText(w io.Writer, r statusReport, all bool) error {
 	state := "stopped"
 	if r.Running {
 		state = "running"
+	} else if r.IdleExit > 0 {
+		state = "stopped (starts on demand)"
 	}
 	fmt.Fprintf(w, "openwrt-mcp %s -- %s on %s\n", r.Version, state, orDefault(r.Listen, "the socket only (HTTP off)"))
 	fmt.Fprintf(w, "%d paired client(s), %d policy/policies\n", len(r.Clients), len(r.Policies))

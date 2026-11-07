@@ -28,6 +28,7 @@ type Server struct {
 	mfa        *MFAStore
 	tokens     *TokenStore
 	requests   *RequestStore
+	idle       idleState
 
 	applyMu sync.Mutex // serialises uci staging: /tmp/.uci is shared by every uci user
 	histMu  sync.Mutex // serialises writes to the config history
@@ -243,8 +244,11 @@ func (s *Server) serveSocket(ln net.Listener) {
 			continue
 		}
 		s.bridges.Add(1)
+		s.idle.sessions.Add(1)
+		s.idle.touch(time.Now())
 		go func() {
 			defer s.bridges.Done()
+			defer func() { s.idle.sessions.Add(-1); s.idle.touch(time.Now()) }()
 			s.handleBridge(conn)
 		}()
 	}
@@ -342,6 +346,12 @@ func (s *Server) Serve() error {
 	s.audit.Record(AuditEvent{Time: nowISO(), Client: "<daemon>", Tool: "daemon", Outcome: OutcomeOK, Summary: "daemon started " + version})
 	log.Printf("openwrt-mcp %s listening on %s and %s (%d policies, %d paired clients)",
 		version, orDefault(cfg.Listen, "(HTTP off)"), orDefault(cfg.Socket, "(no socket)"), len(cfg.Policies), len(s.tokens.Clients()))
+	s.idle.touch(time.Now())
+	if cfg.IdleExitMin > 0 && cfg.Listen == "" {
+		go s.idleLoop(min(time.Minute, time.Duration(cfg.IdleExitMin)*time.Minute/4))
+	} else if cfg.IdleExitMin > 0 {
+		log.Printf("openwrt-mcp: option idle_exit is ignored while option listen is set")
+	}
 	if ln == nil {
 		s.serveSocket(sl) // only the socket: serve it on this goroutine
 		return nil

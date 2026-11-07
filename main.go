@@ -66,6 +66,7 @@ func main() {
 		if cfg.Socket == "" {
 			die("the stdio bridge is disabled (option socket '' in %s)", *configPath)
 		}
+		ensureDaemon(cfg)
 		switch err := runBridge(cfg.Socket, *client); {
 		case errors.Is(err, errCallFailed):
 			os.Exit(1) // a failed call: the reason is already on stderr

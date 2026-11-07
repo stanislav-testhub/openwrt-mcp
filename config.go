@@ -135,7 +135,9 @@ type Config struct {
 	AuditMaxMB int
 	// MemoryLimitMiB is Go's soft memory limit for the daemon; 0 leaves the runtime default (no limit).
 	MemoryLimitMiB int
-	Policies       []*Policy
+	// IdleExitMin stops the daemon after this many idle minutes (0: stays resident).
+	IdleExitMin int
+	Policies    []*Policy
 
 	// Failed-attempt limiter for mfa_unlock (see MFAStore.Unlock).
 	MFAMaxFailures int
@@ -221,6 +223,9 @@ func LoadConfig(configPath string) (*Config, error) {
 			}
 			if v, err := strconv.Atoi(s.Options["memory_limit"]); err == nil && v > 0 {
 				c.MemoryLimitMiB = clampInt(v, v, minMemoryLimitMiB, maxMemoryLimitMiB)
+			}
+			if v, err := strconv.Atoi(s.Options["idle_exit"]); err == nil && v > 0 {
+				c.IdleExitMin = min(v, maxIdleExitMin)
 			}
 			if v, err := strconv.Atoi(s.Options["mfa_max_failures"]); err == nil && v > 0 {
 				c.MFAMaxFailures = min(v, maxMFAMaxFailures)

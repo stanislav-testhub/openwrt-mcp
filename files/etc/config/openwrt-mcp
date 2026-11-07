@@ -11,6 +11,10 @@ config server
 	option audit_max_mb '16'
 	# Soft memory limit of the daemon in MiB (8 to 4096). Unset leaves Go's default, no limit.
 	# option memory_limit '16'
+	# Stop the daemon after this many idle minutes; the next stdio bridge or call starts it again
+	# through procd. Needs option listen ''. Stays up while a session, an armed rollback or a waiting
+	# request exists. 0 or unset: always running.
+	# option idle_exit '5'
 	# Second-factor limiter. This many wrong codes in a row lock a client out of mfa_unlock
 	# for mfa_lockout seconds (or '5m'), doubling on each repeat up to one hour. The state is
 	# in memory, so a restart clears it. Defaults shown.
