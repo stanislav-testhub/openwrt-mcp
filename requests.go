@@ -346,7 +346,7 @@ func writeMirror(path string, reqs []Request) error {
 	}
 	if err == nil {
 		tmp := path + ".tmp"
-		if err = os.WriteFile(tmp, b, privateMode); err == nil {
+		if err = writeSynced(tmp, b, privateMode); err == nil {
 			err = os.Rename(tmp, path)
 		}
 	}

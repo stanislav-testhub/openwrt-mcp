@@ -3,6 +3,7 @@
 ## Unreleased
 
 Fixed
+- **Atomic replaces are flushed before the rename.** The policy config, the token store, the MFA secrets and the request records were written with `os.WriteFile` and renamed into place, so a power cut on flash could leave the new name on an empty file. They now go through `writeSynced`; `TestAtomicReplacesAreSynced` fails on any new write-then-rename that does not.
 - **Cuts no longer split a character.** The audit log, the push hook and the request record cut long text by bytes and could leave invalid UTF-8 (Cyrillic or CJK host names, SSIDs, messages). They now back up to a character boundary; the log summary's second cutter is gone, both use `truncate`.
 - **Grants from several approvals add up.** A call was refused unless one policy covered all its scopes, so a section
   grant and its option grants approved separately never let `uci_apply` through, while the page, which checks each

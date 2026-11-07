@@ -186,7 +186,7 @@ func rewritePolicyBlocks(configPath string, edit func(uciSection, []string) ([]s
 		return 0, nil
 	}
 	tmp := configPath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(strings.Join(out, "\n")+"\n"), 0o600); err != nil {
+	if err := writeSynced(tmp, []byte(strings.Join(out, "\n")+"\n"), 0o600); err != nil {
 		return 0, err
 	}
 	return n, os.Rename(tmp, configPath)

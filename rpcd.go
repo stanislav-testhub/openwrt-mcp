@@ -680,7 +680,7 @@ func setServerOption(configPath, name, value string) error {
 		out = append([]string{"config server", line, ""}, out...)
 	}
 	tmp := configPath + ".tmp"
-	if err := os.WriteFile(tmp, []byte(strings.Join(out, "\n")+"\n"), 0o600); err != nil {
+	if err := writeSynced(tmp, []byte(strings.Join(out, "\n")+"\n"), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, configPath)

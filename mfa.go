@@ -273,7 +273,7 @@ func (m *MFAStore) save(secrets map[string]string) error {
 	}
 	// Write-and-rename so a crash mid-write cannot leave a half-file that locks you out.
 	tmp := mfaTmpPath(m.path)
-	if err := os.WriteFile(tmp, []byte(b.String()), mfaFileMode); err != nil {
+	if err := writeSynced(tmp, []byte(b.String()), mfaFileMode); err != nil {
 		return err
 	}
 	return os.Rename(tmp, m.path)

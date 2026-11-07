@@ -639,7 +639,7 @@ func (ts *TokenStore) save() error {
 	}
 	ts.mu.RUnlock()
 	tmp := tokensTmpPath(ts.path)
-	if err := os.WriteFile(tmp, []byte(b.String()), 0o600); err != nil {
+	if err := writeSynced(tmp, []byte(b.String()), 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, ts.path)
