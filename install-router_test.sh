@@ -91,5 +91,33 @@ check "$st" 1 "swapped archive: refused"
 check "$(tail -n 1 "$T/out")" "install-router: checksum mismatch for openwrt-mcp_1.2.0_linux_amd64.tar.gz: not installing" "swapped archive: message"
 check "$([ -e "$T/s6" ] && echo left || echo gone)" gone "swapped archive: nothing left to install"
 
+# fit_check: a df shim reports the free KiB, MEMINFO points at a fake /proc/meminfo. The binary is
+# 100 KiB, so 100 + 256 = 356 KiB are needed.
+fit() { # FREE_KIB MEMTOTAL_KB
+	mkdir -p "$T/fit/usr/bin"
+	head -c 102400 /dev/zero > "$T/fit/usr/bin/openwrt-mcp"
+	printf 'MemTotal:  %s kB\n' "$2" > "$T/meminfo"
+	printf '#!/bin/sh\necho Filesystem 1K-blocks Used Available Capacity Mounted\necho /dev/x 9999 1 %s 1%% /\n' "$1" > "$T/shim/df"
+	chmod +x "$T/shim/df"
+	(
+		export PATH="$T/shim:$PATH" INSTALL_ROUTER_LIB=1 MEMINFO="$T/meminfo"
+		# shellcheck disable=SC1090
+		. "$SCRIPT"
+		S=$T/fit
+		(fit_check) >"$T/out" 2>&1 && echo 0 || echo $?
+	)
+}
+st=$(fit 355 131072)
+check "$st" 1 "no fit: refused"
+check "$(tail -n 1 "$T/out")" "install-router: not enough space: 356 KiB needed on /usr/bin's filesystem, 355 KiB free" "no fit: message"
+st=$(fit 356 131072)
+check "$st" 0 "exact fit: accepted"
+check "$(grep -c 'profile=small' "$T/out")" 1 "128 MiB RAM: the small profile is suggested"
+check "$(grep -c '^fit: 0 MiB free for the binary, 128 MiB RAM' "$T/out")" 1 "128 MiB RAM: the fit is reported"
+st=$(fit 4096 524288)
+check "$st" 0 "512 MiB RAM: accepted"
+check "$(grep -c 'profile=small' "$T/out")" 0 "512 MiB RAM: no suggestion"
+rm -f "$T/shim/df"
+
 echo "install-router: $pass passed, $fail failed"
 [ "$fail" = 0 ]

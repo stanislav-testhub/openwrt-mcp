@@ -66,12 +66,24 @@ fetch_release() {
 	echo "verified $file"
 }
 
-install_payload() {
-	[ -f "$S/usr/bin/openwrt-mcp" ] || die "no binary in $S"
+# fit_check refuses when the binary will not fit, and reports RAM and free space.
+fit_check() {
 	# The binary is written beside the running one before the rename, so its size must fit.
 	need=$(($(wc -c < "$S/usr/bin/openwrt-mcp") / 1024 + 256))
 	avail=$(df -Pk /usr/bin | awk 'NR == 2 { print $4 }')
 	[ "$avail" -ge "$need" ] || die "not enough space: $need KiB needed on /usr/bin's filesystem, $avail KiB free"
+	# A router with little RAM runs better with the small profile (idle_exit, no HTTP listener, a
+	# memory limit, a 1 MB audit log, two toolsets); it is only suggested, never switched on here.
+	ram=$(awk '/^MemTotal:/ { print int($2 / 1024) }' "${MEMINFO:-/proc/meminfo}" 2>/dev/null)
+	echo "fit: $((avail / 1024)) MiB free for the binary, ${ram:-?} MiB RAM"
+	if [ "${ram:-0}" -gt 0 ] && [ "$ram" -lt 256 ]; then
+		echo "under 256 MiB RAM: consider  uci set openwrt-mcp.@server[0].profile=small && uci commit openwrt-mcp"
+	fi
+}
+
+install_payload() {
+	[ -f "$S/usr/bin/openwrt-mcp" ] || die "no binary in $S"
+	fit_check
 
 	put() { # src dst mode -- write beside, then rename: a running binary cannot be overwritten
 		mkdir -p "$(dirname "$2")"

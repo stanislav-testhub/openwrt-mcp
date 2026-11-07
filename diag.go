@@ -217,6 +217,9 @@ func runDiag(w io.Writer, configPath string, nAudit int, detail bool) error {
 	p("daemon     %s on %s; stdio bridge socket %s", state, orDefault(cfg.Listen, "(HTTP off)"), sock)
 	p("tools      %d registered", len(allToolNames))
 	p("settings   output masking %s, history keeps %d, audit log up to %d MB", onOff(cfg.RedactOutput), cfg.HistoryKeep, cfg.AuditMaxMB)
+	if l := fitLine(cfg); l != "" {
+		p("fit        %s", l)
+	}
 
 	expired := 0
 	for _, pol := range cfg.Policies {

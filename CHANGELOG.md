@@ -9,6 +9,9 @@ Fixed
   covered by some live policy of the client for that tool.
 
 Added
+- **`option profile 'small'` and `option toolsets`** (ROADMAP 10.6, 10.7). `small` fills in `idle_exit 5`, `listen ''`, `memory_limit 16`, `audit_max_mb 1`, `history_keep 3` and `toolsets 'diag config'` for every option the config leaves unset; explicit options win, an unknown profile name is logged and ignored. `option toolsets` caps the catalogue of every client on the bridge, `call` and HTTP; a client's `--toolset` can only narrow it, `exec` is not listed under a cap, and the core tools stay. Measured with every tool granted: 24 tools and 27.8 KB of `tools/list` become 15 tools and 18.5 KB under `diag config`.
+- `audit_max_mb`, when unset, is at most 1/32 of the filesystem holding the audit log (at least 1, at most 16), so a 16 MB flash no longer takes up to 32 MB of log. An explicit value is never clamped.
+- The diagnostic bundle has a `fit` line (RAM, size of the audit log's filesystem, profile, toolset cap) and suggests the `small` profile under 256 MiB RAM; `install-router.sh` prints the same fit and the suggestion, and still refuses when the binary does not fit (now covered by `install-router_test.sh`).
 - **`request_access`: ask for several grants at once.** A client that runs its calls one after another showed the owner one
   card at a time, each held until it was answered. `request_access wants=['uci_apply wireless.radio1.channel', 'pkg_change add.usteer']`
   opens every request first, without waiting (ungated, grants nothing, same caps and rate limit as a refused call), so LuCI shows

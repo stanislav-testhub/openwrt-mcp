@@ -132,12 +132,23 @@ func (s *Server) serverFor(client string) *mcp.Server {
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("/mcp", s.authenticate(mcp.NewStreamableHTTPHandler(s.getServer, nil)))
+	mux.Handle("/mcp", s.authenticate(s.capHTTP(mcp.NewStreamableHTTPHandler(s.getServer, nil))))
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		// A service that will tell you what it is and where it came from is worth keeping.
 		fmt.Fprintf(w, "openwrt-mcp %s ok\nsource: %s\n", version, sourceURL)
 	})
 	return mux
+}
+
+// capHTTP gives every HTTP request the operator's toolset cap (option toolsets), so the cap holds
+// on this transport as on the bridge. Without a cap the request is passed on untouched.
+func (s *Server) capHTTP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if c := s.cfg().Toolsets; c != nil {
+			r = r.WithContext(withProfile(r.Context(), sessionProfile{Toolsets: c}))
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // authenticate enforces the bearer token on every request. There is deliberately no
@@ -276,7 +287,7 @@ func (s *Server) handleBridge(conn net.Conn) {
 		fmt.Fprintf(conn, `{"jsonrpc":"2.0","error":{"code":-32600,"message":%s}}`+"\n", msg)
 		return
 	}
-	profile := sessionProfile{Toolsets: ent.Toolsets, ReadOnly: ent.ReadOnly, Peer: parsePeer(hello.Peer)}
+	profile := sessionProfile{Toolsets: capToolsets(ent.Toolsets, s.cfg().Toolsets), ReadOnly: ent.ReadOnly, Peer: parsePeer(hello.Peer)}
 	opened := stdioOpened + orDefault(hello.Origin, "local socket")
 	if ent.Mode == entryCall {
 		opened = "call via " + orDefault(hello.Origin, "local socket")

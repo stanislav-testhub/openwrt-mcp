@@ -164,6 +164,11 @@ type Config struct {
 	// that negotiates elicitation when the list is empty.
 	ChatApprove bool
 	ChatClients []string
+
+	// Profile names the defaults in force ("small"); Toolsets caps every client's catalogue
+	// (option toolsets), nil for no cap.
+	Profile  string
+	Toolsets []string
 }
 
 const (
@@ -199,6 +204,7 @@ func LoadConfig(configPath string) (*Config, error) {
 	for _, s := range parseUCI(bufio.NewScanner(f)) {
 		switch s.Type {
 		case "server":
+			c.Profile = applyProfile(s.Options)
 			if v, ok := s.Options["listen"]; ok {
 				c.Listen = v // '' turns the loopback HTTP listener off
 			}
@@ -220,6 +226,13 @@ func LoadConfig(configPath string) (*Config, error) {
 			}
 			if v, err := strconv.Atoi(s.Options["audit_max_mb"]); err == nil && v > 0 {
 				c.AuditMaxMB = v
+			} else if _, set := s.Options["audit_max_mb"]; !set {
+				c.AuditMaxMB = defaultAuditMB(c.AuditPath)
+			}
+			if ts, err := parseToolsetCap(s.Options["toolsets"]); err != nil {
+				log.Printf("openwrt-mcp: ignoring option toolsets %q: unknown toolset (known: %s)", s.Options["toolsets"], strings.Join(toolsetNames, ", "))
+			} else {
+				c.Toolsets = ts
 			}
 			if v, err := strconv.Atoi(s.Options["memory_limit"]); err == nil && v > 0 {
 				c.MemoryLimitMiB = clampInt(v, v, minMemoryLimitMiB, maxMemoryLimitMiB)

@@ -15,6 +15,13 @@ config server
 	# through procd. Needs option listen ''. Stays up while a session, an armed rollback or a waiting
 	# request exists. 0 or unset: always running.
 	# option idle_exit '5'
+	# For routers with little RAM or flash: 'small' sets idle_exit 5, listen '', memory_limit 16,
+	# audit_max_mb 1, history_keep 3 and toolsets 'diag config'. Any of these set here wins.
+	# option profile 'small'
+	# Cap the tool catalogue for every client to these toolsets (diag config pkg wg); a client's
+	# --toolset can only narrow it. system_status, mfa_unlock and request_access are always listed;
+	# exec is not listed once a cap is set. Unset: no cap.
+	# option toolsets 'diag config'
 	# Second-factor limiter. This many wrong codes in a row lock a client out of mfa_unlock
 	# for mfa_lockout seconds (or '5m'), doubling on each repeat up to one hour. The state is
 	# in memory, so a restart clears it. Defaults shown.
