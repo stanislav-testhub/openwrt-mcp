@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf8"
 )
 
 func writeFile(t *testing.T, p, s string) {
@@ -89,5 +90,19 @@ func TestTruncate(t *testing.T) {
 	}
 	if got := truncate("ab", 5); got != "ab" {
 		t.Errorf("truncate should leave short strings alone, got %q", got)
+	}
+}
+
+// A cut inside a multi-byte character must back up to its start, not leave invalid UTF-8 in the
+// audit log (and in the push hook and the request record, which truncate the same way).
+func TestTruncateKeepsUTF8Valid(t *testing.T) {
+	for n := 0; n <= 9; n++ {
+		got := truncate("яблоко€語", n)
+		if !utf8.ValidString(got) {
+			t.Errorf("truncate(.., %d) = %q is not valid UTF-8", n, got)
+		}
+		if len(strings.TrimSuffix(got, "…")) > n {
+			t.Errorf("truncate(.., %d) kept %d bytes", n, len(strings.TrimSuffix(got, "…")))
+		}
 	}
 }

@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 )
 
 // logread mode=summary and baselines (ROADMAP 4.1).
@@ -156,17 +155,6 @@ type logMessage struct {
 
 const maxSummaryMsgBytes = 200
 
-func cutRunes(s string, max int) string {
-	if len(s) <= max {
-		return s
-	}
-	cut := max
-	for cut > 0 && !utf8.RuneStart(s[cut]) {
-		cut--
-	}
-	return s[:cut] + "…"
-}
-
 // summariseLog renders the distinct messages of lines, grouped by process: the processes with the
 // worst severity first, then the busiest, and inside a process the commonest message first. n
 // bounds the messages returned and offset pages through them.
@@ -178,7 +166,7 @@ func summariseLog(lines []string, header string, n, offset int) string {
 		key := logKey(l)
 		m := byKey[key]
 		if m == nil {
-			m = &logMessage{proc: l.proc, sev: l.sev, rank: l.rank, msg: cutRunes(normaliseLogMessage(l.msg), maxSummaryMsgBytes)}
+			m = &logMessage{proc: l.proc, sev: l.sev, rank: l.rank, msg: truncate(normaliseLogMessage(l.msg), maxSummaryMsgBytes)}
 			byKey[key] = m
 		}
 		m.count++

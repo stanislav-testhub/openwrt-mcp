@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // Redaction is owned by the recorder, never by callers, so a new tool cannot
@@ -149,11 +150,16 @@ func (a *Auditor) rotateLocked() {
 	_ = os.Rename(a.path, auditRotatedPath(a.path)) // one generation is enough; eMMC is 64GB but logs are not the point
 }
 
+// truncate cuts s to at most n bytes, backing up to a character boundary, and ends in "…" when it cut.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n] + "…"
+	cut := n
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return s[:cut] + "…"
 }
 
 func nowISO() string { return time.Now().UTC().Format(time.RFC3339) }

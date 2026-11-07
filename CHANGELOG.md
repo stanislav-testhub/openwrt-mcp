@@ -3,6 +3,7 @@
 ## Unreleased
 
 Fixed
+- **Cuts no longer split a character.** The audit log, the push hook and the request record cut long text by bytes and could leave invalid UTF-8 (Cyrillic or CJK host names, SSIDs, messages). They now back up to a character boundary; the log summary's second cutter is gone, both use `truncate`.
 - **Grants from several approvals add up.** A call was refused unless one policy covered all its scopes, so a section
   grant and its option grants approved separately never let `uci_apply` through, while the page, which checks each
   request on its own, showed the request as already allowed and drew no card. A call now passes when every scope is
