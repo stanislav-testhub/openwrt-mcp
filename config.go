@@ -344,6 +344,7 @@ func (c *Config) AuthorisePolicy(client, tool string, scopes []string, now time.
 func (c *Config) authorise(client, tool string, scopes []string, now time.Time) (*Policy, string, string) {
 	var sawClientTool bool
 	var uncovered string
+	var live [][]string
 	for _, p := range c.Policies {
 		if !p.Enabled || p.Client != client || !contains(p.Tools, tool) {
 			continue
@@ -352,6 +353,7 @@ func (c *Config) authorise(client, tool string, scopes []string, now time.Time) 
 			continue
 		}
 		sawClientTool = true
+		live = append(live, p.Scopes)
 		if miss, ok := firstUncovered(p.Scopes, scopes); !ok {
 			uncovered = miss
 			continue
@@ -362,8 +364,28 @@ func (c *Config) authorise(client, tool string, scopes []string, now time.Time) 
 		return p, "", ""
 	}
 	if sawClientTool && uncovered != "" {
-		return nil, fmt.Sprintf("denied: %s is granted to %q but no policy scope covers %q\n"+
-			"  grant it: openwrt-mcp allow %s %s '%s' 60m", tool, client, uncovered, client, tool, uncovered), uncovered
+		// Every scope no policy covers, not just the first: the request then asks for all of them
+		// at once, and one approval lets the call through instead of one round per scope.
+		var missing []string
+		for _, sc := range scopes {
+			covered := false
+			for _, globs := range live {
+				covered = covered || matchAny(globs, sc)
+			}
+			if !covered {
+				missing = append(missing, sc)
+			}
+		}
+		if len(missing) == 0 {
+			missing = []string{uncovered}
+		}
+		all := strings.Join(missing, " ")
+		what := fmt.Sprintf("%q", missing[0])
+		if len(missing) > 1 {
+			what = fmt.Sprintf("%d of its scopes, first %q", len(missing), missing[0])
+		}
+		return nil, fmt.Sprintf("denied: %s is granted to %q but no policy scope covers %s\n"+
+			"  grant it: openwrt-mcp allow %s %s '%s' 60m", tool, client, what, client, tool, all), all
 	}
 	all := orStar(strings.Join(scopes, " "))
 	return nil, fmt.Sprintf("denied: no policy grants %s to %q\n"+

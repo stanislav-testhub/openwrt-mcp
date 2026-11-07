@@ -772,3 +772,24 @@ func TestTwoHeldCallsFromTwoClientsAreAnsweredSeparately(t *testing.T) {
 		t.Errorf("alice: %+v, want her call to run", r)
 	}
 }
+
+// A request that asks for the same scopes and more replaces the older one: one card, one tap.
+// A request with a scope the new one lacks stays open.
+func TestAWiderRequestReplacesTheNarrowerOnes(t *testing.T) {
+	rs, events := newStore(t)
+	one, _ := rs.Open(t0, ttl10, "c", "uci_apply", "usteer.x.a", nil)
+	other, _ := rs.Open(t0, ttl10, "c", "uci_apply", "wireless.y", nil)
+	wide, _ := rs.Open(t0, ttl10, "c", "uci_apply", "usteer.x.a usteer.x.b", nil)
+	if got, _ := rs.Get(one.ID, t0); got.State != reqExpired {
+		t.Errorf("the narrower request is %s, want expired", got.State)
+	}
+	if got, _ := rs.Get(other.ID, t0); got.State != reqOpen {
+		t.Errorf("a request with a scope the new one lacks is %s, want open", got.State)
+	}
+	if got, _ := rs.Get(wide.ID, t0); got.State != reqOpen {
+		t.Errorf("the new request is %s", got.State)
+	}
+	if eventsOf(events, "expire") != 1 {
+		t.Errorf("want one expire event, got %d", eventsOf(events, "expire"))
+	}
+}

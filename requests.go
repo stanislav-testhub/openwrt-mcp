@@ -105,6 +105,7 @@ func (rs *RequestStore) Open(now time.Time, ttl time.Duration, client, tool, sco
 		rs.saveLocked()
 		return *r, true
 	}
+	rs.supersedeLocked(now, client, tool, scope)
 	perClient, total := 0, 0
 	for _, r := range rs.byID {
 		if r.State == reqOpen {
@@ -141,6 +142,29 @@ func (rs *RequestStore) Open(now time.Time, ttl time.Duration, client, tool, sco
 		rs.onNew(*r)
 	}
 	return *r, true
+}
+
+// supersedeLocked closes the client's open requests for this tool whose scopes the new request
+// asks for too: approving the new one would cover them, and leaving them open puts cards on the
+// operator's page that expire unanswered. A request with a scope the new one lacks stays open.
+func (rs *RequestStore) supersedeLocked(now time.Time, client, tool, scope string) {
+	want := map[string]bool{}
+	for _, sc := range strings.Fields(scope) {
+		want[sc] = true
+	}
+	for _, r := range rs.byID {
+		if r.State != reqOpen || r.Client != client || r.Tool != tool {
+			continue
+		}
+		covered := true
+		for _, sc := range strings.Fields(r.Scope) {
+			covered = covered && want[sc]
+		}
+		if covered {
+			rs.closeLocked(r, reqExpired, "superseded", now)
+			rs.emit("expire", r, fmt.Sprintf("%s replaced by a request that asks for the same scopes and more", r.ID))
+		}
+	}
 }
 
 // Decide settles an open request once. Concurrent or repeated decisions on the same id lose with

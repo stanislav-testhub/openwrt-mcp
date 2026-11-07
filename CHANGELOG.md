@@ -3,6 +3,10 @@
 ## Unreleased
 
 Added
+- **One approval request per call, not one per scope.** When a client holds a tool but some scopes of a call are uncovered, the refusal and
+  the request named only the first one, so a call with several (a `uci_apply` touching two configs) needed one request, one wait and one tap
+  for each. It now names every scope no policy covers, in one request and one `allow` line. A new request also replaces the client's older open
+  requests for the same tool whose scopes it covers, so the operator's page does not collect cards that expire unanswered.
 - **Structured output for `uci_get`, `logread` and `exec`, masking-aware.** These tools can carry secrets, so their `structuredContent` is
   never built from the raw output: it is parsed from the text after sanitising, masking and bounding (`presentBody`), so it shows exactly what
   the text shows. `uci_get` returns `entries` (`key`, `value`) and `notes` (the revision line); `logread` returns `lines` (`time`, `level`,

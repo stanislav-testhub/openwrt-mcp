@@ -304,3 +304,20 @@ func TestWgListScopeFollowsIface(t *testing.T) {
 		t.Error("wireguard.* must cover the default-interface call")
 	}
 }
+
+// One refusal names every scope no policy covers, so a request asks for all of them at once and a
+// single approval lets the call through, instead of one request (and one wait) per scope.
+func TestAuthoriseNamesEveryUncoveredScopeAtOnce(t *testing.T) {
+	cfg := parse(t, basePolicy)
+	p, reason, missing := cfg.authorise("claude-code", "ubus_call",
+		[]string{"network.status", "system.reboot", "dnsmasq.x", "iwinfo.info"}, time.Now())
+	if p != nil {
+		t.Fatal("authorised a call with uncovered scopes")
+	}
+	if missing != "system.reboot dnsmasq.x" {
+		t.Errorf("missing = %q, want both uncovered scopes and no covered one", missing)
+	}
+	if !strings.Contains(reason, "2 of its scopes") || !strings.Contains(reason, "'system.reboot dnsmasq.x'") {
+		t.Errorf("reason does not offer the one grant for both: %q", reason)
+	}
+}
