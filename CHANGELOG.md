@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 1.7.0 -- Add-ons and small routers
+
+More of the packages owners actually run are now understood, and the daemon fits routers with little RAM. Add-on
+adapters, doctor and audit findings and the diagnostic tools (`throughput`, `capture`, `path`, `dns_path`) were run against
+real packages on the 24.10.8 and 25.12.6 x86 VMs, and several on the GL-MT6000 (25.12.6). The `small` profile, the
+on-demand daemon (`idle_exit`), the toolset cap and the push hook were run on the GL-MT6000 and in a mipsle (MIPS) OpenWrt
+25.12.6 image under QEMU system emulation with 128 MB of RAM; they have not run on a MIPS router or on a 128 MB device.
+CI also records the daemon's memory footprint in the 24.10.8 and 25.12.5 rootfs.
 
 Added
 - **CI records the footprint (ROADMAP 10.1).** The real-target job runs `bench/footprint.sh` in each rootfs and prints VmRSS, VmHWM and RssAnon of the idle daemon, of one bridge and of the daemon after the golden calls into the job summary. README has the table: CI measured 10.5 to 10.7 MB resident idle and 16.4 to 16.8 MB after the calls in the 24.10.8 and 25.12.5 rootfs (two runs each), and a mipsle run in system emulation gives 10.3 and 16.3 MB. Not measured on a MIPS router.
