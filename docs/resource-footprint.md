@@ -230,5 +230,21 @@ under a second and reads 27.3 MB resident, 14.7 MB anonymous; a trivial Go progr
 
 The first request over the bridge kills the daemon with SIGBUS in `github.com/segmentio/encoding/json`
 (`escapeIndex` reads a string as `[]uint64`, an unaligned load). qemu-user does not emulate the kernel's fix-up of
-unaligned accesses, which stock Linux MIPS does by default, so this is probably an emulator artefact, but it has not
-been run on a MIPS router. Until it is, the bridge and call paths have no MIPS figure.
+unaligned accesses, which stock Linux MIPS does by default, so this is an emulator artefact (confirmed below).
+
+### MIPS in system emulation (measured 2026-11-08)
+
+`qemu-system-mipsel` 10.2 running the OpenWrt 25.12.6 `malta/le` initramfs image (real OpenWrt kernel, musl, procd,
+uci; 248 MB RAM) with the stripped mipsle-softfloat binary and `bench/footprint.sh`. The kernel does the unaligned-access
+fix-up, and the SIGBUS does not happen: all seven bridge requests are answered.
+
+| | VmRSS | VmHWM |
+|---|---|---|
+| Daemon idle | 10.3 MB | 10.3 MB |
+| Bridge, one session | 10.0 MB | 10.0 MB |
+| Daemon after the calls | 16.3 MB | 16.3 MB |
+
+With `profile 'small'` (listen and audit_max_mb removed from the stock config, `idle_exit 1`): no listener on 8730, the
+catalogue is capped to `diag config`, the daemon stops itself after the idle minute and the next bridge request starts it
+through procd. This is emulation, not a router: the figures are close to amd64 but say nothing about speed, flash or the
+FPU-less CPUs that need softfloat on real hardware.

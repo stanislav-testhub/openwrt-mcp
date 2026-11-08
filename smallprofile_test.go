@@ -163,7 +163,7 @@ func TestFitLine(t *testing.T) {
 		cfg  Config
 		want []string
 	}{
-		{128, Config{}, []string{"128 MiB RAM", "10 MiB", "profile=small"}},
+		{128, Config{}, []string{"128 MiB RAM", "10 MiB", "profile=small", "delete openwrt-mcp.@server[0].listen", "delete openwrt-mcp.@server[0].audit_max_mb"}},
 		{512, Config{}, []string{"512 MiB RAM"}},
 		{128, Config{Profile: "small", Toolsets: []string{"diag"}}, []string{"profile small", "capped to diag"}},
 	}

@@ -16,7 +16,8 @@ config server
 	# request exists. 0 or unset: always running.
 	# option idle_exit '5'
 	# For routers with little RAM or flash: 'small' sets idle_exit 5, listen '', memory_limit 16,
-	# audit_max_mb 1, history_keep 3 and toolsets 'diag config'. Any of these set here wins.
+	# audit_max_mb 1, history_keep 3 and toolsets 'diag config'. Any of these set here wins, and this
+	# file sets listen and audit_max_mb above: delete those two options when you switch the profile on.
 	# option profile 'small'
 	# Cap the tool catalogue for every client to these toolsets (diag config pkg wg); a client's
 	# --toolset can only narrow it. system_status, mfa_unlock and request_access are always listed;

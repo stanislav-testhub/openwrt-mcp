@@ -77,7 +77,9 @@ fit_check() {
 	ram=$(awk '/^MemTotal:/ { print int($2 / 1024) }' "${MEMINFO:-/proc/meminfo}" 2>/dev/null)
 	echo "fit: $((avail / 1024)) MiB free for the binary, ${ram:-?} MiB RAM"
 	if [ "${ram:-0}" -gt 0 ] && [ "$ram" -lt 256 ]; then
-		echo "under 256 MiB RAM: consider  uci set openwrt-mcp.@server[0].profile=small && uci commit openwrt-mcp"
+		echo "under 256 MiB RAM: consider:"
+		echo "  uci set openwrt-mcp.@server[0].profile=small; uci -q delete openwrt-mcp.@server[0].listen; uci -q delete openwrt-mcp.@server[0].audit_max_mb; uci commit openwrt-mcp"
+		echo "  (the stock config sets listen and audit_max_mb, and an explicit option beats the profile)"
 	fi
 }
 

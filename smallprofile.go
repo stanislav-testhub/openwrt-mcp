@@ -126,6 +126,12 @@ func parseMemTotalMiB(meminfo string) int {
 	return 0
 }
 
+// smallProfileHint is the command that switches the profile on. The stock config sets listen and
+// audit_max_mb explicitly and an explicit option beats the profile, so they are removed first;
+// without that, profile=small alone leaves HTTP on and idle_exit ignored.
+const smallProfileHint = "uci set openwrt-mcp.@server[0].profile=small; uci -q delete openwrt-mcp.@server[0].listen; " +
+	"uci -q delete openwrt-mcp.@server[0].audit_max_mb; uci commit openwrt-mcp"
+
 // fitLine is the diagnostic bundle's line about whether the settings suit this router.
 func fitLine(cfg *Config) string {
 	ram, flash := memTotalMiB(), overlayMiB(filepath.Dir(cfg.AuditPath))
@@ -136,7 +142,7 @@ func fitLine(cfg *Config) string {
 	if cfg.Profile != "" {
 		s += "; profile " + cfg.Profile
 	} else if ram > 0 && ram < smallRAMMiB {
-		s += "; under " + strconv.Itoa(smallRAMMiB) + " MiB RAM, consider: uci set openwrt-mcp.@server[0].profile=small"
+		s += "; under " + strconv.Itoa(smallRAMMiB) + " MiB RAM, consider: " + smallProfileHint
 	}
 	if cfg.Toolsets != nil {
 		s += "; toolsets capped to " + strings.Join(cfg.Toolsets, ",")
