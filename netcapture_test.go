@@ -201,3 +201,22 @@ func TestCaptureCountsDNSRepliesAsDNS(t *testing.T) {
 	wantAll(t, got, "protocols: dns 4", "DNS names asked: example.com 2")
 	mustNotContain(t, got, "other")
 }
+
+// A monitor interface prints 802.11 frames, which are neither IP nor ARP. They are lines tcpdump
+// printed, so the summary must say it did not read them rather than "no packets seen". These are the
+// beacon lines tcpdump 4.99 prints on hwsim0 in the 25.12.6 VM (SSID shortened, it is untrusted text).
+func TestCaptureSaysWhenFramesAreNotRead(t *testing.T) {
+	frames := "1794157229.773034 1794157229773021us tsft 1.0 Mb/s 2412 MHz 11b Beacon (TEST) [1.0* 2.0*] ESS CH: 1\n" +
+		"1794157229.875583 1794157229875566us tsft 1.0 Mb/s 2412 MHz 11b Beacon (TEST) [1.0* 2.0*] ESS CH: 1\n" +
+		"2 packets captured\n"
+	got := summariseCapture(frames, "hwsim0", "", 5)
+	wantAll(t, got, "no IP or ARP packets seen", "2 frames captured")
+	mustNotContain(t, got, "no packets seen\n")
+
+	mixed := "1794157230.000001 IP 10.99.0.2 > 10.99.0.1: ICMP echo request, id 1, seq 1, length 64\n" + frames
+	got = summariseCapture(mixed, "wlan0", "", 5)
+	wantAll(t, got, "1 packet over", "protocols: icmp 1", "2 other frames not summarised")
+
+	// Nothing printed at all stays "no packets seen".
+	wantAll(t, summariseCapture("0 packets captured\n", "wlan0", "", 5), "no packets seen")
+}

@@ -129,9 +129,10 @@ func captureFilter(f string) ([]string, error) {
 }
 
 var (
-	reCapLine = lazyRegexp(`^(\d+\.\d+) (IP6?|ARP)\b(.*)$`)
-	reCapPair = lazyRegexp(`^ (\S+) > (\S+?):(.*)$`)
-	reCapDNS  = lazyRegexp(`\b(?:A|AAAA|HTTPS|PTR|MX|TXT|SRV|CNAME)\? ([A-Za-z0-9._-]{1,253})\.? `)
+	reCapStamp = lazyRegexp(`^\d+\.\d+ `)
+	reCapLine  = lazyRegexp(`^(\d+\.\d+) (IP6?|ARP)\b(.*)$`)
+	reCapPair  = lazyRegexp(`^ (\S+) > (\S+?):(.*)$`)
+	reCapDNS   = lazyRegexp(`\b(?:A|AAAA|HTTPS|PTR|MX|TXT|SRV|CNAME)\? ([A-Za-z0-9._-]{1,253})\.? `)
 )
 
 // hostOfEndpoint drops the port: "192.168.1.5.443" and "2001:db8::1.443" both name a host.
@@ -181,7 +182,7 @@ func capture(ctx context.Context, in netDiagIn) (string, string, error) {
 func isTimeout(err error) bool { return errCode(err) == codeTimeout }
 
 func summariseCapture(out, iface, filter string, sec int) string {
-	var n, resets int
+	var n, resets, unread int
 	var first, last float64
 	proto := map[string]int{}
 	bytesBy := map[string]int{}
@@ -190,6 +191,9 @@ func summariseCapture(out, iface, filter string, sec int) string {
 	for _, line := range strings.Split(out, "\n") {
 		m := reCapLine.FindStringSubmatch(line)
 		if m == nil {
+			if reCapStamp.MatchString(line) {
+				unread++ // a frame tcpdump printed that is neither IP nor ARP: 802.11 from a monitor interface, for one
+			}
 			continue
 		}
 		ts, _ := strconv.ParseFloat(m[1], 64)
@@ -241,6 +245,10 @@ func summariseCapture(out, iface, filter string, sec int) string {
 	}
 	fmt.Fprintf(&b, "capture on %s, up to %d s%s: %s over %.1f s%s\n", iface, sec, f, plural(n, "packet"), last-first, capped)
 	if n == 0 {
+		if unread > 0 {
+			fmt.Fprintf(&b, "no IP or ARP packets seen, but %s captured that this summary does not read (a monitor interface prints 802.11 frames; it reads IP, ARP and DNS only)\n", plural(unread, "frame"))
+			return b.String()
+		}
 		b.WriteString("no packets seen\n")
 		return b.String()
 	}
@@ -266,6 +274,9 @@ func summariseCapture(out, iface, filter string, sec int) string {
 			break
 		}
 		fmt.Fprintf(&b, "  %s: %d bytes, %s\n", t.host, t.bytes, plural(t.p, "packet"))
+	}
+	if unread > 0 {
+		fmt.Fprintf(&b, "%s not summarised (neither IP nor ARP)\n", plural(unread, "other frame"))
 	}
 	if len(names) > 0 {
 		b.WriteString("DNS names asked: " + clip(countList(names, maxDNSNames), 400) + "\n")
