@@ -248,3 +248,19 @@ With `profile 'small'` (listen and audit_max_mb removed from the stock config, `
 catalogue is capped to `diag config`, the daemon stops itself after the idle minute and the next bridge request starts it
 through procd. This is emulation, not a router: the figures are close to amd64 but say nothing about speed, flash or the
 FPU-less CPUs that need softfloat on real hardware.
+
+### Class B in system emulation (measured 2026-11-08)
+
+The same image with 128 MB of RAM (115 MB usable; the initramfs root lives in RAM, so a real router with a flash root has
+more free) and `profile 'small'` set the way the installer's hint says (`uci set ...profile=small`, `uci -q delete ...listen`,
+`uci -q delete ...audit_max_mb`). One bridge session with `tools/list` and seven calls:
+
+| call | result |
+|---|---|
+| `system_status`, `uci_get`, `service_list`, `logread`, `firewall_show` | answered |
+| `pkg_query` | refused: not available in this session (toolsets: diag,config) |
+| `exec` | refused: not in the capped catalogue |
+
+The daemon read 16.0 MB resident (4.9 MB anonymous) after the calls, and the guest's available memory went from 48 to 43
+MB. After the idle minute the daemon had exited by itself. `openwrt-mcp diag` printed
+`fit 115 MiB RAM ... profile small; toolsets capped to diag,config`. Emulation again: no flash, no real CPU.
