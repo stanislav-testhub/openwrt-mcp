@@ -3,7 +3,7 @@
 ## Unreleased
 
 Added
-- **CI records the footprint (ROADMAP 10.1).** The real-target job runs `bench/footprint.sh` in each rootfs and prints VmRSS, VmHWM and RssAnon of the idle daemon, of one bridge and of the daemon after the golden calls into the job summary. README has the table: the first CI run measured 10.5 MB resident idle and 16.4 to 16.8 MB after the calls in the 24.10.8 and 25.12.5 rootfs, and a mipsle run in system emulation gives 10.3 and 16.3 MB. Not measured on a MIPS router.
+- **CI records the footprint (ROADMAP 10.1).** The real-target job runs `bench/footprint.sh` in each rootfs and prints VmRSS, VmHWM and RssAnon of the idle daemon, of one bridge and of the daemon after the golden calls into the job summary. README has the table: CI measured 10.5 to 10.7 MB resident idle and 16.4 to 16.8 MB after the calls in the 24.10.8 and 25.12.5 rootfs (two runs each), and a mipsle run in system emulation gives 10.3 and 16.3 MB. Not measured on a MIPS router.
 - **Example push hooks for Telegram and ntfy** (`examples/hooks/`). Each reads its credentials from UCI (never argv), names the client, tool and scope, and points at LuCI; none approves. `examples/hooks/hooks_test.sh` runs them against a local stand-in server with shimmed `uci` and `jsonfilter`: delivery, missing credentials (exit 3), HTTP 500 as failure, token kept out of the message.
 
 Fixed

@@ -27,13 +27,12 @@ GL-MT6000 right after start, and 23 tools in about 22 KB of tool descriptions. E
 | Resident / anonymous (VmRSS / RssAnon) | Idle daemon | One bridge | Daemon after the golden calls |
 |---|---|---|---|
 | amd64, build host | 10.9 / 1.8 MB | 10.9 / 2.1 MB | 17.6 / 7.3 MB |
-| x86-64 in the 24.10.8 rootfs (CI) | 10.5 / 1.8 MB | 10.2 / 1.6 MB | 16.4 / 6.5 MB |
-| x86-64 in the 25.12.5 rootfs (CI) | 10.5 / 1.8 MB | 10.2 / 1.6 MB | 16.8 / 6.9 MB |
+| x86-64 in the 24.10.8 and 25.12.5 rootfs (CI, two runs each) | 10.5 to 10.7 / 1.8 to 2.0 MB | 10.2 to 10.3 / 1.6 to 1.8 MB | 16.4 to 16.8 / 6.5 to 6.9 MB |
 | mipsle-softfloat, 25.12.6 system emulation | 10.3 / – MB | 10.0 / 0.9 MB | 16.3 / 5.2 MB |
 
 `bench/footprint.sh`; the stripped binary is 11.6 MB on amd64 (11.4 MB in the CI rootfs run) and 12.4 MB on mipsle. Resident
-includes the mapped binary, so anonymous memory is what `memory_limit` and the `small` profile act on. The CI rows are
-from the run of commit f7c6b18 (job summary); the MIPS row is QEMU system emulation, not a router, see
+includes the mapped binary, so anonymous memory is what `memory_limit` and the `small` profile act on. The CI row is
+the lowest and highest of four job summaries (the figures move by a few hundred kB between runs); the MIPS row is QEMU system emulation, not a router, see
 [docs/resource-footprint.md](docs/resource-footprint.md).
 
 > **Based on [GlassOnTin/openwrt-mcp](https://github.com/GlassOnTin/openwrt-mcp)** by Ian
