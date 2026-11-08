@@ -24,14 +24,17 @@ conversation unless you ask for it.
 (9.6 MB on arm64, about 3.7 MB compressed in the release archive), about 10 MB resident on a
 GL-MT6000 right after start, and 23 tools in about 22 KB of tool descriptions. Every release file is checksummed and carries a build attestation.
 
-| Measured | Idle daemon | One bridge | Daemon after the golden calls |
+| Resident / anonymous (VmRSS / RssAnon) | Idle daemon | One bridge | Daemon after the golden calls |
 |---|---|---|---|
-| resident (VmRSS) | 10.9 MB | 10.9 MB | 17.6 MB |
-| anonymous (RssAnon) | 1.8 MB | 2.1 MB | 7.3 MB |
+| amd64, build host | 10.9 / 1.8 MB | 10.9 / 2.1 MB | 17.6 / 7.3 MB |
+| x86-64 in the 24.10.8 rootfs (CI) | 10.5 / 1.8 MB | 10.2 / 1.6 MB | 16.4 / 6.5 MB |
+| x86-64 in the 25.12.5 rootfs (CI) | 10.5 / 1.8 MB | 10.2 / 1.6 MB | 16.8 / 6.9 MB |
+| mipsle-softfloat, 25.12.6 system emulation | 10.3 / – MB | 10.0 / 0.9 MB | 16.3 / 5.2 MB |
 
-amd64, stripped binary 11.6 MB, `bench/footprint.sh`. Resident includes the mapped binary, so anonymous memory is what
-`memory_limit` and the `small` profile act on. CI repeats the run in the 24.10.8 and 25.12.5 rootfs and prints it in the
-job summary; mipsle-softfloat (12.4 MB binary) has no emulator on the build host and is not measured.
+`bench/footprint.sh`; the stripped binary is 11.6 MB on amd64 (11.4 MB in the CI rootfs run) and 12.4 MB on mipsle. Resident
+includes the mapped binary, so anonymous memory is what `memory_limit` and the `small` profile act on. The CI rows are
+from the run of commit f7c6b18 (job summary); the MIPS row is QEMU system emulation, not a router, see
+[docs/resource-footprint.md](docs/resource-footprint.md).
 
 > **Based on [GlassOnTin/openwrt-mcp](https://github.com/GlassOnTin/openwrt-mcp)** by Ian
 > Williams, which targets GL.iNet firmware 4.x (OpenWrt 21.02, `opkg`). This is a port to
