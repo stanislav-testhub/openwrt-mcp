@@ -6,6 +6,10 @@
 #
 # /etc/openwrt-mcp holds the token digests, MFA secrets, audit log and any pending
 # rollback -- losing it would silently unpair every client.
+#
+# This list names itself: sysupgrade does not keep keep.d files, so without that line the
+# daemon survives the first flash and is gone after the second.
+/lib/upgrade/keep.d/openwrt-mcp
 /usr/bin/openwrt-mcp
 /etc/init.d/openwrt-mcp
 /etc/rc.d/S95openwrt-mcp

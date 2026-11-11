@@ -721,10 +721,13 @@ questions are synthetic and the set is small, so a gap of a few answers is noise
 
 **Not yet verified on hardware** (covered by the fake-router tests only): `pkg_change` with `commit`,
 the LuCI page rendering, the web-root guard on a real `/www` path or symlink, a real power cycle (the
-recovery path is the same one the `SIGKILL` test exercises), and keep.d across a real sysupgrade. For
-1.2.0 also: history across a sysupgrade. A management-path change applied *with* a probe (then
+recovery path is the same one the `SIGKILL` test exercises), and keep.d across a real sysupgrade on hardware. A management-path change applied *with* a probe (then
 confirmed) and a probe failure left to the rollback timer (the timer restored the old value) were run on an
-OpenWrt 24.10.8 virtual machine (QEMU), not on hardware. For 1.3.0 also: `connect --write` against a real Claude Code,
+OpenWrt 24.10.8 virtual machine (QEMU), not on hardware. keep.d and the change history across a real
+`sysupgrade` (stock 25.12.6 x86-64 image, settings kept) were run on a 25.12.6 virtual machine three times in a
+row: the daemon came back running each time, `uci_get history=list` and `history=diff:` still read the change made
+before the first flash. The first run found that the keep.d list did not name itself, so everything but
+`/etc/config/openwrt-mcp` was lost on the second flash; fixed. For 1.3.0 also: `connect --write` against a real Claude Code,
 Codex, Claude Desktop, Gemini or VS Code (only the file merge and the command line are tested),
 anything on macOS, and the installer's download path on a router (the release workflow has run and
 published 1.2.0 and 1.3.0, but `install-router.sh` has not been run against them). For 1.4.0 also: the read-back after a write ran on hardware for `uci_apply`, `wg_new_client`

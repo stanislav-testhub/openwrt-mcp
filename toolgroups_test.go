@@ -260,6 +260,34 @@ func TestOverviewIncludeCallsOnlyMethodsInTheACLAndIsInstalled(t *testing.T) {
 	}
 }
 
+// sysupgrade keeps only what the keep.d list names, and the list itself is one of those files: an
+// entry missing from it survives the first flash and is gone after the second (seen on a 25.12.6 VM).
+func TestKeepListCoversEveryInstalledFile(t *testing.T) {
+	inst, err := os.ReadFile("install-router.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keep, err := os.ReadFile("files/lib/upgrade/keep.d/openwrt-mcp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := map[string]bool{}
+	for _, l := range strings.Split(string(keep), "\n") {
+		if l = strings.TrimSpace(l); l != "" && !strings.HasPrefix(l, "#") {
+			kept[l] = true
+		}
+	}
+	puts := regexp.MustCompile(`(?m)^\s*put \S+ (/\S+) [0-7]+$`).FindAllStringSubmatch(string(inst), -1)
+	if len(puts) == 0 {
+		t.Fatal("no put lines found in install-router.sh")
+	}
+	for _, m := range puts {
+		if dst := m[1]; !strings.HasPrefix(dst, "/etc/config/") && !kept[dst] {
+			t.Errorf("install-router.sh installs %s, which the keep.d list does not name", dst)
+		}
+	}
+}
+
 func TestLuciOverviewSmoke(t *testing.T) {
 	node, err := exec.LookPath("node")
 	if err != nil {

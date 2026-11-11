@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Fixed
+- **The daemon survives more than one firmware flash.** The keep.d list (`/lib/upgrade/keep.d/openwrt-mcp`) did not name
+  itself, and sysupgrade does not keep keep.d files on its own: the first flash carried the binary, init script, rc.d links,
+  LuCI page and `/etc/openwrt-mcp` (token digests, MFA secrets, audit log, history), the second lost all of them except
+  `/etc/config/openwrt-mcp`, so every client was unpaired. Found and checked on a 25.12.6 VM with the stock x86-64 image
+  (three flashes in a row after the fix, history read back each time). A test now requires every file `install-router.sh`
+  puts on the router, outside `/etc/config`, to be in the list. Routers installed before this fix keep the daemon across
+  the next flash only: reinstall (or copy the new list) before flashing.
+
 ## 1.7.0 -- Add-ons and small routers
 
 More of the packages owners actually run are now understood, and the daemon fits routers with little RAM. Add-on
