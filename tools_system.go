@@ -661,11 +661,11 @@ func execTool(ctx context.Context, in execIn) (string, string, error) {
 // ---------------------------------------------------------------- net_diag
 
 type netDiagIn struct {
-	Action string `json:"action" jsonschema:"ping | traceroute | nslookup | route | rule | neigh | wifi_survey | traffic | usage | dns_path | path | throughput | capture"`
+	Action string `json:"action" jsonschema:"ping | traceroute | nslookup | route | rule | neigh | wifi_survey | traffic | usage | dns_path | path | throughput | bufferbloat | capture"`
 	Src    string `json:"src,omitempty" jsonschema:"path, usage: client IP or MAC"`
-	Target string `json:"target,omitempty" jsonschema:"host name or IP for ping/traceroute/nslookup; destination IP for path; radio device for wifi_survey; interface for traffic and capture; iperf3 server for throughput; period date for usage"`
+	Target string `json:"target,omitempty" jsonschema:"host name or IP for ping/traceroute/nslookup; destination IP for path; radio device for wifi_survey; interface for traffic and capture; iperf3 server for throughput and bufferbloat; period date for usage"`
 	Iface  string `json:"iface,omitempty" jsonschema:"source interface/device for ping/traceroute, e.g. 'br-WAN' or 'wg0' -- useful with several uplinks"`
-	Count  int    `json:"count,omitempty" jsonschema:"ping count (default 4, max 10); seconds for traffic (3, max 10), throughput per direction (3, max 5), capture (5, max 10)"`
+	Count  int    `json:"count,omitempty" jsonschema:"ping count (default 4, max 10); seconds for traffic (3, max 10), throughput per direction (3, max 5), bufferbloat per direction (5, max 10), capture (5, max 10)"`
 	Filter string `json:"filter,omitempty" jsonschema:"capture: BPF words only (host, port, tcp, and, ...)"`
 	Server string `json:"server,omitempty" jsonschema:"DNS server to ask for nslookup (default: the router's resolver)"`
 	Table  string `json:"table,omitempty" jsonschema:"routing table for route: 'main' (default), 'all', or a number/name"`
@@ -701,6 +701,8 @@ func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 		return pathDiag(ctx, in)
 	case "throughput":
 		return throughput(ctx, in)
+	case "bufferbloat":
+		return bufferbloat(ctx, in)
 	case "capture":
 		return capture(ctx, in)
 	}

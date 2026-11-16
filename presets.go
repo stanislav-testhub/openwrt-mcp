@@ -32,7 +32,7 @@ var readonlyUbus = []string{
 	"service.list", "rc.list", "dnsmasq.metrics", "uci.configs", "uci.changes", "log.read",
 }
 
-// netDiagRoutine is every net_diag action except throughput (it loads the link) and capture (it reads other
+// netDiagRoutine is every net_diag action except throughput and bufferbloat (they load the link) and capture (it reads other
 // people's traffic): those two need a grant that names them.
 var netDiagRoutine = []string{"ping*", "traceroute*", "nslookup*", "route*", "rule*", "neigh*", "wifi_survey*", "traffic*", "usage*", "dns_path*", "path*"}
 

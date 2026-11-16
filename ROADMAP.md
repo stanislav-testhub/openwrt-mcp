@@ -401,7 +401,9 @@ and description limits in step with the code, so a release bumps both together.
 
 ### 3.11 Measured token cost
 
-**Status: half done.** `bench/cost.sh` measures calls and bytes sent and received for three tasks, openwrt-mcp against
+**Status (unreleased): Claude figures done.** `bench/claude_cost.py` runs `claude -p` with and without a stub server that serves the recorded `tools/list`; the difference in the input tokens the API reports is the catalogue's cost in Claude's own tokenizer: 8702 tokens (24 tools, 27869 bytes) on `claude-haiku-5-5` and `claude-sonnet-5-5`, against 5695 with DeepSeek's. It also scored 26 and 27 of 29 on tool choice. No API key is needed. Still open: the private `tests/mcp_eval` run. The text below is from before it.
+
+**Earlier status: half done.** `bench/cost.sh` measures calls and bytes sent and received for three tasks, openwrt-mcp against
 raw ssh, on a disposable OpenWrt (results in the README, *Verified*). `bench/select_eval.py` measures, with DeepSeek
 (`deepseek-flash`), how many prompt tokens a catalogue costs and whether the model still picks the right tool: the 1.3.0
 trim kept the choice (74 of 87 before, 78 after). Still open: the same figures with a Claude model and its tokenizer
@@ -818,7 +820,7 @@ it can harm you.
 - **Ships.** A README section "Approve from LuCI" with screenshots. `SECURITY.md` gets the new trust boundary (a LuCI
   administrator) and the deny floor. The *Later* bullet for the LuCI page is replaced by this milestone.
 - **Done.** README "Approve from LuCI" section, `SECURITY.md` trust boundary, deny floor, requests and channels, and
-  the *Later* bullet are written. The screenshots wait for a hardware run (nothing here has run on a real router).
+  the *Later* bullet are written. The screenshots are in `docs/img/`, taken from LuCI on a 25.12.6 virtual machine; a run on a real router would replace them but change nothing in the page.
 
 ---
 
@@ -1183,9 +1185,13 @@ part of the deny floor.
 
 ### 7.6 VLAN view
 
+**Status (unreleased): built** as `uci_get view=vlan_matrix` (`vlanview.go`), with the mistakes it can see listed under the table; run on a 25.12.6 VM against staged `bridge-vlan` sections, not on a DSA switch.
+
 - **Ships.** `uci_get view=vlan_matrix`: a port × VLAN table built from `bridge-vlan` sections, for DSA setups.
 
 ### 7.7 Bufferbloat and SQM
+
+**Status (unreleased): built** as `net_diag action=bufferbloat` and the `tune-sqm` prompt. Run on a 25.12.6 VM against a real iperf3 server behind a `tbf` queue, then behind `cake` (+48 ms grade B, then +0.5 ms grade A+). Not run over a real WAN or on a wireless link; BusyBox ping sends one packet a second, so 5 s of load gives 5 samples.
 
 - **Ships.** A bounded latency-under-load test in `net_diag`. It is open-world, so it is annotated as such. A
   `tune-sqm` prompt then proposes cake settings through a `uci_apply` dry run.
@@ -1194,8 +1200,7 @@ part of the deny floor.
 
 ## Later: delivery and operator experience
 
-- **Update check.** `openwrt-mcp version --check` against GitHub releases, shown by `status`. Then
-  `install.sh upgrade`.
+- **Update check.** *Built (unreleased):* `openwrt-mcp version --check` against GitHub releases and `install.sh upgrade`. `status` does not show it: the daemon never calls out on its own.
 - **Packaging.** An `apk` package or feed for 25.12.
 - **LuCI control page.** Moved to Milestone 8. The read-only status page (*Services -> MCP Server*) ships
   today. The old rule here, that issuing grants stays on the command line, is replaced: a LuCI administrator is

@@ -223,6 +223,8 @@ type uciGetIn struct {
 
 	History string `json:"history,omitempty" jsonschema:"'list' shows the kept past versions of the config (from before each confirmed change); 'diff:<id>' compares one with the current config. Whole config only: give no section or option"`
 
+	View string `json:"view,omitempty" jsonschema:"'vlan_matrix': DSA bridge VLANs as a port by VLAN table, mistakes listed"`
+
 	Refs string `json:"refs,omitempty" jsonschema:"a name (interface, zone, device, radio, mwan3 member or policy) to find across configs: what defines it and every field that uses it, for a rename or delete."`
 }
 
@@ -232,6 +234,9 @@ type uciGetIn struct {
 // section of a config is a broader permission than reading one named section. A refs search
 // reads several configs, so it has a scope of its own, the same whatever the name.
 func uciGetScope(in uciGetIn) []string {
+	if in.View != "" {
+		return []string{"network"}
+	}
 	if in.Refs != "" {
 		return []string{"refs"}
 	}

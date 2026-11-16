@@ -19,7 +19,7 @@ jobs:
       - run: sh -n install.sh && sh -n install-router.sh && sh -n files/etc/init.d/openwrt-mcp && sh -n files/usr/libexec/rpcd/openwrt-mcp
 
       - name: router-side installer downloads and verifies
-        run: bash install-router_test.sh
+        run: bash install-router_test.sh && sh install-upgrade_test.sh
 
       # One architecture table in three places: what install.sh builds for, what the router-side
       # installer downloads, and what the release workflow publishes.
@@ -57,7 +57,7 @@ jobs:
       - name: payload files are LF and parse
         run: |
           set -eu
-          ! grep -rlI $'\r' files install.sh install-router.sh install-router_test.sh
+          ! grep -rlI $'\r' files install.sh install-router.sh install-router_test.sh install-upgrade_test.sh
           python3 -m json.tool files/usr/share/luci/menu.d/luci-app-openwrt-mcp.json >/dev/null
           python3 -m json.tool files/usr/share/rpcd/acl.d/luci-app-openwrt-mcp.json >/dev/null
           # keep.d must name everything install.sh puts outside /etc/config.

@@ -356,7 +356,9 @@ func main() {
 			args[1:], os.Stdin, os.Stdout))
 
 	case "version":
-		fmt.Printf("openwrt-mcp %s\n", version)
+		if code := versionMain(args[1:], os.Stdout); code != 0 {
+			os.Exit(code)
+		}
 
 	default:
 		if fn, ok := extraCommands[args[0]]; ok {
@@ -496,7 +498,7 @@ func usage() {
   diag     [--audit N] [--detail]              version, board, policy shape and recent audit, with addresses and names masked
   connect  --client <c> --host <router> ...    (on your PC) make the key and set up an MCP client
   connect doctor --host <router> ...           (on your PC) check key, forced command, daemon and tools
-  version
+  version   [--check]                          print the version; --check asks GitHub for a newer release
 
 Connect an MCP client either way:
   stdio: ssh -T -i <mcp key> root@router          (key bound with authorize-key)

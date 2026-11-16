@@ -104,6 +104,9 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 			"the versions kept from before each confirmed change. refs=NAME finds every use of a name.",
 		annRead, uciGetScope,
 		func(ctx context.Context, in uciGetIn) (string, string, error) {
+			if in.View != "" {
+				return uciVLANView(ctx, in)
+			}
 			if in.Refs != "" {
 				return uciRefs(ctx, in)
 			}

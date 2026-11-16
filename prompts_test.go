@@ -16,7 +16,7 @@ import (
 // @readonly preset, which is who will use them first.
 
 var specPrompts = []string{"router-health", "who-is-online", "secure-my-router", "wifi-doctor", "upgrade-plan",
-	"block-ads", "multi-wan", "vpn-policy-routing", "expose-service-safely", "remote-access"}
+	"block-ads", "multi-wan", "vpn-policy-routing", "expose-service-safely", "remote-access", "tune-sqm"}
 
 func TestPromptsAreListedAndReturnOneUserMessage(t *testing.T) {
 	cs := connectClient(t, testServer(t, ""), "c")

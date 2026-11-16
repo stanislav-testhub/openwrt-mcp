@@ -29,7 +29,7 @@ func longRunning(tool string, in any) string {
 		}
 	case netDiagIn:
 		switch v.Action {
-		case "traceroute", "throughput", "capture":
+		case "traceroute", "throughput", "bufferbloat", "capture":
 			return "net_diag " + v.Action
 		}
 	}

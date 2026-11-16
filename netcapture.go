@@ -310,3 +310,144 @@ func countList(m map[string]int, limit int) string {
 	}
 	return strings.Join(parts, ", ")
 }
+
+// ---------------------------------------------------------------- bufferbloat (ROADMAP 7.7)
+
+const (
+	maxBloatSec = 10 // per direction; the router's link is saturated for twice this at most
+	bloatOmit   = 1  // seconds iperf3 ramps up before the pings that count
+)
+
+// bloatRamp is how long iperf3 runs before the pings that count (a var so a test need not wait for it).
+var bloatRamp = time.Duration(bloatOmit) * time.Second
+
+var reRTT = lazyRegexp(`min/avg/max(?:/mdev)? = ([0-9.]+)/([0-9.]+)/([0-9.]+)`)
+var reLoss = lazyRegexp(`([0-9.]+)% packet loss`)
+
+// pingStats is the summary line of BusyBox ping or iputils ping.
+type pingStats struct {
+	avg, max float64
+	loss     string
+	ok       bool
+}
+
+func parsePing(out string) pingStats {
+	var s pingStats
+	if m := reRTT.FindStringSubmatch(out); m != nil {
+		s.avg, _ = strconv.ParseFloat(m[2], 64)
+		s.max, _ = strconv.ParseFloat(m[3], 64)
+		s.ok = true
+	}
+	if m := reLoss.FindStringSubmatch(out); m != nil {
+		s.loss = m[1] + "%"
+	}
+	return s
+}
+
+// bloatGrade is the added latency under load, graded the way the usual bufferbloat web tests do.
+func bloatGrade(addedMs float64) string {
+	switch {
+	case addedMs < 5:
+		return "A+"
+	case addedMs < 30:
+		return "A"
+	case addedMs < 60:
+		return "B"
+	case addedMs < 200:
+		return "C"
+	case addedMs < 400:
+		return "D"
+	}
+	return "F"
+}
+
+// bufferbloat measures how much latency the router's own uplink adds when it is full: ping the iperf3 server idle,
+// then ping it again while iperf3 saturates the link upload and then download. The extra delay is queueing in the
+// bottleneck's buffer, which SQM (cake) removes. It is bounded like throughput and says so: it uses the link under test.
+func bufferbloat(ctx context.Context, in netDiagIn) (string, string, error) {
+	if !reNetTarget.MatchString(in.Target) {
+		return "", "", invalid("bufferbloat needs target = the host running `iperf3 -s`, reached over the link to test")
+	}
+	if !haveBinary("iperf3") {
+		return "", "", notFound("iperf3 is not installed on the router (apk add iperf3)")
+	}
+	sec := clampInt(in.Count, 5, 3, maxBloatSec)
+	pingArgv := func(n int) []string {
+		a := []string{"ping", "-c", strconv.Itoa(n), "-W", "2"}
+		if in.IPv6 || strings.Contains(in.Target, ":") {
+			a = append(a, "-6")
+		}
+		return append(a, in.Target)
+	}
+	idleOut, _ := run(ctx, 20*time.Second, pingArgv(4)...)
+	idle := parsePing(idleOut)
+	if !idle.ok {
+		return "", "", fmt.Errorf("%s does not answer ping, so latency cannot be measured: %s", in.Target, clip(strings.TrimSpace(idleOut), 160))
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "bufferbloat to %s: ping alone, then ping while iperf3 fills the link for %d s each way (this uses the link under test)\n", in.Target, sec)
+	fmt.Fprintf(&b, "idle: %.1f ms avg\n", idle.avg)
+	worst := 0.0
+	for _, dir := range []struct {
+		label string
+		rev   bool
+	}{{"upload (router to server)", false}, {"download (server to router)", true}} {
+		argv := []string{"iperf3", "-c", in.Target, "-t", strconv.Itoa(sec + bloatOmit), "-O", strconv.Itoa(bloatOmit), "-J"}
+		if in.IPv6 {
+			argv = append(argv, "-6")
+		} else {
+			argv = append(argv, "-4")
+		}
+		if dir.rev {
+			argv = append(argv, "-R")
+		}
+		type result struct {
+			out string
+			err error
+		}
+		done := make(chan result, 1)
+		go func() {
+			out, err := run(ctx, time.Duration(sec+bloatOmit+15)*time.Second, argv...)
+			done <- result{out, err}
+		}()
+		select { // let the transfer ramp up before the pings that count
+		case <-time.After(bloatRamp):
+		case <-ctx.Done():
+		}
+		loadedOut, _ := run(ctx, time.Duration(sec+10)*time.Second, pingArgv(sec)...)
+		res := <-done
+		loaded := parsePing(loadedOut)
+		var r iperfRun
+		bps := 0.0
+		if jerr := json.Unmarshal([]byte(res.out), &r); jerr == nil && r.Error == "" {
+			bps = r.End.Recv.Bps
+			if !dir.rev {
+				bps = r.End.Sent.Bps
+			}
+		} else if r.Error != "" {
+			fmt.Fprintf(&b, "%s: iperf3 failed: %s\n", dir.label, clip(r.Error, 120))
+			continue
+		} else {
+			fmt.Fprintf(&b, "%s: iperf3 failed: %v\n", dir.label, res.err)
+			continue
+		}
+		if !loaded.ok {
+			fmt.Fprintf(&b, "%s: %.1f Mbit/s, no ping answered while loaded (loss %s): the link was saturated past what ping survives\n", dir.label, bps/1e6, loaded.loss)
+			worst = 1000
+			continue
+		}
+		added := loaded.avg - idle.avg
+		if added < 0 {
+			added = 0
+		}
+		if added > worst {
+			worst = added
+		}
+		fmt.Fprintf(&b, "%s: %.1f Mbit/s, ping %.1f ms avg (+%.1f), %.1f ms max, loss %s\n", dir.label, bps/1e6, loaded.avg, added, loaded.max, loaded.loss)
+	}
+	fmt.Fprintf(&b, "added latency under load: %.0f ms, grade %s", worst, bloatGrade(worst))
+	if worst >= 30 {
+		b.WriteString("\nthe link's queue fills under load: SQM (sqm-scripts with cake) on the WAN shaped a little under the measured rate removes it")
+	}
+	return b.String(), "bufferbloat " + in.Target, nil
+}

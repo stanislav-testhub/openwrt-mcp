@@ -113,8 +113,8 @@ are welcome.
 | `logread` | tool | Whole log buffer filtered (substring, RE2, last N minutes) *before* the line limit; `offset` pages back from the newest line. `mode=summary` collapses it to distinct messages (numbers, addresses and ids become placeholders) with count, first and last time and worst severity. `baseline=save` returns a token; `baseline=<token>` shows only the messages that were not in the log then. Baselines hold fingerprints, not log text, and live in memory. |
 | `network_clients` | tool | DHCP leases + static hosts + neighbour table + every AP's association list, joined by MAC: name, IP, SSID, signal, rates, connected time, each client's share of its radio's airtime (from hostapd), lease; 100 rows a page, `offset` for the next. |
 | `firewall_show` | tool | `nft list ruleset`, `fw4 print`, `fw4 check`, one table or chain. |
-| `net_diag` | `<action>[.<target>]` | ping / traceroute / nslookup (optionally from a given interface), routes, policy rules, neighbours. `wifi_survey` reports, per radio, how busy the channel it stays on has been (busy, rx and tx airtime, noise); other channels are unmeasured, so it never recommends one. `traffic` samples interface rates for a few seconds and ranks the conntrack table by source. `usage` reads nlbwmon's totals per device for an accounting period (a month by default). All three only read. `throughput` runs `iperf3` against a server you name, 3 s up and 3 s down by default, 5 s each at most, and reports Mbit/s; `capture` runs `tcpdump` on one interface for at most 10 s or 2000 packets, with a filter of BPF primitives only, and returns a summary (protocols, top senders, TCP resets, DNS names asked), never the packets. Both need the binary installed and are not in `@readonly` or `@operator`: grant `throughput.*` and `capture.*` by name. |
-| `uci_get` | `<config>[.<section>[.<option>]]`; `refs` for a name search | `uci show`, optionally with stable `cfgXXXXXX` ids. Ends with the config's **revision**. `history=list` / `diff:<id>` shows the kept versions from before each confirmed change. `refs=NAME` finds what defines and uses a name across configs. |
+| `net_diag` | `<action>[.<target>]` | ping / traceroute / nslookup (optionally from a given interface), routes, policy rules, neighbours. `wifi_survey` reports, per radio, how busy the channel it stays on has been (busy, rx and tx airtime, noise); other channels are unmeasured, so it never recommends one. `traffic` samples interface rates for a few seconds and ranks the conntrack table by source. `usage` reads nlbwmon's totals per device for an accounting period (a month by default). All three only read. `throughput` runs `iperf3` against a server you name, 3 s up and 3 s down by default, 5 s each at most, and reports Mbit/s; `capture` runs `tcpdump` on one interface for at most 10 s or 2000 packets, with a filter of BPF primitives only, and returns a summary (protocols, top senders, TCP resets, DNS names asked), never the packets. `bufferbloat` pings the same server alone, then while `iperf3` fills the link upload and download (5 s each way by default, 10 at most), and reports the added latency under load with a grade (A+ under 5 ms, A under 30, B under 60, C under 200, D under 400, F beyond); a server across your WAN is the one that measures your uplink, and a bad grade points at SQM (the `tune-sqm` prompt). These need the binary installed and are not in `@readonly` or `@operator`: grant `throughput.*`, `bufferbloat.*` and `capture.*` by name. |
+| `uci_get` | `<config>[.<section>[.<option>]]`; `refs` for a name search | `uci show`, optionally with stable `cfgXXXXXX` ids. Ends with the config's **revision**. `history=list` / `diff:<id>` shows the kept versions from before each confirmed change. `refs=NAME` finds what defines and uses a name across configs. `view=vlan_matrix` shows the `bridge-vlan` sections of `network` (DSA) as a port by VLAN table (T tagged, U untagged, `*` PVID, the bridge's own membership) and lists what it can see wrong: a VLAN defined twice, two PVIDs on one port, a port the bridge does not own. |
 | `uci_apply` | `<config>.<section>[.<option>]` per change; `<config>` for `restore`; `probe.<kind>.<target>` per probe | Stage, check, commit, reload, **rollback armed**. `dry_run` shows exactly what would change and what the service's own checker says. `expected_revisions` refuses if a config moved meanwhile, `probe` checks the router afterwards, `restore=<id>` puts a past version back. After the commit the config is read back; a change the router did not keep is `NOT_APPLIED` and nothing is reloaded. |
 | `uci_confirm` / `uci_rollback` | tool | Make a pending change permanent / undo it now. |
 | `service_list` / `service_control` | tool, `<service>.detail` / `<service>.<action>` | procd services; `service_list detail=NAME` returns an installed add-on's own status (tailscale, AdGuard Home, podkop, and the 1.7 wave: adblock, adblock-fast, banIP, ddns, https-dns-proxy, miniupnpd, mwan3, pbr, sqm, ttyd; the plain list names the ones installed here); stopping or disabling dropbear, network, rpcd or openwrt-mcp is refused. `service_control` waits for the state to settle (`wait`) and says if it did not; a final state that contradicts the action is `NOT_APPLIED`. Add-on verbs (`action=refresh|unban|suspend|ifdown|update|unmap…`, `arg=` for an IP, an interface or `tcp:PORT`) are listed on the last line of the add-on's detail: routine ones (refresh a list, `banip unban`) are in `@operator`; disruptive ones (`adblock suspend`, `adblock-fast pause`, `mwan3 ifdown`) need a grant that names them, e.g. `mwan3.ifdown`. |
@@ -132,8 +132,9 @@ are welcome.
 | `mfa_unlock` | *(ungated)* | Opens the TOTP window for MFA-gated tools. |
 | `request_access` | *(ungated)* | Opens one request per entry at once, without waiting, so the operator answers them together. Grants nothing. |
 
-**Prompts.** Clients that show MCP prompts (as slash commands, usually) get five recipes:
-`router-health`, `who-is-online`, `secure-my-router`, `wifi-doctor` and `upgrade-plan`. Each is a
+**Prompts.** Clients that show MCP prompts (as slash commands, usually) get eleven recipes:
+`router-health`, `who-is-online`, `secure-my-router`, `wifi-doctor`, `upgrade-plan`, `block-ads`, `multi-wan`,
+`vpn-policy-routing`, `expose-service-safely`, `remote-access` and `tune-sqm`. Each is a
 few lines that name the tools to call and end in a report or a proposal, never a change. They use
 only what the `@readonly` preset grants, so a read-only client can follow them to the end, and they
 cost nothing until used. Listing or fetching one runs nothing on the router, so no policy applies
@@ -259,12 +260,20 @@ Either way the same installer runs on the router.
 
 `./install.sh uninstall [--purge]` reverses it.
 
+**Updating.** `openwrt-mcp version --check` on the router asks GitHub once (with `wget`) whether a newer release exists; nothing
+checks on its own. `./install.sh upgrade` runs that check over ssh and, if a newer release exists, installs it with the router-side
+installer, which verifies the release's checksums. A daemon older than 1.8 cannot check, so it gets the latest release without asking.
+
 ### Approve from LuCI
 
 After install, *Services -> MCP Server* in LuCI shows the daemon (running or stopped, version, HTTP
 listener, stdio socket), a pending `uci_apply` with its automatic-rollback deadline, the paired HTTP
 clients, the standing policies and the audit log. It is also where you answer an agent, so nobody has to
 open a shell to paste an `allow` line.
+
+![The MCP Server page in LuCI with four requests waiting: three from one assistant with Allow all, one for a root command with a warning](docs/img/luci-requests.png)
+
+*The page with four requests waiting, on an OpenWrt 25.12.6 virtual machine (the figures here are that machine's).*
 
 1. The agent calls a tool it has no grant for. The call is refused and a **request** is recorded: client,
    tool, the exact scope that failed and the redacted arguments, all derived by the daemon, with no text
@@ -283,8 +292,12 @@ Requests are deduplicated, capped (5 open per client, 50 in all) and expire afte
 by default). They live in RAM, so a reboot clears them. A LuCI user with only the read ACL sees requests
 but no buttons; writes need `luci-app-openwrt-mcp-write`.
 
+![Status, Overview with the MCP Server block: requests waiting with Allow and Deny, and what is currently allowed](docs/img/luci-overview-widget.png)
+
 Other tabs: *Permissions* (presets, tools in groups with a risk badge, **Revoke**), *Activity* (the audit log
 with filters), *Settings* (request wait and TTL, the optional channels, second-factor state).
+
+![The Permissions tab: presets, one row per ability with a risk badge, and the Permit all section](docs/img/luci-permissions.png)
 
 **Permit all.** The *Permissions* tab ends with a red section that grants a client every tool on every scope,
 `exec` included: a root shell. It is capped at 24 hours (no "never"), needs a checkbox and the client's name
@@ -714,6 +727,16 @@ the question):
 | 1.2.0 (before the description trim) | 74 of 87 | 5616 |
 | 1.3.0 (after it) | 78 of 87 | 5231 |
 | this version | 76 of 87 | 5695 |
+
+**With Claude** (`python3 bench/claude_cost.py cost|select`, Claude Code 2.1.306 signed in with a subscription, no API key, 2026-11-16;
+the server is a stub that serves this version's recorded `tools/list`, so no router is involved). The catalogue, as Claude Code puts it
+in the context (24 tools, `mcp__openwrt__` names, 27869 bytes of `tools/list`), adds **8702 input tokens** to a conversation:
+the same prompt costs 12252 tokens with it and 3550 without on `claude-haiku-5-5`, 11428 and 2726 on `claude-sonnet-5-5`, two runs
+each with identical totals. That is the API's own count of a real request, so it is the figure for Claude, and it is about half again as many tokens as
+the DeepSeek run above (5695), which is why the two are not compared in the table. The same 29 requests, first tool called:
+`claude-haiku-5-5` right tool and arguments 26 of 29, `claude-sonnet-5-5` 27 of 29. The misses are the ones above: it reads
+before it writes (`uci_get` for "change the LAN address", `wg_list_clients` for adding or removing a WireGuard client). One run per
+model, so a gap of one answer is noise.
 
 The trim did not make the choice worse. Most misses are the same on every version and are reasonable first steps rather than
 wrong tools: with no change pending in the conversation, the model reads the state before `uci_confirm` or `uci_apply`. The

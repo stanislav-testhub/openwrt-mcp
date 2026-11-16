@@ -103,6 +103,15 @@ Propose the policy as a configuration dry run you do not run: the client, the in
 Prefer, in this order: no exposure (VPN in), a reverse proxy with authentication, a single port forward limited by source address. Give the narrowest option written as a dry run you do not apply.`,
 	},
 	{
+		"tune-sqm", "Tune SQM for bufferbloat",
+		"Measure latency under load and propose cake settings for the WAN, without applying them.",
+		`Tune SQM for this router. Change nothing.
+1. service_list with detail=sqm if it is installed (queues, discipline, rates, counters), and uci_get on sqm. system_status with mode=doctor lists sqm findings.
+2. net_diag with action=bufferbloat and target=<an iperf3 server reached over the WAN>: ping idle against ping while the link is full, upload and download, with the measured rates. It fills the link for up to 25 seconds and needs a grant that names it; if it is refused, ask the operator for it rather than guess.
+3. net_diag with action=path or action=route to confirm which device is the WAN.
+Propose, as a configuration dry run you do not apply: the WAN device, download and upload set to about 90 to 95 percent of the measured rates, cake with piece_of_cake.qos, and the overhead for the link type. Then say how to measure again after it is applied.`,
+	},
+	{
 		"remote-access", "Reach the home network from outside",
 		"Compare the installed remote-access options and say which one to use and how exposed each is.",
 		`Review remote access. Change nothing.

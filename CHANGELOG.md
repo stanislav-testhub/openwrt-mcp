@@ -11,6 +11,34 @@ Fixed
   puts on the router, outside `/etc/config`, to be in the list. Routers installed before this fix keep the daemon across
   the next flash only: reinstall (or copy the new list) before flashing.
 
+Added
+- **`uci_get view=vlan_matrix`** (ROADMAP 7.6). The `bridge-vlan` sections of `network` as a port by VLAN table (`T` tagged, `U`
+  untagged, `*` PVID, plus the bridge's own membership from `option local`), with the mistakes the table shows listed under it: a
+  VLAN defined in two sections, two PVIDs on one port, a port that is in a VLAN but not in the bridge's `device` section, a section
+  with no device or a VLAN id outside 1 to 4094. A router with no `bridge-vlan` section is told so and pointed at swconfig's
+  `switch_vlan`. It reads the whole `network` config, so it needs the same grant as reading that config. Run through the stdio bridge
+  on a 25.12.6 VM against staged `bridge-vlan` sections (listed with `uci show`, then reverted); the real `uci show` quoting
+  (`'eth0:t' 'eth3:u*'`) is what the test parses.
+- **`net_diag action=bufferbloat`** (ROADMAP 7.7). Pings an iperf3 server alone, then while iperf3 fills the link upload and then
+  download, and reports the added latency per direction with a grade. 5 s each way by default, 10 at most, plus one second of ramp-up
+  that does not count; it is bounded like `throughput` and, like it, outside `@readonly` and `@operator` (grant `bufferbloat.*`).
+  Checked on the 25.12.6 VM against a real iperf3 server in a network namespace with a 20 Mbit/s `tbf` queue on the link: +48 ms,
+  grade B; after replacing the queue with `cake` at 18 Mbit/s: +0.5 ms, grade A+. New prompt `tune-sqm`: measure, then propose the cake
+  settings as a dry run. Catalogue: +179 bytes, the budget is raised in `contract_test.go` with that reason.
+- **`openwrt-mcp version --check` and `install.sh upgrade`** (ROADMAP, Later: update check). `--check` asks GitHub for the latest
+  release once, when you run it (the daemon never calls out on its own) and says whether a newer one exists; a draft or prerelease is
+  never offered. It fetches with `wget` (`uclient-fetch` on OpenWrt), not Go's HTTP client: the client's transport adds about 450 KB to
+  the mipsle binary, measured, and a 16 MB flash pays for that on every router. `install.sh upgrade` runs the check on the router and
+  installs the latest release only if it is newer; a daemon older than 1.8 cannot check and gets the latest release. Checked on the
+  25.12.6 VM with GNU wget and `uclient-fetch` against a local server (newer, current, prerelease, 404); the VM cannot reach GitHub
+  over TLS, so the live answer is covered by a fake `wget` in the tests only. `install-upgrade_test.sh` runs in CI.
+- **Screenshots of the LuCI approval page** (ROADMAP 8.10) in `docs/img/` and in the README, taken from LuCI on a 25.12.6 virtual
+  machine: the page with requests waiting, the Status overview block and the Permissions tab.
+- **What the catalogue costs a Claude model** (ROADMAP 3.11), measured with `bench/claude_cost.py` through `claude -p` on a
+  subscription (no API key): 8702 input tokens per conversation on `claude-haiku-5-5` and `claude-sonnet-5-5` (two runs each, identical),
+  and 26 and 27 of 29 plain requests answered with the right first tool. `go test -run TestDumpCatalogue` records the catalogue the
+  stub server in `bench/stub_mcp.py` serves.
+
 ## 1.7.0 -- Add-ons and small routers
 
 More of the packages owners actually run are now understood, and the daemon fits routers with little RAM. Add-on

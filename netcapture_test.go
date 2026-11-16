@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 )
 
@@ -177,7 +178,7 @@ func TestPresetsDoNotGrantThroughputOrCapture(t *testing.T) {
 				scopes = b.scopes
 			}
 		}
-		for _, bad := range []string{"throughput.iperf.example.net", "capture.br-lan"} {
+		for _, bad := range []string{"throughput.iperf.example.net", "bufferbloat.iperf.example.net", "capture.br-lan"} {
 			if matchAny(scopes, bad) {
 				t.Errorf("@%s grants %s", name, bad)
 			}
@@ -219,4 +220,138 @@ func TestCaptureSaysWhenFramesAreNotRead(t *testing.T) {
 
 	// Nothing printed at all stays "no packets seen".
 	wantAll(t, summariseCapture("0 packets captured\n", "wlan0", "", 5), "no packets seen")
+}
+
+// ---------------------------------------------------------------- bufferbloat (ROADMAP 7.7)
+
+const (
+	busyboxPing = "4 packets transmitted, 4 packets received, 0%% packet loss\nround-trip min/avg/max = %.1f/%.1f/%.1f ms\n"
+	iputilsPing = "5 packets transmitted, 5 received, 0%% packet loss, time 4005ms\nrtt min/avg/max/mdev = %.3f/%.3f/%.3f/0.400 ms\n"
+)
+
+func TestParsePingReadsBothImplementations(t *testing.T) {
+	for name, out := range map[string]string{
+		"busybox": fmt.Sprintf(busyboxPing, 9.0, 10.5, 12.0),
+		"iputils": fmt.Sprintf(iputilsPing, 9.0, 10.5, 12.0),
+	} {
+		got := parsePing(out)
+		if !got.ok || got.avg != 10.5 || got.max != 12 || got.loss != "0%" {
+			t.Errorf("%s: %+v", name, got)
+		}
+	}
+	if parsePing("ping: bad address 'x'").ok || parsePing("100% packet loss").ok {
+		t.Error("output with no round-trip line must not count as a measurement")
+	}
+}
+
+// The grades are the usual bufferbloat test's: A+ under 5 ms of added latency, A under 30, B under 60,
+// C under 200, D under 400, F beyond.
+func TestBloatGradeBoundaries(t *testing.T) {
+	for ms, want := range map[float64]string{0: "A+", 4.9: "A+", 5: "A", 29.9: "A", 30: "B", 59.9: "B", 60: "C", 199.9: "C", 200: "D", 399.9: "D", 400: "F", 5000: "F"} {
+		if got := bloatGrade(ms); got != want {
+			t.Errorf("%.1f ms graded %s, want %s", ms, got, want)
+		}
+	}
+}
+
+func bloatRouter(t *testing.T, loaded ...float64) *fakeRouter {
+	t.Helper()
+	bloatRamp = 0
+	t.Cleanup(func() { bloatRamp = 1e9 })
+	f, _ := wave1Router(t)
+	withBinaries(t, "iperf3")
+	var n int32
+	f.onFn("ping", func(argv []string, _ string) (string, error) {
+		if strings.Contains(strings.Join(argv, " "), "-c 4") { // the idle pings
+			return fmt.Sprintf(busyboxPing, 9.0, 10.0, 11.0), nil
+		}
+		i := int(atomic.AddInt32(&n, 1)) - 1
+		return fmt.Sprintf(busyboxPing, loaded[i]-2, loaded[i], loaded[i]+9), nil
+	})
+	f.onFn("iperf3", func(argv []string, _ string) (string, error) {
+		if strings.Contains(strings.Join(argv, " "), " -R") {
+			return `{"end":{"sum_received":{"bits_per_second":92400000}}}`, nil
+		}
+		return `{"end":{"sum_sent":{"bits_per_second":41300000,"retransmits":7}}}`, nil
+	})
+	return f
+}
+
+func TestBufferbloatReportsAddedLatencyPerDirection(t *testing.T) {
+	f := bloatRouter(t, 45, 12) // upload queue 35 ms deep, download 2 ms
+	out, _, err := netDiag(context.Background(), netDiagIn{Action: "bufferbloat", Target: "iperf.example.net", Count: 600})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAll(t, out, "idle: 10.0 ms avg",
+		"upload (router to server): 41.3 Mbit/s, ping 45.0 ms avg (+35.0), 54.0 ms max, loss 0%",
+		"download (server to router): 92.4 Mbit/s, ping 12.0 ms avg (+2.0)",
+		"added latency under load: 35 ms, grade B", "SQM")
+	// The cap holds whatever Count says: 10 s of load per direction, plus the ramp-up second iperf3 omits.
+	var iperfs, loadedPings int
+	for _, a := range f.argvList() {
+		line := strings.Join(a, " ")
+		switch {
+		case strings.HasPrefix(line, "iperf3 "):
+			iperfs++
+			if !strings.Contains(line, "-t 11") || !strings.Contains(line, "-O 1") || !strings.Contains(line, "-c iperf.example.net") {
+				t.Errorf("iperf3 argv %q", line)
+			}
+		case strings.HasPrefix(line, "ping ") && strings.Contains(line, "-c 10"):
+			loadedPings++
+		}
+	}
+	if iperfs != 2 || loadedPings != 2 {
+		t.Errorf("%d iperf3 runs and %d loaded ping runs, want 2 and 2", iperfs, loadedPings)
+	}
+}
+
+func TestBufferbloatCleanLinkGetsNoSQMAdvice(t *testing.T) {
+	bloatRouter(t, 11, 11.5)
+	out, _, err := netDiag(context.Background(), netDiagIn{Action: "bufferbloat", Target: "iperf.example.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAll(t, out, "grade A+")
+	mustNotContain(t, out, "SQM")
+}
+
+func TestBufferbloatWithNoPingAnsweredWhileLoadedIsAnF(t *testing.T) {
+	f := bloatRouter(t, 0, 0)
+	f.onFn("ping", func(argv []string, _ string) (string, error) {
+		if strings.Contains(strings.Join(argv, " "), "-c 4") {
+			return fmt.Sprintf(busyboxPing, 9.0, 10.0, 11.0), nil
+		}
+		return "5 packets transmitted, 0 packets received, 100% packet loss\n", fmt.Errorf("exit status 1")
+	})
+	out, _, err := netDiag(context.Background(), netDiagIn{Action: "bufferbloat", Target: "iperf.example.net"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAll(t, out, "no ping answered while loaded (loss 100%)", "grade F")
+}
+
+func TestBufferbloatRefusals(t *testing.T) {
+	ctx := context.Background()
+	f := bloatRouter(t, 11, 11)
+	for _, tg := range []string{"", "-s", "a b", "x;y"} {
+		if _, _, err := netDiag(ctx, netDiagIn{Action: "bufferbloat", Target: tg}); err == nil {
+			t.Errorf("target %q was accepted", tg)
+		}
+	}
+	f.onFn("ping", func([]string, string) (string, error) {
+		return "ping: bad address 'h.example'", fmt.Errorf("exit status 1")
+	})
+	if _, _, err := netDiag(ctx, netDiagIn{Action: "bufferbloat", Target: "h.example"}); err == nil || !strings.Contains(err.Error(), "does not answer ping") {
+		t.Errorf("a target that does not answer ping: %v", err)
+	}
+	for _, a := range f.argvList() {
+		if a[0] == "iperf3" {
+			t.Error("iperf3 ran against a host that does not answer ping")
+		}
+	}
+	withBinaries(t)
+	if _, _, err := netDiag(ctx, netDiagIn{Action: "bufferbloat", Target: "h.example"}); err == nil || !strings.Contains(err.Error(), "iperf3 is not installed") {
+		t.Errorf("missing iperf3: %v", err)
+	}
 }

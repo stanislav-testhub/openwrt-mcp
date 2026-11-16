@@ -4,6 +4,7 @@
 #   ROUTER=root@192.168.1.1 [SSH_PORT=22] [SSH_KEY=~/.ssh/id_ed25519] ./install.sh install
 #   ./install.sh install --release [vX.Y.Z]   no build: the router fetches a verified release
 #                                         (the default when no Go toolchain is found)
+#   ./install.sh upgrade                  ask the router whether a newer release exists, and install it if so
 #   ./install.sh uninstall [--purge]      stop, disable and remove (--purge: also config + state)
 #   ./install.sh build                    cross-compile only, for the router's architecture
 #   ./install.sh stage                    copy the binary to /tmp/openwrt-mcp on the router, nothing else
@@ -96,6 +97,16 @@ case "${1:-}" in
 			build >/dev/null
 			install_remote
 		fi ;;
+	upgrade)
+		# The router asks GitHub itself (version --check), so the answer is what the router can reach.
+		# A daemon older than 1.8 ignores --check and prints only its version: then install the latest.
+		out=$(ssh_r 'openwrt-mcp version --check' 2>&1) || { printf '%s\n' "$out" >&2; echo "upgrade: could not ask the router for a newer release" >&2; exit 1; }
+		printf '%s\n' "$out"
+		case "$out" in
+			*"up to date"*) ;;
+			*"newer release: "*) install_release "" ;;
+			*) echo "upgrade: the router's daemon cannot check, installing the latest release" >&2; install_release "" ;;
+		esac ;;
 	uninstall)
 		ssh_r "PURGE=$([ "${2:-}" = --purge ] && echo 1 || echo 0) sh -s" <<'EOF'
 [ -x /etc/init.d/openwrt-mcp ] && { /etc/init.d/openwrt-mcp stop; /etc/init.d/openwrt-mcp disable; }

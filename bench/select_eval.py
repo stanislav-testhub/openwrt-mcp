@@ -91,4 +91,5 @@ def main():
             print("MISS %s: %r wanted %s, got %s %s" % (name, q, want, got, json.dumps(args) if args else ""))
 
 
-main()
+if __name__ == "__main__":
+    main()
