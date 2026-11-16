@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.8.0 -- VLAN view, bufferbloat, apk package
 
 Fixed
 - **The daemon survives more than one firmware flash.** The keep.d list (`/lib/upgrade/keep.d/openwrt-mcp`) did not name
