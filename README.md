@@ -264,6 +264,11 @@ Either way the same installer runs on the router.
 checks on its own. `./install.sh upgrade` runs that check over ssh and, if a newer release exists, installs it with the router-side
 installer, which verifies the release's checksums. A daemon older than 1.8 cannot check, so it gets the latest release without asking.
 
+**As an apk package (25.12).** Each release has `openwrt-mcp-X.Y.Z-r1_<arch>.apk` for the common architectures (the router's
+`DISTRIB_ARCH`). Copy the right one over and run `apk add --allow-untrusted ./openwrt-mcp-X.Y.Z-r1_<arch>.apk`; it is not signed, so check
+it against `SHA256SUMS` first. The package starts the daemon, keeps an edited `/etc/config/openwrt-mcp` (the shipped one lands as
+`openwrt-mcp.apk-new`), and `apk del openwrt-mcp` stops it but leaves `/etc/openwrt-mcp` (tokens, audit log). Not for 24.10: that uses opkg.
+
 ### Approve from LuCI
 
 After install, *Services -> MCP Server* in LuCI shows the daemon (running or stopped, version, HTTP

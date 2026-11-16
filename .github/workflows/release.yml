@@ -41,7 +41,9 @@ jobs:
       - uses: actions/checkout@v7
         with:
           path: tooling
-          sparse-checkout: install-router.sh
+          sparse-checkout: |
+            install-router.sh
+            packaging
           sparse-checkout-cone-mode: false
 
       - uses: actions/setup-go@v7
@@ -106,8 +108,27 @@ jobs:
           darwin  amd64 tar
           darwin  arm64 tar
           EOF
+          # apk packages for 25.12 (apk-tools 3): one per router architecture, from the archives above.
+          # The package arch must equal the router's DISTRIB_ARCH, so the common ones are listed here.
+          # Unsigned: install a downloaded file with `apk add --allow-untrusted ./file.apk`.
+          while read -r apkarch label; do
+            docker run --rm -v "$PWD:/w" -w /w alpine:3.23 sh tooling/packaging/apk/build.sh apk \
+              "dist/openwrt-mcp_${ver}_linux_${label}.tar.gz" "$apkarch" "dist/openwrt-mcp-${ver}-r1_${apkarch}.apk"
+          done <<'EOF'
+          x86_64                  amd64
+          aarch64_generic         arm64
+          aarch64_cortex-a53      arm64
+          aarch64_cortex-a72      arm64
+          aarch64_cortex-a76      arm64
+          arm_cortex-a7_neon-vfpv4 armv7
+          arm_cortex-a9           armv7
+          mipsel_24kc             mipsle_softfloat
+          mips_24kc               mips_softfloat
+          i386_pentium4           386
+          riscv64_generic         riscv64
+          EOF
           cp tooling/install-router.sh dist/
-          (cd dist && sha256sum -- *.tar.gz *.zip install-router.sh > SHA256SUMS && cat SHA256SUMS)
+          (cd dist && sha256sum -- *.tar.gz *.zip *.apk install-router.sh > SHA256SUMS && cat SHA256SUMS)
 
       - name: release notes from CHANGELOG
         run: |
@@ -136,6 +157,7 @@ jobs:
           subject-path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.apk
             dist/install-router.sh
 
       - name: publish

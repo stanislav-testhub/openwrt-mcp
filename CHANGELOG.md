@@ -12,6 +12,11 @@ Fixed
   the next flash only: reinstall (or copy the new list) before flashing.
 
 Added
+- **An `apk` package for 25.12** (ROADMAP, Packaging). The release now carries `openwrt-mcp-X.Y.Z-r1_<arch>.apk` for the common
+  router architectures (`x86_64`, `aarch64_*`, `arm_cortex-a7/a9`, `mipsel_24kc`, `mips_24kc`, `i386_pentium4`, `riscv64`), built from
+  the same archives by `packaging/apk/build.sh` with apk-tools 3 in an Alpine container. Unsigned: `apk add --allow-untrusted ./file.apk`.
+  Install, upgrade (config kept, the shipped one lands as `openwrt-mcp.apk-new`, daemon restarted) and removal (daemon stopped, `/etc/openwrt-mcp`
+  left) were run on the 25.12.6 VM, also over a copy put there by `install.sh`. A feed (signed index) is not built.
 - **`uci_get view=vlan_matrix`** (ROADMAP 7.6). The `bridge-vlan` sections of `network` as a port by VLAN table (`T` tagged, `U`
   untagged, `*` PVID, plus the bridge's own membership from `option local`), with the mistakes the table shows listed under it: a
   VLAN defined in two sections, two PVIDs on one port, a port that is in a VLAN but not in the bridge's `device` section, a section

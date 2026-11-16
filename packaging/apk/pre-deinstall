@@ -1,0 +1,6 @@
+#!/bin/sh
+# Stop and unhook the daemon. /etc/openwrt-mcp (tokens, MFA secrets, audit log) is left in place.
+[ -z "$IPKG_INSTROOT" ] || exit 0
+/etc/init.d/openwrt-mcp stop 2>/dev/null
+/etc/init.d/openwrt-mcp disable 2>/dev/null
+exit 0

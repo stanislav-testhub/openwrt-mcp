@@ -1201,7 +1201,7 @@ part of the deny floor.
 ## Later: delivery and operator experience
 
 - **Update check.** *Built (unreleased):* `openwrt-mcp version --check` against GitHub releases and `install.sh upgrade`. `status` does not show it: the daemon never calls out on its own.
-- **Packaging.** An `apk` package or feed for 25.12.
+- **Packaging.** *Built (unreleased):* an `apk` package per architecture, attached to the release (`packaging/apk/`); checked on the 25.12.6 VM. Not done: a signed feed, so `apk add` from a URL needs `--allow-untrusted`.
 - **LuCI control page.** Moved to Milestone 8. The read-only status page (*Services -> MCP Server*) ships
   today. The old rule here, that issuing grants stays on the command line, is replaced: a LuCI administrator is
   already root, and the protection against agents that the rule gave becomes the deny floor (8.1).

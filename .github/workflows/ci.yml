@@ -16,7 +16,7 @@ jobs:
           go-version-file: go.mod
       - run: go vet ./...
       - run: go test -race -count=1 ./...
-      - run: sh -n install.sh && sh -n install-router.sh && sh -n files/etc/init.d/openwrt-mcp && sh -n files/usr/libexec/rpcd/openwrt-mcp
+      - run: sh -n install.sh && sh -n install-router.sh && sh -n files/etc/init.d/openwrt-mcp && sh -n files/usr/libexec/rpcd/openwrt-mcp && sh -n packaging/apk/build.sh && sh -n packaging/apk/post-install && sh -n packaging/apk/pre-deinstall
 
       - name: router-side installer downloads and verifies
         run: bash install-router_test.sh && sh install-upgrade_test.sh

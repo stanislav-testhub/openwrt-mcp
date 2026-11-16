@@ -1,0 +1,9 @@
+#!/bin/sh
+# apk runs this after unpacking, on install and on upgrade. Same steps as install-router.sh.
+mkdir -p /etc/openwrt-mcp && chmod 0700 /etc/openwrt-mcp
+[ -z "$IPKG_INSTROOT" ] || exit 0
+/etc/init.d/openwrt-mcp enable
+/etc/init.d/openwrt-mcp restart
+rm -f /tmp/luci-indexcache* /tmp/luci-modulecache/* 2>/dev/null
+/etc/init.d/rpcd reload 2>/dev/null
+exit 0
