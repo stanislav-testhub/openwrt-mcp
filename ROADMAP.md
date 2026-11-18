@@ -1104,7 +1104,7 @@ part of the deny floor.
 
 ### 6.4 Upgrade planner
 
-**Status (unreleased): within a release built** (`upgradeplan.go`): a simulated `pkg_change upgrade` appends versions, reboot need, init scripts, `/etc` files and local changes. Fixture-tested, not run on a real upgrade. Not built: `sysupgrade action=plan`.
+**Status (unreleased): within a release built** (`upgradeplan.go`): a simulated `pkg_change upgrade` appends versions, reboot need, init scripts, `/etc` files and local changes. Fixture-tested, not run on a real upgrade. **Across releases built** (`sysupgradeplan.go`, `sysupgrade action=plan`): added packages, `owut check` output, changed `/etc` files not on the keep list; not run on a real router. It does not itself check each package against the target release or preview the Attended Sysupgrade request body: it shows the list and owut's verdict.
 
 - **Ships.**
   - **Within a release.** `pkg_change upgrade` in simulate mode reports:

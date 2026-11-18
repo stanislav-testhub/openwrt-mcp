@@ -193,7 +193,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		})
 
 	addTool(s, srv, client, "sysupgrade",
-		"Firmware helpers that never flash. `action` says which: list, test, check or backup.",
+		"Firmware helpers that never flash. `action` says which: list, test, check, plan or backup.",
 		annWrite, sysupgradeScope, sysupgradeTool)
 
 	// ---- wireguard

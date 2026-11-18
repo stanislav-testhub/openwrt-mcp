@@ -3,6 +3,9 @@
 ## Unreleased
 
 Added
+- **Upgrade plan across releases (ROADMAP 6.4).** `sysupgrade action=plan` reads only: the packages you added on top of the firmware
+  image (world minus `/rom`'s own selection), `owut check` for the target release, and changed `/etc` files that `sysupgrade -l`
+  does not keep. Flashing stays manual. Fixture-tested, not run on a real router.
 - **Per-device access control (ROADMAP 6.3).** New tool `client_access`: `block`, `schedule` (blocked from..until on chosen days,
   a window past midnight is split into two rules with the days shifted) or `allow` for one MAC. It compiles to fw4 `REJECT` rules
   (`src_mac`, `dest wan`, `start_time`, `stop_time`, `weekdays`) named `mcpdev_<mac>_<n>` and runs them through the

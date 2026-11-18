@@ -74,6 +74,7 @@ var goldenCalls = []struct {
 	{"pkg_config_resolve", map[string]any{"path": "/etc/config/dhcp", "action": "keep_current"}},
 	{"sysupgrade", map[string]any{"action": "test", "image": "/tmp/fw.bin"}},
 	{"sysupgrade", map[string]any{"action": "backup"}},
+	{"sysupgrade", map[string]any{"action": "plan"}},
 	{"wg_list_clients", map[string]any{"iface": "wg0"}},
 	{"wg_new_client", map[string]any{"name": "phone", "iface": "wg0", "endpoint": "vpn.example.com:51820",
 		"dns": "192.0.2.1", "allowed_ips": "0.0.0.0/0"}},
@@ -220,8 +221,8 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 29320 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose; 1.8: request_access, +636, wants is a plain list of strings); 1.8: uci_get view=vlan_matrix (7.6, +107) and net_diag bufferbloat (7.7, +40), +179 with the descriptions of both kept to one clause; 6.3: client_access, +1337
-	catalogueProseBudget = 14200 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 29340 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose; 1.8: request_access, +636, wants is a plain list of strings); 1.8: uci_get view=vlan_matrix (7.6, +107) and net_diag bufferbloat (7.7, +40), +179 with the descriptions of both kept to one clause; 6.3: client_access, +1337; 6.4: sysupgrade action=plan, +18
+	catalogueProseBudget = 14240 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 

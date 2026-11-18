@@ -782,7 +782,7 @@ func netDiag(ctx context.Context, in netDiagIn) (string, string, error) {
 // ---------------------------------------------------------------- sysupgrade / owut
 
 type sysupgradeIn struct {
-	Action string `json:"action" jsonschema:"list | test | check | backup. list: files a sysupgrade keeps; test: validate an image already on the router (sysupgrade -T); check: ask owut whether a newer release/packages exist; backup: write a config backup archive to /tmp"`
+	Action string `json:"action" jsonschema:"list | test | check | plan | backup. plan: pre-upgrade checklist; list: files a sysupgrade keeps; test: validate an image already on the router (sysupgrade -T); check: ask owut whether a newer release/packages exist; backup: write a config backup archive to /tmp"`
 	Image  string `json:"image,omitempty" jsonschema:"for test: path of the image under /tmp, e.g. /tmp/firmware.bin"`
 }
 
@@ -813,6 +813,9 @@ func sysupgradeTool(ctx context.Context, in sysupgradeIn) (string, string, error
 		}
 		out, err := run(ctx, 2*time.Minute, "owut", "check")
 		return out, "owut check", err
+	case "plan":
+		out, err := sysupgradePlan(ctx)
+		return out, "upgrade plan", err
 	case "backup":
 		host, _ := run(ctx, defaultCmdTimeout, "uci", "-q", "get", "system.@system[0].hostname")
 		name := fmt.Sprintf("/tmp/backup-%s-%s.tar.gz", orDefault(sanitize(strings.TrimSpace(host)), "openwrt"),
@@ -850,7 +853,7 @@ func sysupgradeTool(ctx context.Context, in sysupgradeIn) (string, string, error
 		}
 		return msg, "backup " + name, nil
 	}
-	return "", "", invalid("unknown action %q: use list, test, check or backup", in.Action)
+	return "", "", invalid("unknown action %q: use list, test, check, plan or backup", in.Action)
 }
 
 // reBackupName is exactly what the backup action names its archives. Only files with such a

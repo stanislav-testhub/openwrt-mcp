@@ -1193,3 +1193,36 @@ func TestUbusListAndCallArgumentHandling(t *testing.T) {
 		t.Errorf("ubus failure must come back as an error carrying its output: %v %q", isErr, out)
 	}
 }
+
+func TestSysupgradePlanListsAddedPackagesAndUnkeptChanges(t *testing.T) {
+	root := withFixtureRoot(t)
+	f := newFakeRouter(t)
+	writeFixture(t, root, "usr/bin/apk", "#!/bin/sh\n")
+	writeFixture(t, root, "usr/bin/owut", "#!/bin/sh\n")
+	writeFixture(t, root, "etc/openwrt_release", "DISTRIB_DESCRIPTION='OpenWrt 25.12.1'\n")
+	writeFixture(t, root, "rom/etc/apk/world", "base-files\nbusybox\nuhttpd\n")
+	writeFixture(t, root, "etc/apk/world", "base-files\nbusybox\nuhttpd\nadblock-fast\nwireguard-tools>=1.0\n")
+	f.on("owut check", "Version 25.12.2 is available")
+	f.on("sysupgrade -l", "/etc/config/network\n/etc/config/firewall")
+	f.on("apk audit", "M etc/config/network\nM etc/custom/hosts.list\nA usr/bin/mytool\n")
+
+	out, summary, err := sysupgradeTool(context.Background(), sysupgradeIn{Action: "plan"})
+	if err != nil || summary != "upgrade plan" {
+		t.Fatalf("plan: %v %q", err, summary)
+	}
+	for _, want := range []string{"OpenWrt 25.12.1", "adblock-fast wireguard-tools\n", "25.12.2", "/etc/custom/hosts.list", "Flashing stays manual"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan lacks %q:\n%s", want, out)
+		}
+	}
+	for _, not := range []string{"busybox", "uhttpd", "/etc/config/network\n", "usr/bin/mytool"} {
+		if strings.Contains(out, not) {
+			t.Errorf("plan wrongly mentions %q:\n%s", not, out)
+		}
+	}
+	for _, c := range f.callList() {
+		if strings.Contains(c, "-b") || strings.HasPrefix(c, "sysupgrade") && !strings.HasPrefix(c, "sysupgrade -l") {
+			t.Errorf("plan ran a mutating call: %q", c)
+		}
+	}
+}
