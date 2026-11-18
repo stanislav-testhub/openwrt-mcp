@@ -101,16 +101,21 @@ func (s *Server) appsGate(next mcp.MethodHandler) mcp.MethodHandler {
 			if !asked {
 				return res, nil
 			}
-			for _, tl := range r.Tools {
+			tools := make([]*mcp.Tool, len(r.Tools))
+			for i, tl := range r.Tools {
+				tools[i] = tl
 				for _, v := range appViews {
 					if tl.Name == v.tool {
-						tl.Meta = mcp.Meta{"ui": map[string]any{"resourceUri": v.uri()}}
+						c := *tl // the registered tool is shared by every client: link a copy
+						c.Meta = mcp.Meta{"ui": map[string]any{"resourceUri": v.uri()}}
+						tools[i] = &c
 					}
 				}
 			}
+			r.Tools = tools
 		case *mcp.ListResourcesResult:
 			if !asked {
-				r.Resources = nil
+				r.Resources = []*mcp.Resource{} // [] and not null: a strict client rejects null
 			}
 		}
 		return res, err

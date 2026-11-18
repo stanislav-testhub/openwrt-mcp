@@ -407,6 +407,9 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 			if derive := derivedStructured[name]; derive != nil && structured == nil {
 				structured = derive(body)
 			}
+			if structured == nil && outputSchemas[name] != nil {
+				structured = map[string]any{} // a free-text mode: the spec still wants data that fits the listed schema
+			}
 			res := textResult(labelUntrusted(name, body))
 			if approvedNote != "" {
 				res.Content = append(res.Content, &mcp.TextContent{Text: approvedNote})

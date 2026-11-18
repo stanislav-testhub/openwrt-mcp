@@ -50,8 +50,14 @@ var (
 )
 
 // objT: required names are kept to the keys a consumer cannot do without; every other key is optional.
+// A tool with a free-text mode (system_status doctor/audit/history, pkg_query info/owner, service_list
+// detail) answers it with an empty object, so that tool lists no required key.
 func objT(required []string, props map[string]any) map[string]any {
-	return map[string]any{"type": "object", "properties": props, "required": required}
+	o := map[string]any{"type": "object", "properties": props}
+	if len(required) > 0 {
+		o["required"] = required
+	}
+	return o
 }
 
 func arrT(item any) map[string]any { return map[string]any{"type": "array", "items": item} }
@@ -73,7 +79,7 @@ var outputSchemas = map[string]any{
 		})),
 	}),
 	// Nested objects are left loose to keep the catalogue inside its byte budget (TestCatalogueStaysWithinBudget).
-	"system_status": objT([]string{"outstanding"}, map[string]any{
+	"system_status": objT(nil, map[string]any{
 		"board": objL, "uptime_s": intT, "load": arrT(map[string]any{"type": "number"}), "memory_mib": objL, "conntrack": objL,
 		"temperatures": arrT(objL), "interfaces": arrT(objL), "radios": arrT(objL), "outstanding": strsT,
 	}),
@@ -84,10 +90,10 @@ var outputSchemas = map[string]any{
 		"lines": arrT(objL),
 	}),
 	"exec": objT([]string{"lines"}, map[string]any{"lines": strsT}),
-	"pkg_query": objT([]string{"packages"}, map[string]any{
+	"pkg_query": objT(nil, map[string]any{
 		"total": intT, "packages": arrT(objT([]string{"name"}, map[string]any{"name": strT, "version": strT, "upgradable_from": strT})),
 	}),
-	"service_list": objT([]string{"services"}, map[string]any{
+	"service_list": objT(nil, map[string]any{
 		"services": arrT(objT([]string{"name"}, map[string]any{"name": strT, "enabled": boolT, "running": boolT})), "add_ons": strsT,
 	}),
 }
@@ -178,9 +184,13 @@ func structuredGate(next mcp.MethodHandler) mcp.MethodHandler {
 		}
 		switch r := res.(type) {
 		case *mcp.ListToolsResult:
-			for _, tl := range r.Tools {
-				tl.OutputSchema = nil
+			tools := make([]*mcp.Tool, len(r.Tools))
+			for i, tl := range r.Tools {
+				c := *tl // the registered tool is shared by every client: strip a copy
+				c.OutputSchema = nil
+				tools[i] = &c
 			}
+			r.Tools = tools
 		case *mcp.CallToolResult:
 			r.StructuredContent = nil
 		}

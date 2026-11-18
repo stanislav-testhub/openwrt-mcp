@@ -47,6 +47,12 @@ Added
   Fixture-tested for both output formats; not yet run against a real upgrade (the test VMs have no TLS egress to a feed). The cross-release
   half (`sysupgrade action=plan`) is not built.
 
+Fixed (found by running the views in the MCP Apps reference host, `@modelcontextprotocol/ext-apps` `basic-host`, a client built on the TypeScript SDK)
+- `resources/list` answered `"resources": null` for a client the views are not shown to, which is everyone while `apps` is off (the default). A TypeScript-SDK client rejects it ("expected array, received null") and could not connect; it is `[]` now.
+- `system_status` `mode=doctor` and `mode=audit`, and `pkg_query` `info` and `owner`, listed an `outputSchema` but returned no `structuredContent`; the TypeScript SDK throws on that, so those calls failed. They return an empty object now and the schemas of those tools no longer require a key. A new test holds every successful golden call of a schema tool to its schema.
+- `tools/list` changed the registered tool objects, shared by every client: after one client that asked for the views every client saw their links (the opt-in leaked), and after one client on an old protocol version every client lost the output schemas. Both are done on a copy now.
+- The clients view threw on a shape the server never sends (a `null` or a number among `clients`, `ips` as a string) and stayed half drawn; it skips what is not an object and shows an empty IP column instead. Crafted results (HTML, script tags, escape sequences, `__proto__`, 20 000 findings, 5 000 clients) were drawn as text only in the reference host, with no `alert`, no foreign element and no CSP violation.
+
 ## 1.8.0 -- VLAN view, bufferbloat, apk package
 
 Fixed

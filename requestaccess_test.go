@@ -57,6 +57,7 @@ func TestRequestAccessRefusesWhatIsNotARealWant(t *testing.T) {
 	cs := connectClient(t, s, "c")
 	for _, w := range [][]string{
 		{}, {"mfa_unlock"}, {"no_such_tool x"}, {"uci_apply <b>x</b>"},
+		{"uci_apply a\"b"}, {"uci_apply a'b"}, {"uci_apply a&amp;b"}, {"uci_apply a\x1b[2Jb"}, {"uci_apply a\u202eb"}, {"uci_apply a\u0000b"},
 		{"uci_apply a", "uci_apply b", "uci_apply c", "uci_apply d", "uci_apply e", "uci_apply f", "uci_apply g", "uci_apply h", "uci_apply i"},
 	} {
 		if out, isErr := callText(t, cs, "request_access", map[string]any{"wants": w}); !isErr {

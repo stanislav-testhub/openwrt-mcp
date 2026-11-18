@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -149,10 +150,10 @@ func TestSystemStatusAndServiceListReturnDataAndKeepTheText(t *testing.T) {
 		t.Errorf("service_list: %s", b)
 	}
 
-	// doctor stays text only
+	// doctor stays text, and carries an empty object so the result still fits the listed schema
 	res = callRaw(t, cs, "system_status", map[string]any{"mode": "doctor"})
-	if res.StructuredContent != nil {
-		t.Errorf("doctor returned structured content: %v", res.StructuredContent)
+	if b, _ := json.Marshal(res.StructuredContent); string(b) != "{}" {
+		t.Errorf("doctor structured content = %s, want {}", b)
 	}
 }
 
@@ -174,7 +175,7 @@ func TestPkgQueryListsReturnDataAndKeepTheText(t *testing.T) {
 	}
 	b, _ := json.Marshal(res.StructuredContent)
 	wantAll(t, string(b), `"total":2`, `"name":"dnsmasq-full"`, `"version":"2.91-r1"`, `"name":"luci"`, `"upgradable_from":"luci-26.268.1-r2"`)
-	if res := callRaw(t, cs, "pkg_query", map[string]any{"action": "info", "package": "dnsmasq"}); res.StructuredContent != nil {
+	if res := callRaw(t, cs, "pkg_query", map[string]any{"action": "info", "package": "dnsmasq"}); func() bool { b, _ := json.Marshal(res.StructuredContent); return string(b) != "{}" }() {
 		t.Errorf("a free-text action returned data: %v", res.StructuredContent)
 	}
 }
@@ -261,5 +262,76 @@ func TestStructuredOutputGoesOnlyToClientsThatNegotiateIt(t *testing.T) {
 		if text := res["content"].([]any)[0].(map[string]any)["text"].(string); !strings.Contains(text, "ALLOWED IPS") {
 			t.Errorf("%s: the text table is missing:\n%s", c.version, text)
 		}
+	}
+}
+
+// A tool that lists an outputSchema owes every successful result data that fits it, free-text
+// modes included: the MCP spec says so, and a client built on the TypeScript SDK throws
+// "has an output schema but did not return structured content" otherwise (found by running the
+// views in the ext-apps reference host: system_status mode=audit never reached the page).
+func TestEverySuccessfulCallOfASchemaToolCarriesDataThatFitsItsSchema(t *testing.T) {
+	withFixtureRoot(t)
+	everythingFake(t)
+	cs := connectClient(t, testServer(t, grantAll()), "c")
+	schemas := map[string]*jsonschema.Resolved{}
+	for _, tl := range listedTools(t, cs) {
+		if tl.OutputSchema == nil {
+			continue
+		}
+		b, _ := json.Marshal(tl.OutputSchema)
+		var sc jsonschema.Schema
+		if err := json.Unmarshal(b, &sc); err != nil {
+			t.Fatalf("%s outputSchema: %v", tl.Name, err)
+		}
+		rs, err := sc.Resolve(nil)
+		if err != nil {
+			t.Fatalf("%s outputSchema: %v", tl.Name, err)
+		}
+		schemas[tl.Name] = rs
+	}
+	checked := 0
+	for _, c := range goldenCalls {
+		rs := schemas[c.tool]
+		if rs == nil {
+			continue
+		}
+		res := callRaw(t, cs, c.tool, c.args)
+		if res.IsError {
+			continue
+		}
+		checked++
+		if res.StructuredContent == nil {
+			t.Errorf("%s %v: succeeded with no structuredContent although the tool lists an outputSchema", c.tool, c.args)
+			continue
+		}
+		b, _ := json.Marshal(res.StructuredContent)
+		var v any
+		_ = json.Unmarshal(b, &v)
+		if err := rs.Validate(v); err != nil {
+			t.Errorf("%s %v: structuredContent does not fit the outputSchema: %v (%s)", c.tool, c.args, err, b)
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no golden call of a schema tool succeeded: the test checks nothing")
+	}
+}
+
+// Same rule for the schemas: an old-protocol client's tools/list must not strip them for the next.
+func TestOldProtocolClientDoesNotStripSchemasForTheNextClient(t *testing.T) {
+	s := testServer(t, grantAll())
+	count := func(version string) int {
+		n := 0
+		for _, tl := range rawSession(t, s, version)("tools/list", `{}`)["result"].(map[string]any)["tools"].([]any) {
+			if _, ok := tl.(map[string]any)["outputSchema"]; ok {
+				n++
+			}
+		}
+		return n
+	}
+	if count("2024-11-05") != 0 {
+		t.Fatal("an old client was sent schemas")
+	}
+	if count("2025-11-25") == 0 {
+		t.Error("a current client lost the outputSchemas after an old client listed the tools")
 	}
 }

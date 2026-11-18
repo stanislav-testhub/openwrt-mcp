@@ -18,7 +18,7 @@
   .f .t { font-weight: 600; }
   .f .d { opacity: .8; margin-left: 4px; }
   .high { border-color: #c0392b; } .medium { border-color: #d68910; } .low { border-color: #2e86c1; } .info { border-color: #888; }
-  .sev { display: inline-block; min-width: 4.5em; text-transform: uppercase; font-size: 11px; font-weight: 700; }
+  .sev { display: inline-block; min-width: 5.5em; margin-right: 6px; text-transform: uppercase; font-size: 11px; font-weight: 700; }
   .note, .muted { opacity: .7; }
   pre { white-space: pre-wrap; margin: 0; }
 </style>
@@ -42,9 +42,10 @@ function renderClients(r) {
   const data = r && r.structuredContent;
   if (!data || !Array.isArray(data.clients)) return plain(r);
   clear();
-  document.getElementById("title").textContent = "Clients (" + data.clients.length + (data.total > data.clients.length ? " of " + data.total : "") + ")";
+  const list = data.clients.filter(c => c && typeof c === "object"); // the server sends objects; do not die on anything else
+  document.getElementById("title").textContent = "Clients (" + list.length + (data.total > list.length ? " of " + data.total : "") + ")";
   const cols = [
-    ["Name", c => c.host || c.device || "", false], ["MAC", c => c.mac, false], ["IP", c => (c.ips || []).join(" "), false],
+    ["Name", c => c.host || c.device || "", false], ["MAC", c => c.mac, false], ["IP", c => Array.isArray(c.ips) ? c.ips.join(" ") : "", false],
     ["Wi-Fi", c => c.wireless ? (c.ssid || "yes") : "", false], ["dBm", c => c.signal_dbm, true],
     ["Up s", c => c.connected_s, true], ["Rx kbit", c => c.rx_kbit, true], ["Tx kbit", c => c.tx_kbit, true],
   ];
@@ -53,7 +54,7 @@ function renderClients(r) {
   let sortBy = -1, asc = true;
   const draw = () => {
     const needle = q.value.toLowerCase();
-    let rows = data.clients.filter(c => !needle || cols.some(k => String(k[1](c) ?? "").toLowerCase().includes(needle)));
+    let rows = list.filter(c => !needle || cols.some(k => String(k[1](c) ?? "").toLowerCase().includes(needle)));
     if (sortBy >= 0) {
       const f = cols[sortBy][1];
       rows = rows.slice().sort((a, b) => { const x = f(a) ?? "", y = f(b) ?? ""; return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * (asc ? 1 : -1); });
