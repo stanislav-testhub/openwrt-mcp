@@ -821,6 +821,14 @@ func TestEveryWritePathVerifiesAfterWrite(t *testing.T) {
 				map[string]any{"config": "dhcp", "section": "pi", "type": "host"},
 				map[string]any{"config": "dhcp", "section": "pi", "option": "ip", "value": "192.168.1.50"}}})
 		},
+		"managed_file": func(t *testing.T) (string, bool) {
+			withFixtureRoot(t)
+			old := writeManaged
+			writeManaged = func(string, []byte, os.FileMode) error { return nil } // accepts the write, keeps nothing
+			t.Cleanup(func() { writeManaged = old })
+			cs := connectClient(t, testServer(t, grantAll()), "c")
+			return callText(t, cs, "managed_file", map[string]any{"action": "write", "kind": "hosts", "content": "10.0.0.9 nas\n"})
+		},
 		"wg_new_client": func(t *testing.T) (string, bool) {
 			wgNewFakeWith(t, true, false)
 			cs := connectClient(t, testServer(t, grantAll()), "c")

@@ -82,6 +82,7 @@ var goldenCalls = []struct {
 		"reveal": true}},
 	{"wg_remove_client", map[string]any{"iface": "wg0", "name": "phone"}},
 	{"client_access", map[string]any{"action": "block", "mac": "aa:bb:cc:dd:ee:01"}},
+	{"managed_file", map[string]any{"action": "list"}},
 	{"mfa_unlock", map[string]any{"code": "123456"}},
 	{"request_access", map[string]any{"wants": []string{"uci_apply wireless.radio1.channel"}}},
 }
@@ -221,8 +222,8 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 29340 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose; 1.8: request_access, +636, wants is a plain list of strings); 1.8: uci_get view=vlan_matrix (7.6, +107) and net_diag bufferbloat (7.7, +40), +179 with the descriptions of both kept to one clause; 6.3: client_access, +1337; 6.4: sysupgrade action=plan, +18
-	catalogueProseBudget = 14240 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 30320 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose; 1.8: request_access, +636, wants is a plain list of strings); 1.8: uci_get view=vlan_matrix (7.6, +107) and net_diag bufferbloat (7.7, +40), +179 with the descriptions of both kept to one clause; 6.3: client_access, +1337; 6.4: sysupgrade action=plan, +18; 6.5: managed_file, +976
+	catalogueProseBudget = 14600 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
@@ -453,6 +454,7 @@ func TestToolTitlesAndHints(t *testing.T) {
 		"pkg_config_diff":    {"Review new package configs (.apk-new)", true, false, nil, &no},
 		"pkg_config_resolve": {"Resolve a package config (.apk-new)", false, false, &yes, &no},
 		"sysupgrade":         {"Firmware checks and backup (never flashes)", false, false, &no, &yes},
+		"managed_file":       {"Edit crontab, dnsmasq.d, hosts, sysupgrade.conf", false, false, &yes, &no},
 		"client_access":      {"Block or schedule a device's internet", false, true, &yes, &no},
 		"wg_list_clients":    {"List WireGuard peers", true, false, nil, &no},
 		"wg_new_client":      {"Add WireGuard peer", false, false, &yes, &no},
@@ -546,7 +548,7 @@ func TestPresetsNestAndKeepTheDangerousToolsOut(t *testing.T) {
 		}
 	}
 	// Anything not in a preset needs a stated reason.
-	reason := map[string]string{"exec": "a root shell", "ubus_list": "ungated introspection", "mfa_unlock": "ungated: it is how a factor is satisfied", "request_access": "ungated: it only opens requests the operator answers"}
+	reason := map[string]string{"managed_file": "a crontab write is a root shell: a named grant only", "exec": "a root shell", "ubus_list": "ungated introspection", "mfa_unlock": "ungated: it is how a factor is satisfied", "request_access": "ungated: it only opens requests the operator answers"}
 	for _, tool := range allToolNames {
 		if _, inOp := op[tool]; !inOp {
 			if reason[tool] == "" {

@@ -138,6 +138,14 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 			return s.clientAccess(ctx, client, in)
 		})
 
+	addTool(s, srv, client, "managed_file",
+		"Edit crontab, dnsmasq.d files, hosts or sysupgrade.conf by kind, never by path. A write replaces the "+
+			"whole file: validated, atomic, old version kept for restore, service reloaded. Scope kind.action.",
+		annDest, managedFileScope,
+		func(ctx context.Context, in managedFileIn) (string, string, error) {
+			return s.managedFile(ctx, client, in)
+		})
+
 	addTool(s, srv, client, "uci_confirm",
 		"Make a pending uci_apply (or pkg_config_resolve use_new) permanent. Only after verifying the router is "+
 			"reachable and behaving; doing nothing is the safe default -- the change reverts.",
@@ -249,7 +257,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 // allToolNames is every tool the server registers, for presets and validation.
 var allToolNames = []string{
 	"ubus_list", "ubus_call", "exec", "system_status", "logread", "network_clients", "firewall_show",
-	"net_diag", "uci_get", "uci_apply", "client_access", "uci_confirm", "uci_rollback", "service_list", "service_control",
+	"net_diag", "uci_get", "uci_apply", "client_access", "managed_file", "uci_confirm", "uci_rollback", "service_list", "service_control",
 	"pkg_query", "pkg_change", "pkg_config_diff", "pkg_config_resolve", "sysupgrade", "wg_list_clients",
 	"wg_new_client", "wg_remove_client", "mfa_unlock", "request_access",
 }
@@ -281,6 +289,7 @@ var toolTitles = map[string]string{
 	"uci_get":            "Read configuration",
 	"uci_apply":          "Change configuration (auto-rollback)",
 	"client_access":      "Block or schedule a device's internet",
+	"managed_file":       "Edit crontab, dnsmasq.d, hosts, sysupgrade.conf",
 	"uci_confirm":        "Confirm pending change",
 	"uci_rollback":       "Roll back pending change",
 	"service_list":       "List services",

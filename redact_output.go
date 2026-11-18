@@ -56,6 +56,7 @@ var rawTools = map[string]string{
 	"wg_list_clients":  "public keys, endpoints and handshake times only: the private halves are never read",
 	"wg_new_client":    "exempt on purpose: handing the operator the new client's private key is the tool's job",
 	"wg_remove_client": "a confirmation line only",
+	"managed_file":     "masked by its own text rule (maskFileText): the value of anything named like a secret in a file's lines and diffs",
 	"client_access":    "the dry-run diff of the rules it writes: a MAC, a zone and times, no credentials",
 	"ubus_list":        "object and method names with argument types: introspection, no values",
 	"mfa_unlock":       "returns an expiry time, never a secret",

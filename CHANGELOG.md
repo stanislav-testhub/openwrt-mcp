@@ -3,6 +3,14 @@
 ## Unreleased
 
 Added
+- **Managed files (ROADMAP 6.5).** New tool `managed_file` edits the files outside UCI by kind instead of through `exec`: `crontab`,
+  `dnsmasq` (`/etc/dnsmasq.d/<name>.conf`), `hosts` and `sysupgrade_conf`. There is no path argument, so nothing to traverse; a
+  dnsmasq name is `[A-Za-z0-9][A-Za-z0-9_.-]*.conf`, and a symlink at the target is refused. A write validates (cron fields,
+  `dnsmasq --test` plus a refusal of `dhcp-script`, `conf-script`, `conf-file`, `conf-dir`; hosts and `sysupgrade.conf` syntax),
+  replaces the file atomically with its mode and owner, re-reads it (`NOT_APPLIED` if it differs), keeps the old version in the
+  history, and reloads cron or dnsmasq. `history`, `diff` and `restore` by id; `dry_run` shows the diff. Secret-looking values are
+  masked in reads and diffs. Scope `<kind>.<action>`; in no preset (a crontab write is a root shell). Fixture-tested, including
+  traversal names (fuzzed grammar) and symlinks, and run on an OpenWrt 25.12.6 VM: all four kinds, validation refusals, real `dnsmasq --test`, cron and dnsmasq reload, history diff and restore, symlink refusal, a masked token, and dnsmasq answering from a written file. A dnsmasq write says when `dhcp.@dnsmasq[0].confdir` is not `/etc/dnsmasq.d` (OpenWrt does not read it by default). Not run on hardware. Not built: the empty-by-default generic path-glob scope.
 - **Upgrade plan across releases (ROADMAP 6.4).** `sysupgrade action=plan` reads only: the packages you added on top of the firmware
   image (world minus `/rom`'s own selection), `owut check` for the target release, and changed `/etc` files that `sysupgrade -l`
   does not keep. Flashing stays manual. Run on an OpenWrt 25.12.6 VM, not yet on hardware.

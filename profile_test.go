@@ -22,7 +22,7 @@ import (
 var (
 	wantToolsetTools = map[string][]string{
 		"diag":   {"logread", "network_clients", "firewall_show", "net_diag", "service_list", "ubus_list", "ubus_call"},
-		"config": {"uci_get", "uci_apply", "client_access", "uci_confirm", "uci_rollback", "service_control"},
+		"config": {"uci_get", "uci_apply", "client_access", "managed_file", "uci_confirm", "uci_rollback", "service_control"},
 		"pkg":    {"pkg_query", "pkg_change", "pkg_config_diff", "pkg_config_resolve", "sysupgrade"},
 		"wg":     {"wg_list_clients", "wg_new_client", "wg_remove_client"},
 	}

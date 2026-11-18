@@ -32,6 +32,7 @@ Use the same ssh options as the user's MCP client entry (`openwrt-mcp connect` p
 - `exec`: Run a command (no shell)
 - `firewall_show`: Firewall ruleset
 - `logread`: System log
+- `managed_file`: Edit crontab, dnsmasq.d, hosts, sysupgrade.conf
 - `mfa_unlock`: Unlock MFA-gated tools
 - `net_diag`: Network diagnostics
 - `network_clients`: Network clients
