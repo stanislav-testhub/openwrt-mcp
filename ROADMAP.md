@@ -1143,6 +1143,8 @@ part of the deny floor.
 
 ### 6.6 Interactive views
 
+**Status (unreleased): built** (`apps.go`, `apps/view.html`): the three views, double opt-in (`option apps '1'` and a client that declares the extension). Browser-harness tested, not run in a real MCP Apps host.
+
 - **Ships.** Opt-in MCP Apps views for the client table, the security audit and pending approvals. Text stays the
   default, and nothing opens unless the client asks for it.
 - **Precedent.** serena's users asked for its dashboard *not* to open by default.

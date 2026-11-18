@@ -121,7 +121,7 @@ var scopeHints = map[string]string{
 	"uci_get":            "config.section.option, e.g. network.lan  wireless.*  dhcp.@dnsmasq[0].*  or refs for the name search",
 	"uci_apply":          "config.section.option, e.g. network.lan  wireless.*  dhcp.@dnsmasq[0].*",
 	"client_access":      "client.<mac>, e.g. client.aa:bb:cc:dd:ee:ff  client.*",
-	"managed_file":       "kind.action, e.g. crontab.read  dnsmasq.write  hosts.*  *.read",
+	"managed_file":       "kind.action, e.g. crontab.read  dnsmasq.write  hosts.*  path.write  *.read",
 	"service_list":       "service.detail, e.g. dnsmasq.detail  *.detail",
 	"service_control":    "service.action, e.g. dnsmasq.restart  uhttpd.*  *.status",
 	"pkg_change":         "action or action.package, e.g. add.curl  del.curl  upgrade",

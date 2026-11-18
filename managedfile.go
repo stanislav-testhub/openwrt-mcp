@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"net/netip"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 )
 
 // managed_file (ROADMAP 6.5): the files outside UCI that operators otherwise reach through exec,
@@ -26,11 +29,19 @@ import (
 // for UCI configs), so action=restore can put one back. The deny floor is structural: no kind
 // maps to /etc/shadow, a key, or the policy, and a symlink at the target is refused rather than
 // followed.
+//
+// The generic kind `path` is the exception that needs more care, and is off until the owner lists
+// globs (`list managed_path '/etc/foo/*'` in config server). A path must be absolute and already
+// clean (no `..`, no `//`, no trailing slash), match one glob (`*` never crosses a `/`), avoid the
+// deny floor (the policy, rpcd, the SSH keys, shadow and passwd, private keys), have no symlink
+// among its directories, and be a plain file or not exist yet in a directory that does. It has no
+// validator beyond "UTF-8 text, no NUL" and no reload; use a typed kind when there is one.
 
 type managedFileIn struct {
 	Action  string `json:"action" jsonschema:"list | read | write | history | diff | restore"`
-	Kind    string `json:"kind,omitempty" jsonschema:"crontab | dnsmasq | hosts | sysupgrade_conf"`
+	Kind    string `json:"kind,omitempty" jsonschema:"crontab | dnsmasq | hosts | sysupgrade_conf | path"`
 	Name    string `json:"name,omitempty" jsonschema:"dnsmasq: x.conf"`
+	Path    string `json:"path,omitempty" jsonschema:"kind path: absolute file, owner-listed"`
 	Content string `json:"content,omitempty" jsonschema:"whole new file"`
 	ID      string `json:"id,omitempty" jsonschema:"version from history"`
 	DryRun  bool   `json:"dry_run,omitempty" jsonschema:"validate, show diff only"`
@@ -43,6 +54,7 @@ type fileKind struct {
 	mode     os.FileMode
 	validate func(ctx context.Context, name, content string) error
 	reload   []string // argv run after a write; empty for none
+	hist     string   // history key when the file name is not enough (kind path)
 }
 
 const maxManagedBytes = 256 << 10
@@ -63,9 +75,24 @@ var fileKinds = map[string]*fileKind{
 var fileKindNames = []string{"crontab", "dnsmasq", "hosts", "sysupgrade_conf"}
 
 func (in managedFileIn) kind() (*fileKind, error) {
+	if in.Kind == "path" {
+		if in.Name != "" {
+			return nil, invalid("kind path takes path, not name")
+		}
+		p, err := canonManagedPath(in.Path)
+		if err != nil {
+			return nil, err
+		}
+		sum := sha256.Sum256([]byte(p))
+		return &fileKind{name: "path", dir: path.Dir(p), file: path.Base(p), mode: 0o644, validate: validateText,
+			hist: "file_path_" + hex.EncodeToString(sum[:4])}, nil
+	}
+	if in.Path != "" {
+		return nil, invalid("path belongs to kind path")
+	}
 	k := fileKinds[in.Kind]
 	if k == nil {
-		return nil, invalid("kind must be one of %s", strings.Join(fileKindNames, ", "))
+		return nil, invalid("kind must be one of %s or path", strings.Join(fileKindNames, ", "))
 	}
 	switch {
 	case k.file != "" && in.Name != "":
@@ -87,6 +114,9 @@ func (k *fileKind) target(name string) string {
 
 // historyKey names the file's history. It fits the history id grammar (config:stamp).
 func (k *fileKind) historyKey(name string) string {
+	if k.hist != "" {
+		return k.hist
+	}
 	if k.file != "" {
 		return "file_" + k.name
 	}
@@ -96,7 +126,7 @@ func (k *fileKind) historyKey(name string) string {
 func (in managedFileIn) validate() error {
 	switch in.Action {
 	case "list":
-		if in.Kind != "" || in.Name != "" || in.Content != "" || in.ID != "" {
+		if in.Kind != "" || in.Name != "" || in.Path != "" || in.Content != "" || in.ID != "" {
 			return invalid("list takes no other argument")
 		}
 		return nil
@@ -143,6 +173,11 @@ func managedFileScope(in managedFileIn) []string {
 // liveFile returns the current content and mode. A missing file is empty content with the
 // kind's default mode; anything that is not a plain file (a symlink, a directory) is refused.
 func (k *fileKind) liveFile(name string) (body string, mode os.FileMode, exists bool, err error) {
+	if k.name == "path" {
+		if err := noSymlinkDirs(k.dir); err != nil {
+			return "", 0, false, err
+		}
+	}
 	p := sysPath(k.target(name))
 	fi, err := os.Lstat(p)
 	if os.IsNotExist(err) {
@@ -154,11 +189,112 @@ func (k *fileKind) liveFile(name string) (body string, mode os.FileMode, exists 
 	if !fi.Mode().IsRegular() {
 		return "", 0, false, invalid("%s is not a plain file (a symlink or directory): refusing to follow it", k.target(name))
 	}
+	if k.name == "path" && fi.Size() > maxManagedBytes {
+		return "", 0, false, invalid("%s is %d bytes; managed_file handles files up to %d", k.target(name), fi.Size(), maxManagedBytes)
+	}
 	b, err := os.ReadFile(p)
 	if err != nil {
 		return "", 0, false, err
 	}
 	return string(b), fi.Mode().Perm(), true, nil
+}
+
+// ---------------------------------------------------------------- kind path
+
+// canonManagedPath accepts only a path that is already in its one canonical form, so what is
+// matched against the owner's globs is exactly what is opened. It does not look at the disk.
+func canonManagedPath(p string) (string, error) {
+	switch {
+	case p == "":
+		return "", invalid("kind path needs path")
+	case !strings.HasPrefix(p, "/") || len(p) > 255 || p == "/":
+		return "", invalid("path must be absolute, at most 255 bytes, and name a file")
+	case strings.ContainsAny(p, "\x00\\") || strings.IndexFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0:
+		return "", invalid("path has a control character or a backslash")
+	case path.Clean(p) != p:
+		return "", invalid("path must be clean: no .., //, ./ or trailing slash")
+	}
+	for _, seg := range strings.Split(p, "/") {
+		if seg == ".." {
+			return "", invalid("path must not contain ..")
+		}
+	}
+	if why := managedPathFloor(p); why != "" {
+		return "", withCode(codePolicyDenied, fmt.Errorf("denied by the deny floor: %s. No grant or managed_path glob lifts this.", why))
+	}
+	return p, nil
+}
+
+// managedFloorNames are file names managed_file never touches under any glob, on top of the
+// directories in floorPaths.
+var managedFloorNames = []string{"shadow", "passwd", "authorized_keys", "id_rsa", "id_ed25519", "id_ecdsa", "id_dropbear", "dropbear_rsa_host_key", "dropbear_ed25519_host_key"}
+
+// managedFloorSuffixes mark private keys and certificates' keys by extension.
+var managedFloorSuffixes = []string{".key", ".pem", ".p12", ".pfx"}
+
+func managedPathFloor(p string) string {
+	lower := strings.ToLower(p)
+	clean := strings.TrimPrefix(lower, "/")
+	for _, f := range floorPaths {
+		if clean == f || strings.HasPrefix(clean, f+"/") || strings.HasPrefix(clean, f+".") || strings.Contains(clean, "/"+f) {
+			return fmt.Sprintf("%s is part of the policy, the approval path or the daemon", p)
+		}
+	}
+	base := path.Base(lower)
+	for _, n := range managedFloorNames {
+		if base == n || strings.HasPrefix(base, n+"-") || strings.HasPrefix(base, n+".") {
+			return fmt.Sprintf("%s holds credentials", p)
+		}
+	}
+	for _, sfx := range managedFloorSuffixes {
+		if strings.HasSuffix(base, sfx) {
+			return fmt.Sprintf("%s looks like a private key", p)
+		}
+	}
+	if strings.Contains(lower, "/.ssh/") {
+		return fmt.Sprintf("%s is under an .ssh directory", p)
+	}
+	return ""
+}
+
+// noSymlinkDirs walks the directory path component by component and refuses a symlink or a
+// non-directory anywhere on it. The directory must already exist: kind path never creates one.
+func noSymlinkDirs(dir string) error {
+	cur := "/"
+	for _, seg := range strings.Split(strings.TrimPrefix(dir, "/"), "/") {
+		if seg == "" {
+			continue
+		}
+		cur = path.Join(cur, seg)
+		fi, err := os.Lstat(sysPath(cur))
+		if os.IsNotExist(err) {
+			return notFound("directory %s does not exist: kind path never creates one", cur)
+		}
+		if err != nil {
+			return err
+		}
+		if fi.Mode()&os.ModeSymlink != 0 || !fi.IsDir() {
+			return invalid("%s is a symlink or not a directory: refusing to follow it", cur)
+		}
+	}
+	return nil
+}
+
+// managedPathAllowed is the owner's list: a path is in only when it matches one glob.
+func managedPathAllowed(globs []string, p string) bool {
+	for _, g := range globs {
+		if ok, err := path.Match(g, p); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+func validateText(_ context.Context, _, content string) error {
+	if !utf8.ValidString(content) || strings.ContainsRune(content, 0) {
+		return invalid("content must be UTF-8 text without NUL bytes")
+	}
+	return nil
 }
 
 // ---------------------------------------------------------------- validators
@@ -287,6 +423,10 @@ func (s *Server) managedFile(ctx context.Context, client string, in managedFileI
 		return s.managedFileList(), "listed managed files", nil
 	}
 	k, _ := in.kind()
+	if in.Kind == "path" && !managedPathAllowed(s.cfg().ManagedPaths, k.target("")) {
+		return "", "", withCode(codePolicyDenied, fmt.Errorf("%s is not in the owner's managed_path list (%s). The owner adds a glob with `list managed_path` in config server; the tool cannot.",
+			k.target(""), orNone(s.cfg().ManagedPaths)))
+	}
 	switch in.Action {
 	case "read":
 		body, _, exists, err := k.liveFile(in.Name)
@@ -345,6 +485,11 @@ func (s *Server) managedFileList() string {
 			}
 			fmt.Fprintf(&b, "  %-16s %s/<name>.conf  files: %s\n", k.name, k.dir, orNone(names))
 		}
+	}
+	if g := s.cfg().ManagedPaths; len(g) == 0 {
+		b.WriteString("  path             off: the owner has listed no managed_path glob\n")
+	} else {
+		fmt.Fprintf(&b, "  path             any file matching %s\n", strings.Join(g, " "))
 	}
 	return strings.TrimRight(b.String(), "\n")
 }

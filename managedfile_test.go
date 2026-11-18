@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -192,6 +193,199 @@ func FuzzManagedFileNameGrammar(f *testing.F) {
 			if filepath.Dir(p) != "/etc/dnsmasq.d" || strings.Contains(name, "/") || strings.HasPrefix(name, ".") {
 				t.Fatalf("name %q gives %q", name, p)
 			}
+		}
+	})
+}
+
+// ---------------------------------------------------------------- kind path
+
+const pathConf = "config server\n\tlist managed_path '/etc/blocklists/*'\n\tlist managed_path '/srv/app/*.conf'\n"
+
+func pathRoot(t *testing.T) string {
+	root := mfRoot(t)
+	for _, d := range []string{"etc/blocklists", "srv/app", "etc/other"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return root
+}
+
+func TestManagedPathIsOffUntilTheOwnerListsAGlob(t *testing.T) {
+	root := pathRoot(t)
+	s := testServer(t, "")
+	_, err := mfCall(t, s, managedFileIn{Action: "write", Kind: "path", Path: "/etc/blocklists/a", Content: "x\n"})
+	if err == nil || errCode(err) != codePolicyDenied || !strings.Contains(err.Error(), "managed_path") {
+		t.Fatalf("%v", err)
+	}
+	if _, serr := os.Stat(filepath.Join(root, "etc/blocklists/a")); serr == nil {
+		t.Error("a refused write created the file")
+	}
+	if out, _ := mfCall(t, s, managedFileIn{Action: "list"}); !strings.Contains(out, "off: the owner has listed no managed_path") {
+		t.Errorf("list: %s", out)
+	}
+}
+
+func TestManagedPathWritesWithinAGlobAndKeepsHistory(t *testing.T) {
+	root := pathRoot(t)
+	s := testServer(t, pathConf)
+	p := filepath.Join(root, "etc/blocklists/ads")
+	if err := os.WriteFile(p, []byte("a.example\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	in := managedFileIn{Action: "write", Kind: "path", Path: "/etc/blocklists/ads", Content: "a.example\nb.example"}
+	if out, err := mfCall(t, s, in); err != nil || !strings.Contains(out, "+b.example") {
+		t.Fatalf("%q / %v", out, err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "a.example\nb.example\n" {
+		t.Errorf("content %q", b)
+	}
+	if fi, _ := os.Stat(p); fi.Mode().Perm() != 0o640 {
+		t.Errorf("mode %v", fi.Mode().Perm())
+	}
+	h, err := mfCall(t, s, managedFileIn{Action: "history", Kind: "path", Path: "/etc/blocklists/ads"})
+	if err != nil || !strings.Contains(h, "file_path_") {
+		t.Fatalf("history: %q / %v", h, err)
+	}
+	// Another path has its own history: the id of this one is refused for it.
+	id := strings.Fields(strings.SplitN(h, "\n  ", 2)[1])[0]
+	if _, err := mfCall(t, s, managedFileIn{Action: "diff", Kind: "path", Path: "/srv/app/x.conf", ID: id}); err == nil {
+		t.Error("a version of one path was accepted for another")
+	}
+	if _, err := mfCall(t, s, managedFileIn{Action: "restore", Kind: "path", Path: "/etc/blocklists/ads", ID: id}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "a.example\n" {
+		t.Errorf("restore: %q", b)
+	}
+	if out, _ := mfCall(t, s, managedFileIn{Action: "read", Kind: "path", Path: "/etc/blocklists/ads"}); out != "a.example\n" {
+		t.Errorf("read: %q", out)
+	}
+}
+
+func TestManagedPathRefusesEverythingOutsideTheGlobsAndTheFloor(t *testing.T) {
+	root := pathRoot(t)
+	s := testServer(t, pathConf+"\tlist managed_path '/etc/*'\n")
+	for _, bad := range []string{
+		"/etc/shadow", "/etc/passwd", "/etc/config/openwrt-mcp", "/etc/openwrt-mcp/audit.jsonl", "/etc/config/rpcd",
+		"/etc/dropbear/authorized_keys", "/etc/x.key", "/etc/ssl.PEM", "/etc/Shadow-", "/etc/shadow.bak",
+		"/etc/blocklists/../shadow", "/etc/blocklists/./a", "/etc//blocklists/a", "/etc/blocklists/a/", "etc/blocklists/a",
+		"relative", "/", "", "/etc/blocklists/a\nb", "/etc/blocklists/a\x00", `/etc/blocklists\a`, "/usr/bin/openwrt-mcp",
+		"/srv/app/x.conf/y", "/home/u/.ssh/config",
+	} {
+		_, err := mfCall(t, s, managedFileIn{Action: "write", Kind: "path", Path: bad, Content: "x\n"})
+		if err == nil {
+			t.Errorf("%q: accepted", bad)
+		}
+	}
+	// A glob does not cross a slash: /srv/app/*.conf is not /srv/app/sub/x.conf.
+	s2 := testServer(t, pathConf)
+	if _, err := mfCall(t, s2, managedFileIn{Action: "write", Kind: "path", Path: "/srv/app/sub/x.conf", Content: "x\n"}); err == nil {
+		t.Error("glob crossed a slash")
+	}
+	if _, err := mfCall(t, s2, managedFileIn{Action: "write", Kind: "path", Path: "/etc/other/x", Content: "x\n"}); err == nil {
+		t.Error("a path outside every glob was written")
+	}
+	filepath.WalkDir(root, func(p string, d os.DirEntry, _ error) error {
+		if d != nil && !d.IsDir() {
+			t.Errorf("a refused write left a file: %s", p)
+		}
+		return nil
+	})
+	// Kinds do not take the other's arguments.
+	if _, err := mfCall(t, s2, managedFileIn{Action: "read", Kind: "hosts", Path: "/etc/hosts"}); err == nil {
+		t.Error("path accepted for a typed kind")
+	}
+	if _, err := mfCall(t, s2, managedFileIn{Action: "read", Kind: "path", Name: "a", Path: "/etc/blocklists/a"}); err == nil {
+		t.Error("name accepted for kind path")
+	}
+}
+
+func TestManagedPathRefusesSymlinksOnTheWayAndAtTheTarget(t *testing.T) {
+	root := pathRoot(t)
+	s := testServer(t, pathConf)
+	if err := os.WriteFile(filepath.Join(root, "etc/other/secret"), []byte("keep\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink as the file, and a symlink as a directory on the path.
+	if err := os.Symlink(filepath.Join(root, "etc/other/secret"), filepath.Join(root, "etc/blocklists/link")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "etc/other"), filepath.Join(root, "srv/app/dir")); err != nil {
+		t.Fatal(err)
+	}
+	for _, in := range []managedFileIn{
+		{Action: "write", Kind: "path", Path: "/etc/blocklists/link", Content: "pwned\n"},
+		{Action: "read", Kind: "path", Path: "/etc/blocklists/link"},
+	} {
+		if _, err := mfCall(t, s, in); err == nil || !strings.Contains(err.Error(), "refusing to follow") {
+			t.Errorf("%+v: %v", in, err)
+		}
+	}
+	s3 := testServer(t, "config server\n\tlist managed_path '/srv/app/dir/*'\n")
+	if _, err := mfCall(t, s3, managedFileIn{Action: "write", Kind: "path", Path: "/srv/app/dir/secret", Content: "pwned\n"}); err == nil || !strings.Contains(err.Error(), "refusing to follow") {
+		t.Errorf("symlinked directory: %v", err)
+	}
+	if b, _ := os.ReadFile(filepath.Join(root, "etc/other/secret")); string(b) != "keep\n" {
+		t.Errorf("the link target was written: %q", b)
+	}
+	// The directory must exist: kind path never creates one.
+	s4 := testServer(t, "config server\n\tlist managed_path '/nope/*'\n")
+	if _, err := mfCall(t, s4, managedFileIn{Action: "write", Kind: "path", Path: "/nope/a", Content: "x\n"}); errCode(err) != codeNotFound {
+		t.Errorf("missing directory: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "nope")); err == nil {
+		t.Error("a directory was created")
+	}
+}
+
+func TestManagedPathRefusesBinaryAndHugeContent(t *testing.T) {
+	pathRoot(t)
+	s := testServer(t, pathConf)
+	for _, c := range []string{"a\x00b\n", "\xff\xfe\n"} {
+		if _, err := mfCall(t, s, managedFileIn{Action: "write", Kind: "path", Path: "/etc/blocklists/a", Content: c}); err == nil {
+			t.Errorf("accepted %q", c)
+		}
+	}
+}
+
+func TestManagedPathBadConfigGlobsAreIgnored(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "openwrt-mcp")
+	if err := os.WriteFile(p, []byte("config server\n\tlist managed_path 'etc/rel/*'\n\tlist managed_path '/etc/shadow'\n\tlist managed_path '/etc/../x/*'\n\tlist managed_path '/ok/*'\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := LoadConfig(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.ManagedPaths) != 1 || cfg.ManagedPaths[0] != "/ok/*" {
+		t.Errorf("ManagedPaths = %v", cfg.ManagedPaths)
+	}
+}
+
+func FuzzCanonManagedPath(f *testing.F) {
+	for _, s := range []string{"/etc/a", "/etc/../shadow", "//etc/a", "/a/./b", "/a/b/", "/etc/shadow", "/a\x00", "/a/..", "/../a", "/etc/passwd", "/a%2e%2e/b"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, p string) {
+		got, err := canonManagedPath(p)
+		if err != nil {
+			return
+		}
+		// What is accepted is its own canonical form, absolute, free of .. and of the floor.
+		if got != p || path.Clean(p) != p || !strings.HasPrefix(p, "/") || p == "/" {
+			t.Fatalf("accepted a non-canonical path %q", p)
+		}
+		for _, seg := range strings.Split(p, "/") {
+			if seg == ".." {
+				t.Fatalf("accepted %q", p)
+			}
+		}
+		if managedPathFloor(p) != "" || strings.ContainsAny(p, "\x00\\\n") {
+			t.Fatalf("accepted a floor path %q", p)
+		}
+		if path.Base(strings.ToLower(p)) == "shadow" || path.Base(strings.ToLower(p)) == "passwd" {
+			t.Fatalf("accepted %q", p)
 		}
 	})
 }

@@ -141,6 +141,8 @@ type Config struct {
 	Rules       []*argRule // argument rules (rules.go); they only refuse
 	// DenyShellExec refuses exec of every shell-equivalent program whatever the grant (shellequiv.go).
 	DenyShellExec bool
+	// ManagedPaths are the globs kind path of managed_file may touch; empty means the kind is off.
+	ManagedPaths []string
 
 	// Failed-attempt limiter for mfa_unlock (see MFAStore.Unlock).
 	MFAMaxFailures int
@@ -260,6 +262,13 @@ func LoadConfig(configPath string) (*Config, error) {
 				c.RequestWait = min(time.Duration(v)*time.Second, maxRequestWait)
 			}
 			c.DenyShellExec = s.Options["deny_shell_exec"] == "1"
+			for _, g := range s.Lists["managed_path"] {
+				if _, err := canonManagedPath(strings.ReplaceAll(strings.ReplaceAll(g, "*", "x"), "?", "x")); err != nil || !strings.HasPrefix(g, "/") {
+					log.Printf("openwrt-mcp: ignoring managed_path %q: want an absolute, clean glob outside the deny floor", g)
+					continue
+				}
+				c.ManagedPaths = append(c.ManagedPaths, g)
+			}
 			c.Pairing = s.Options["pairing"] == "1"
 			c.PushHook = s.Options["push_hook"] == "1"
 			c.ChatApprove = s.Options["chat_approve"] == "1"
