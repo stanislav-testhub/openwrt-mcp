@@ -131,8 +131,8 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 
 	addTool(s, srv, client, "client_access",
 		"Cut one device off the internet by MAC: block, schedule (blocked in a window such as 22:00 to 06:00) "+
-			"or allow. Writes fw4 reject rules via the rollback-armed uci_apply flow (dry_run, then uci_confirm). "+
-			"LAN, DHCP and DNS keep working. Scope client.<mac>.",
+			"or allow, as fw4 reject rules via the rollback-armed uci_apply flow (dry_run, then uci_confirm); "+
+			"LAN, DHCP and DNS keep working. kick drops it from Wi-Fi now. Scope client.<mac>; kick.<mac>.",
 		annDestIdem, clientAccessScope,
 		func(ctx context.Context, in clientAccessIn) (string, string, error) {
 			return s.clientAccess(ctx, client, in)

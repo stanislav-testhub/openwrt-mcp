@@ -54,8 +54,10 @@ var presets = map[string][]presetPolicy{
 		{tools: []string{"service_control"}, scopes: append([]string{"*.start", "*.stop", "*.restart", "*.reload", "*.enable", "*.disable"}, routineVerbScopes()...)},
 		{tools: []string{"system_status", "logread", "network_clients", "firewall_show", "service_list",
 			"pkg_query", "pkg_config_diff", "wg_list_clients", "uci_get",
-			"uci_apply", "client_access", "uci_confirm", "uci_rollback", "pkg_change",
+			"uci_apply", "uci_confirm", "uci_rollback", "pkg_change",
 			"pkg_config_resolve", "wg_new_client", "wg_remove_client"}, scopes: []string{"*"}},
+		// client.* is block, schedule and allow; kick.<mac> (disconnecting a Wi-Fi client) is a named grant.
+		{tools: []string{"client_access"}, scopes: []string{"client.*"}},
 		{tools: []string{"ubus_call"}, scopes: readonlyUbus},
 		{tools: []string{"net_diag"}, scopes: netDiagRoutine},
 		{tools: []string{"sysupgrade"}, scopes: []string{"list", "test", "check", "plan", "backup"}},

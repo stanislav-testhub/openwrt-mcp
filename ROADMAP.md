@@ -1090,7 +1090,7 @@ part of the deny floor.
 
 ### 6.3 Per-device access control
 
-**Status (unreleased): built** (`clientaccess.go`) as its own tool `client_access` (block, schedule, allow), not as `network_clients action=`, so the read tool stays read-only. Golden and mutation tests pass; run on a 25.12.6 VM (fw4 rejects `weekdays` as a list, fixed; nft shows the split window), not on hardware. Rules match TCP and UDP only (fw4 default), so ICMP still passes. Not built: `hostapd del_client`.
+**Status (unreleased): built** (`clientaccess.go`) as its own tool `client_access` (block, schedule, allow), not as `network_clients action=`, so the read tool stays read-only. Golden and mutation tests pass; run on a 25.12.6 VM (fw4 rejects `weekdays` as a list, fixed; nft shows the split window), not on hardware. Rules match TCP and UDP only (fw4 default), so ICMP still passes. `action=kick` (`hostapd del_client`) built as scope `kick.<mac>`; fixture-tested, not run on a router.
 
 - **Ships.** `network_clients action=block|allow|schedule` for one device:
   - block or pause its internet access;

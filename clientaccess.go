@@ -2,9 +2,60 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 )
+
+const maxKickBanSecs = 3600
+
+// kickClient disconnects one station from every hostapd interface it is associated to
+// (`ubus call hostapd.<if> del_client`, with a deauthentication frame). It writes no config,
+// so there is nothing to roll back; the station may reconnect at once unless ban_seconds keeps it
+// off. The device is found by asking each interface for its clients, so a MAC that is not
+// connected is NOT_FOUND and nothing is sent.
+func kickClient(ctx context.Context, in clientAccessIn) (string, string, error) {
+	mac := normMAC(in.MAC)
+	out, err := run(ctx, defaultCmdTimeout, "ubus", "list", "hostapd.*")
+	if err != nil {
+		return "", "", fmt.Errorf("no hostapd interface on ubus (Wi-Fi is down, or wpad is not running): %w", err)
+	}
+	var where []string
+	for _, obj := range strings.Fields(out) {
+		var gc struct {
+			Clients map[string]json.RawMessage `json:"clients"`
+		}
+		if runJSON(ctx, &gc, "ubus", "call", obj, "get_clients") != nil {
+			continue
+		}
+		for m := range gc.Clients {
+			if strings.EqualFold(m, mac) {
+				where = append(where, obj)
+			}
+		}
+	}
+	sort.Strings(where)
+	if len(where) == 0 {
+		return "", "", notFound("%s is not connected to any Wi-Fi interface here", mac)
+	}
+	if in.DryRun {
+		return fmt.Sprintf("dry run: would disconnect %s from %s (ban %d s)", mac, strings.Join(where, ", "), in.BanSecs), "", nil
+	}
+	args, _ := json.Marshal(map[string]any{"addr": mac, "reason": 3, "deauth": true, "ban_time": in.BanSecs * 1000})
+	for _, obj := range where {
+		if o, err := run(ctx, defaultCmdTimeout, "ubus", "call", obj, "del_client", string(args)); err != nil {
+			return "", "", fmt.Errorf("%s del_client: %w: %s", obj, err, strings.TrimSpace(o))
+		}
+	}
+	msg := fmt.Sprintf("disconnected %s from %s", mac, strings.Join(where, ", "))
+	if in.BanSecs > 0 {
+		msg += fmt.Sprintf("; it may not rejoin for %d s", in.BanSecs)
+	} else {
+		msg += "; it may reconnect at once (ban_seconds keeps it off)"
+	}
+	return msg, "", nil
+}
 
 // client_access (roadmap 6.3) turns "stop this device reaching the internet" into the fw4 rules
 // that do it, and runs them through the normal rollback-armed uci_apply.
@@ -29,12 +80,13 @@ import (
 // DNS and can still reach the router. That is "internet off", not "unplugged".
 
 type clientAccessIn struct {
-	Action  string   `json:"action" jsonschema:"block | schedule (blocked from..until) | allow (remove this tool's rules)"`
+	Action  string   `json:"action" jsonschema:"block | schedule (blocked from..until) | allow (remove its rules) | kick (off Wi-Fi now)"`
 	MAC     string   `json:"mac" jsonschema:"aa:bb:cc:dd:ee:ff, from network_clients"`
 	Zone    string   `json:"zone,omitempty" jsonschema:"the device's firewall zone (default lan)"`
 	From    string   `json:"from,omitempty" jsonschema:"schedule: HH:MM, router local time"`
 	Until   string   `json:"until,omitempty" jsonschema:"schedule: HH:MM; earlier than from runs past midnight"`
 	Days    []string `json:"days,omitempty" jsonschema:"schedule: mon..sun the window starts on (default all)"`
+	BanSecs int      `json:"ban_seconds,omitempty" jsonschema:"kick: keep it off this long (max 3600)"`
 	DryRun  bool     `json:"dry_run,omitempty" jsonschema:"show the change, then revert"`
 	Timeout int      `json:"timeout,omitempty" jsonschema:"rollback seconds (default 90, max 600)"`
 }
@@ -64,7 +116,17 @@ func (in clientAccessIn) validate() error {
 	if in.Zone != "" && !reUCIType.MatchString(in.Zone) {
 		return invalid("bad zone name %q", in.Zone)
 	}
+	if in.BanSecs != 0 && in.Action != "kick" {
+		return invalid("ban_seconds belongs to action=kick")
+	}
 	switch in.Action {
+	case "kick":
+		if in.From != "" || in.Until != "" || len(in.Days) > 0 || in.Zone != "" || in.Timeout != 0 {
+			return invalid("kick takes only mac, ban_seconds and dry_run")
+		}
+		if in.BanSecs < 0 || in.BanSecs > maxKickBanSecs {
+			return invalid("ban_seconds must be 0 to %d", maxKickBanSecs)
+		}
 	case "block", "allow":
 		if in.From != "" || in.Until != "" || len(in.Days) > 0 {
 			return invalid("from, until and days belong to action=schedule")
@@ -88,7 +150,7 @@ func (in clientAccessIn) validate() error {
 			}
 		}
 	default:
-		return invalid("action must be block, schedule or allow")
+		return invalid("action must be block, schedule, allow or kick")
 	}
 	return nil
 }
@@ -102,7 +164,14 @@ func dayIndex(d string) int {
 	return -1
 }
 
-func clientAccessScope(in clientAccessIn) []string { return []string{"client." + normMAC(in.MAC)} }
+// clientAccessScope: the firewall actions are client.<mac>; kick is a separate write scope,
+// kick.<mac>, so a grant to block a device does not let a client throw it off the Wi-Fi.
+func clientAccessScope(in clientAccessIn) []string {
+	if in.Action == "kick" {
+		return []string{"kick." + normMAC(in.MAC)}
+	}
+	return []string{"client." + normMAC(in.MAC)}
+}
 
 // accessPrefix is the section-name prefix of one device's rules.
 func accessPrefix(mac string) string {
@@ -182,6 +251,9 @@ func accessChanges(in clientAccessIn, existing []string) ([]UCIChange, error) {
 func (s *Server) clientAccess(ctx context.Context, client string, in clientAccessIn) (string, string, error) {
 	if err := in.validate(); err != nil {
 		return "", "", err
+	}
+	if in.Action == "kick" {
+		return kickClient(ctx, in)
 	}
 	t, err := uciShow(ctx, "firewall", false)
 	if err != nil {

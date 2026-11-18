@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -153,5 +154,81 @@ func TestClientAccessThroughTheServer(t *testing.T) {
 	}
 	if strings.Contains(f.allCalls(), "ee:02") {
 		t.Errorf("a denied call reached the router:\n%s", f.allCalls())
+	}
+}
+
+func kickFixture(t *testing.T) *fakeRouter {
+	f := newFakeRouter(t)
+	f.on("ubus list hostapd.*", "hostapd.wlan0\nhostapd.wlan1\nhostapd.wlan1-1")
+	f.on("ubus call hostapd.wlan0 get_clients", `{"freq":2437,"clients":{"aa:bb:cc:dd:ee:01":{"auth":true}}}`)
+	f.on("ubus call hostapd.wlan1 get_clients", `{"freq":5180,"clients":{"aa:bb:cc:dd:ee:09":{"auth":true}}}`)
+	f.on("ubus call hostapd.wlan1-1 get_clients", `{"freq":5180,"clients":{}}`)
+	f.on("ubus call hostapd.wlan0 del_client", `{}`)
+	return f
+}
+
+func TestKickDisconnectsOnlyWhereTheDeviceIsAndOnlyThatMAC(t *testing.T) {
+	f := kickFixture(t)
+	out, _, err := kickClient(context.Background(), clientAccessIn{Action: "kick", MAC: dev, BanSecs: 60})
+	if err != nil || !strings.Contains(out, "from hostapd.wlan0;") || !strings.Contains(out, "60 s") {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var dels []string
+	for _, a := range f.argvList() {
+		if len(a) > 3 && a[3] == "del_client" {
+			dels = append(dels, strings.Join(a, " "))
+		}
+	}
+	want := `ubus call hostapd.wlan0 del_client {"addr":"aa:bb:cc:dd:ee:01","ban_time":60000,"deauth":true,"reason":3}`
+	if len(dels) != 1 || dels[0] != want {
+		t.Errorf("del_client calls: %q\nwant %s", dels, want)
+	}
+}
+
+func TestKickDryRunAndAbsentDeviceSendNothing(t *testing.T) {
+	f := kickFixture(t)
+	out, _, err := kickClient(context.Background(), clientAccessIn{Action: "kick", MAC: dev, DryRun: true})
+	if err != nil || !strings.Contains(out, "would disconnect") || f.ran("ubus call hostapd.wlan0 del_client") {
+		t.Errorf("dry run: %v\n%s\n%s", err, out, f.allCalls())
+	}
+	_, _, err = kickClient(context.Background(), clientAccessIn{Action: "kick", MAC: "aa:bb:cc:dd:ee:77"})
+	if errCode(err) != codeNotFound || f.ran("ubus call hostapd.wlan0 del_client") {
+		t.Errorf("absent device: %v\n%s", err, f.allCalls())
+	}
+}
+
+func TestKickValidationAndScope(t *testing.T) {
+	for _, bad := range []clientAccessIn{
+		{Action: "kick", MAC: dev, From: "22:00"},
+		{Action: "kick", MAC: dev, Zone: "lan"},
+		{Action: "kick", MAC: dev, Timeout: 30},
+		{Action: "kick", MAC: dev, BanSecs: 3601},
+		{Action: "kick", MAC: dev, BanSecs: -1},
+		{Action: "block", MAC: dev, BanSecs: 5},
+	} {
+		if bad.validate() == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	if got := clientAccessScope(clientAccessIn{Action: "kick", MAC: dev}); got[0] != "kick.aa:bb:cc:dd:ee:01" {
+		t.Errorf("kick scope %v", got)
+	}
+	if got := clientAccessScope(clientAccessIn{Action: "block", MAC: dev}); got[0] != "client.aa:bb:cc:dd:ee:01" {
+		t.Errorf("block scope %v", got)
+	}
+}
+
+func TestAGrantToBlockDoesNotAllowKick(t *testing.T) {
+	f := kickFixture(t)
+	s := testServer(t, policyFor("c", []string{"client_access"}, "client.*"))
+	cs := connectClient(t, s, "c")
+	out, isErr := callText(t, cs, "client_access", map[string]any{"action": "kick", "mac": dev})
+	if !isErr || !strings.Contains(out, "kick.aa:bb:cc:dd:ee:01") || f.ran("ubus call hostapd.wlan0 del_client") {
+		t.Errorf("isErr=%v\n%s", isErr, out)
+	}
+	s2 := testServer(t, policyFor("c", []string{"client_access"}, "kick.*"))
+	out, isErr = callText(t, connectClient(t, s2, "c"), "client_access", map[string]any{"action": "kick", "mac": dev})
+	if isErr || !strings.Contains(out, "disconnected") {
+		t.Errorf("isErr=%v\n%s", isErr, out)
 	}
 }

@@ -808,7 +808,7 @@ func TestEveryWritePathVerifiesAfterWrite(t *testing.T) {
 		"sysupgrade":         "the backup mode writes a file the tool itself reads back for size and mode; it never flashes",
 		"exec":               "a generic hatch: the command's own output is the result",
 		"ubus_call":          "a generic hatch: the call's own reply is the result",
-		"client_access":      "compiles to a uci_apply call and runs it: the write and its read-back are uci_apply's, covered above",
+		"client_access":      "block, schedule and allow compile to a uci_apply call, whose read-back is covered above; kick writes no state (the station may rejoin at once), so ubus's own error is the result",
 		"mfa_unlock":         "changes daemon memory only",
 		"request_access":     "opens requests in daemon memory only",
 	}

@@ -3,6 +3,7 @@
 ## Unreleased
 
 Added
+- **Kick a Wi-Fi client (ROADMAP 6.3).** `client_access action=kick` runs `hostapd del_client` (deauth) on every interface the MAC is associated to, optional `ban_seconds` (max 3600). It is the separate scope `kick.<mac>` the roadmap asked for: a grant for `client.*` does not allow it, and `@operator` now names `client.*` instead of `*` for this tool, so it stays out of the preset. A MAC that is not connected is `NOT_FOUND` and nothing is sent; `dry_run` shows where it is. No rollback (no config changes). Fixture-tested, not run on a router.
 - **Rules for `ubus_call` and `exec`, and a shell gate (ROADMAP 6.2, last two items).** `config rule` takes `option tool
   'ubus_call'` (path is `object.method`; `option arg` names the argument a predicate reads) or `'exec'` (path is a glob over
   `argv[0]`, as written, cleaned or by basename; the predicate is tested on each later argument, and `busybox APPLET` is also
