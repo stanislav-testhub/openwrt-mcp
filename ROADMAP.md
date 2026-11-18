@@ -1100,6 +1100,8 @@ part of the deny floor.
 
 ### 6.4 Upgrade planner
 
+**Status (unreleased): within a release built** (`upgradeplan.go`): a simulated `pkg_change upgrade` appends versions, reboot need, init scripts, `/etc` files and local changes. Fixture-tested, not run on a real upgrade. Not built: `sysupgrade action=plan`.
+
 - **Ships.**
   - **Within a release.** `pkg_change upgrade` in simulate mode reports:
     - version changes;

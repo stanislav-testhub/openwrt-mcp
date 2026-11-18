@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+Added
+
+- **Upgrade planner, within a release (ROADMAP 6.4).** A simulated `pkg_change action=upgrade` now ends with a plan read from the simulation and
+  from the package file lists: the version changes, whether a reboot is needed (kernel or `kmod-*` packages change), the init scripts the packages
+  ship, how many `/etc` files they own, and which of their files were changed or replaced locally (from `apk audit`: a changed config is kept and
+  gets the new default beside it, a patched binary would be overwritten). `opkg` has no audit, so there it says local changes were not checked.
+  Fixture-tested for both output formats; not yet run against a real upgrade (the test VMs have no TLS egress to a feed). The cross-release
+  half (`sysupgrade action=plan`) is not built.
+
 ## 1.8.0 -- VLAN view, bufferbloat, apk package
 
 Fixed

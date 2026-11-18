@@ -275,6 +275,11 @@ func pkgChange(ctx context.Context, in pkgChangeIn) (string, string, error) {
 			note = "\nNote: upgrading everything in place is discouraged on OpenWrt (kernel modules and " +
 				"base-files can end up out of step with the kernel); a sysupgrade/owut image is the supported path."
 		}
+		if in.Action == "upgrade" {
+			if plan := upgradePlan(ctx, m, out); plan != "" {
+				note += "\n\n" + strings.TrimSpace(plan)
+			}
+		}
 		return fmt.Sprintf("SIMULATION -- nothing changed. %s would:\n%s%s\n\nCall again with commit=true to do it.",
 			m.name(), strings.TrimSpace(out), note), summary, nil
 	}
