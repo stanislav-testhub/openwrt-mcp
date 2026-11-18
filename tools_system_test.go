@@ -1226,3 +1226,30 @@ func TestSysupgradePlanListsAddedPackagesAndUnkeptChanges(t *testing.T) {
 		}
 	}
 }
+
+func TestSysupgradePlanCutsNoiseAndKeepsOwutsError(t *testing.T) {
+	root := withFixtureRoot(t)
+	f := newFakeRouter(t)
+	writeFixture(t, root, "usr/bin/apk", "#!/bin/sh\n")
+	writeFixture(t, root, "usr/bin/owut", "#!/bin/sh\n")
+	writeFixture(t, root, "etc/apk/world", "base-files\nkernel\nkmod-igb\nkmod-e1000\nmytool\n")
+	f.fail("owut check", "ERROR: Failed to connect")
+	f.on("sysupgrade -l", "/etc/openclash/config/a.yaml\n/etc/config/network")
+	f.on("apk audit", "A etc/rc.d/S99x\nA etc/rc.d/K01y\nA etc/apk/world\nA etc/board.json\nA etc/openclash/config/\nA etc/lost/\nM etc/lost.conf\n")
+
+	out, _, err := sysupgradeTool(context.Background(), sysupgradeIn{Action: "plan"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"ERROR: Failed to connect", "kernel and 3 kernel modules", "base-files mytool\n", "/etc/lost.conf\n  /etc/lost/",
+		"enable links under /etc/rc.d: 2"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("plan lacks %q:\n%s", want, out)
+		}
+	}
+	for _, not := range []string{"kmod-igb", "/etc/apk", "board.json", "/etc/openclash", "S99x"} {
+		if strings.Contains(out, not) {
+			t.Errorf("plan wrongly mentions %q:\n%s", not, out)
+		}
+	}
+}

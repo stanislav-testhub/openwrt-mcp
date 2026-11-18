@@ -60,7 +60,7 @@ func TestClientAccessGolden(t *testing.T) {
 				"firewall.mcpdev_aabbccddee01_0.target=REJECT\n" +
 				"firewall.mcpdev_aabbccddee01_0.start_time=08:00:00\n" +
 				"firewall.mcpdev_aabbccddee01_0.stop_time=15:30:00\n" +
-				"firewall.mcpdev_aabbccddee01_0.weekdays=Mon,Fri\n"},
+				"firewall.mcpdev_aabbccddee01_0.weekdays=Mon Fri\n"},
 		{"schedule past midnight on Sunday night", clientAccessIn{Action: "schedule", MAC: dev, From: "22:00", Until: "06:00", Days: []string{"sun"}}, nil,
 			"firewall.mcpdev_aabbccddee01_0=rule\n" +
 				"firewall.mcpdev_aabbccddee01_0.name=mcp-schedule aa:bb:cc:dd:ee:01\n" +

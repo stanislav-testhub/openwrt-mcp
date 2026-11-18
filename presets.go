@@ -44,7 +44,7 @@ var presets = map[string][]presetPolicy{
 			"pkg_query", "pkg_config_diff", "wg_list_clients", "uci_get"}, scopes: []string{"*"}},
 		{tools: []string{"ubus_call"}, scopes: readonlyUbus},
 		{tools: []string{"net_diag"}, scopes: netDiagRoutine},
-		{tools: []string{"sysupgrade"}, scopes: []string{"list", "test", "check"}},
+		{tools: []string{"sysupgrade"}, scopes: []string{"list", "test", "check", "plan"}},
 	},
 	// readonly plus every change that is simulated, rollback-armed, or narrowly reversible.
 	// Not included: exec, and ubus_call beyond the read list -- both bypass the safety rails.
@@ -58,7 +58,7 @@ var presets = map[string][]presetPolicy{
 			"pkg_config_resolve", "wg_new_client", "wg_remove_client"}, scopes: []string{"*"}},
 		{tools: []string{"ubus_call"}, scopes: readonlyUbus},
 		{tools: []string{"net_diag"}, scopes: netDiagRoutine},
-		{tools: []string{"sysupgrade"}, scopes: []string{"list", "test", "check", "backup"}},
+		{tools: []string{"sysupgrade"}, scopes: []string{"list", "test", "check", "plan", "backup"}},
 	},
 }
 

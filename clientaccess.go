@@ -19,7 +19,7 @@ import (
 //		option target 'REJECT'
 //		option start_time '22:00:00'   (schedule only)
 //		option stop_time '23:59:59'
-//		list weekdays 'Mon'
+//		option weekdays 'Mon Fri'
 //
 // Every section it owns is named mcpdev_<12 hex digits>_<n>: the MAC is fixed width, so the prefix
 // of one device can never match another's, and a re-run or an allow finds exactly its own rules
@@ -173,7 +173,7 @@ func accessChanges(in clientAccessIn, existing []string) ([]UCIChange, error) {
 				UCIChange{Config: "firewall", Section: sec, Option: "stop_time", Value: w.to})
 		}
 		if len(w.days) > 0 {
-			out = append(out, UCIChange{Config: "firewall", Section: sec, Option: "weekdays", Values: w.days})
+			out = append(out, UCIChange{Config: "firewall", Section: sec, Option: "weekdays", Value: strings.Join(w.days, " ")})
 		}
 	}
 	return out, nil

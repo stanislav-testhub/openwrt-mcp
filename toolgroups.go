@@ -125,7 +125,7 @@ var scopeHints = map[string]string{
 	"service_control":    "service.action, e.g. dnsmasq.restart  uhttpd.*  *.status",
 	"pkg_change":         "action or action.package, e.g. add.curl  del.curl  upgrade",
 	"pkg_config_resolve": "the live config file, e.g. /etc/config/network  /etc/*",
-	"sysupgrade":         "list  test  check  backup",
+	"sysupgrade":         "list  test  check  plan  backup",
 	"wg_list_clients":    "wireguard.interface, e.g. wireguard.wg0  wireguard.*",
 	"wg_new_client":      "wireguard.interface, then .reveal to show the keys, e.g. wireguard.wg0  wireguard.wg0.reveal",
 	"wg_remove_client":   "wireguard.interface.client name, e.g. wireguard.wg0.phone  wireguard.wg0.*",

@@ -1090,7 +1090,7 @@ part of the deny floor.
 
 ### 6.3 Per-device access control
 
-**Status (unreleased): built** (`clientaccess.go`) as its own tool `client_access` (block, schedule, allow), not as `network_clients action=`, so the read tool stays read-only. Golden and mutation tests pass; not run on a real router. Not built: `hostapd del_client`.
+**Status (unreleased): built** (`clientaccess.go`) as its own tool `client_access` (block, schedule, allow), not as `network_clients action=`, so the read tool stays read-only. Golden and mutation tests pass; run on a 25.12.6 VM (fw4 rejects `weekdays` as a list, fixed; nft shows the split window), not on hardware. Rules match TCP and UDP only (fw4 default), so ICMP still passes. Not built: `hostapd del_client`.
 
 - **Ships.** `network_clients action=block|allow|schedule` for one device:
   - block or pause its internet access;
@@ -1104,7 +1104,7 @@ part of the deny floor.
 
 ### 6.4 Upgrade planner
 
-**Status (unreleased): within a release built** (`upgradeplan.go`): a simulated `pkg_change upgrade` appends versions, reboot need, init scripts, `/etc` files and local changes. Fixture-tested, not run on a real upgrade. **Across releases built** (`sysupgradeplan.go`, `sysupgrade action=plan`): added packages, `owut check` output, changed `/etc` files not on the keep list; not run on a real router. It does not itself check each package against the target release or preview the Attended Sysupgrade request body: it shows the list and owut's verdict.
+**Status (unreleased): within a release built** (`upgradeplan.go`): a simulated `pkg_change upgrade` appends versions, reboot need, init scripts, `/etc` files and local changes. Fixture-tested, not run on a real upgrade. **Across releases built** (`sysupgradeplan.go`, `sysupgrade action=plan`): added packages, `owut check` output, changed `/etc` files not on the keep list; run on a 25.12.6 VM, not on hardware (owut could not reach the server there). It does not itself check each package against the target release or preview the Attended Sysupgrade request body: it shows the list and owut's verdict.
 
 - **Ships.**
   - **Within a release.** `pkg_change upgrade` in simulate mode reports:
