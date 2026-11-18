@@ -105,17 +105,21 @@ Claude Code(或任何 MCP 客户端)可以查看并修改路由器 -- 受默认�
 | `pkg_change` | `<action>.<pkg>` / `upgrade` | apk add/del/upgrade;**除非 `commit=true`,否则只模拟**;报告新的 `.apk-new` 文件;之后检查 `/etc/apk/world`。 |
 | `pkg_config_diff` | tool | 把每个 `.apk-new` 显示为与现用文件的差异 -- 对 `/etc/config/*` 按设置(`uci show`)比较,因此引号和缩进造成的噪声消失。 |
 | `pkg_config_resolve` | 现用路径 | keep_current(丢弃新的默认值)或 use_new(安装它;对 UCI 配置会启用回滚)。 |
-| `sysupgrade` | `<action>` | list(保留的文件)、test(验证 /tmp 中的镜像)、check(`owut`)、backup(模式 0600;该工具先前创建的归档会被删除)。**绝不刷写。** |
+| `sysupgrade` | `<action>` | list(保留的文件)、test(验证 /tmp 中的镜像)、check(`owut`)、plan(新增的软件包、目标版本、未被保留的已改动 `/etc` 文件)、backup(模式 0600;该工具先前创建的归档会被删除)。**绝不刷写。** |
 | `wg_list_clients` | tool | 对端及其握手时长、端点、流量、配置/内核不一致、重名。 |
+| `client_access` | `client.<mac>`,例如 `client.aa:bb:cc:dd:ee:01`;`kick` 用 `kick.<mac>` | 让一台设备无法上网:`block`、`schedule`(从..到被阻止,可选星期;跨午夜的时段拆成两条规则)或 `allow`(删除它的规则)。编译为 fw4 `REJECT` 规则(`src_mac`、`start_time`、`weekdays`,目的地 `wan`),名为 `mcpdev_<mac>_<n>`,走带回滚的应用流程。设备仍可使用局域网、DHCP 和 DNS。`kick` 立即把它从 Wi-Fi 断开(`hostapd del_client`,带取消认证帧,在它所连的每个接口上执行;`ban_seconds` 最多 3600,阻止其重连):独立的范围 `kick.<mac>`,不在 `@operator` 中,没有回滚,因为不改配置。 |
+| `managed_file` | `<kind>.<action>`,例如 `dnsmasq.write`、`crontab.read` | 按类型编辑 UCI 之外的文件:`crontab`(`/etc/crontabs/root`)、`dnsmasq`(`/etc/dnsmasq.d/<name>.conf`)、`hosts`、`sysupgrade_conf`。动作 `list`、`read`、`write`(整个文件;`dry_run` 只校验并显示差异)、`history`、`diff` 以及带 `id` 的 `restore`。写入按类型校验(cron 格式、不含脚本或包含指令的 `dnsmasq --test`、hosts 与 `sysupgrade.conf` 语法),原子替换并保留原权限和属主,写后重读,旧版本留在历史中(`history_keep`),并重载服务。目标是符号链接时拒绝。名字像机密的值在读取和差异中被遮蔽。不在任何预设中:写 crontab 等于 root shell,需要点名授权。类型 `path`(范围 `path.<action>`)接受绝对路径 `path`,**在所有者列出通配符之前是关闭的**:在 `config server` 中写 `list managed_path '/etc/blocklists/*'`(`*` 不跨越 `/`)。路径必须已是规范形式,不在硬性底线内(策略、rpcd、SSH 密钥、`shadow`、`passwd`、`*.key`/`*.pem`),所经目录无符号链接,目录必须已存在;内容须是 UTF-8 文本。没有校验器也不重载服务:有类型化的类型时请用它。 |
 | `wg_new_client` | `wireguard.<iface>`;`reveal=true` 用 `wireguard.<iface>.reveal` | 生成密钥对、下一个空闲地址,把对端保存到网络配置中;`uci_confirm` 才会保留它。私钥和配置写入仅 root 可读的文件;您用 `openwrt-mcp wg-show <name>` 取回(配置和二维码显示在您自己的终端中)。`reveal=true` 则直接在结果中返回它们。 |
 | `wg_remove_client` | `wireguard.<iface>.<name>` | 按名称、密钥或配置段,从配置和接口中删除;已启用回滚(`uci_confirm` 才会保留)。拒绝删除最近 3 分钟内连接过的对端或本会话自身所用的对端,除非 `force=true`。 |
 | `ubus_list` | *(不受限)* | 发现:每个对象、方法和参数签名。 |
 | `ubus_call` | `<object>.<method>` | 总线上的其他一切。超过 8 KB 的回复会裁剪过长的数组。 |
 | `exec` | `argv[0]` | 一个程序,无 shell。对 `sh`、`find`、`awk`、`env`、`ssh` 等的授权等同于 root shell:`allow` 在没有 `--shell-equivalent` 时会拒绝。 |
 | `mfa_unlock` | *(不受限)* | 为受 MFA 保护的工具打开 TOTP 窗口。 |
+| `request_access` | *(不受限)* | 一次为每个条目各打开一个请求且不等待,让运营者一并回答。本身不授予任何权限。 |
 
-**提示词(Prompts)。** 能显示 MCP 提示词的客户端(通常以斜杠命令形式)会得到五个配方:
-`router-health`、`who-is-online`、`secure-my-router`、`wifi-doctor` 和 `upgrade-plan`。每个只有
+**提示词(Prompts)。** 能显示 MCP 提示词的客户端(通常以斜杠命令形式)会得到十一个配方:
+`router-health`、`who-is-online`、`secure-my-router`、`wifi-doctor`、`upgrade-plan`、`block-ads`、`multi-wan`、
+`vpn-policy-routing`、`expose-service-safely`、`remote-access` 和 `tune-sqm`。每个只有
 几行,指明要调用的工具,并以报告或建议结尾,绝不做修改。它们只使用 `@readonly` 预设所授予的权限,
 因此只读客户端也能执行到底,且在使用之前不产生任何开销。列出或获取一个提示词不会在路由器上运行任何东西,
 因此不适用任何策略,也不会被审计。
@@ -192,11 +196,22 @@ ROUTER=root@192.168.1.1 SSH_PORT=22 SSH_KEY=~/.ssh/id_ed25519 ./install.sh insta
 
 `./install.sh uninstall [--purge]` 可撤销上述操作。
 
-### LuCI 状态页面
+### 在 LuCI 中批准
 
-安装后,LuCI 中的 *Services -> MCP Server* 会显示守护进程(运行或停止、版本、HTTP 监听器、stdio 套接字)、
-带有自动回滚截止时间的待定 `uci_apply`、已配对的 HTTP 客户端、现行策略以及最近的审计条目。它被刻意设计为
-只读:配对和授权保留在命令行中,因此网络上可达的任何东西都无法扩大代理的权限。
+安装后,LuCI 中的 *Services -> MCP Server* 会显示守护进程(运行或停止、版本、HTTP 监听器、stdio 套接字)、带有自动回滚截止时间的待定 `uci_apply`、已配对的客户端、现行策略和审计日志。你也在这里回应代理,不必再到 shell 里粘贴一行 `allow`:
+
+1. 代理调用一个没有授权的工具。调用被拒绝,并记录一个**请求**:客户端、工具、失败的确切范围以及脱敏后的参数,全部由守护进程推导,不含代理提供的文字。
+2. 请求显示在 MCP 页面顶部,以及 *Status -> Overview* 上的小组件中(只在有待处理项时出现)。
+3. **Allow** 写入授权,**Deny** 拒绝。默认授权最窄(此工具、此确切范围、1 小时)。下拉框可放宽(该范围的同族、所有范围、`@operator` 预设)并设定 15 分钟到 7 天的时长。对 root shell 级工具的请求会显示警告并需要二次确认。
+4. 设置 `option request_wait '300'`(秒,0 到 600,默认 300;0 表示立即拒绝)后,被拒绝的调用会被挂起,并在授权覆盖它时自动继续,代理无需重试。没有该设置或等待超时时,代理得到带请求 id 的 `POLICY_DENIED`,批准后重试即可。
+
+请求会去重并设上限(每个客户端 5 个未决,总共 50 个),`request_ttl`(默认 10 分钟)后过期。它们存在内存中,重启即清空。只有读 ACL 的 LuCI 用户能看到请求但没有按钮;写入需要 `luci-app-openwrt-mcp-write`。其他标签页:*Permissions*(预设、按组列出并标注风险的工具、**Revoke**)、*Activity*(带过滤的审计日志)、*Settings*(请求等待与 TTL、可选通道、第二因素状态)。
+
+**Permit all。** *Permissions* 标签页末尾有一个红色区域,可授予某客户端每个工具、每个范围,包括 `exec`:即 root shell。时长上限 24 小时(没有“永久”),需要勾选并输入客户端名称,已登记第二因素的客户端会被拒绝,生效期间两个页面都显示带 **End now** 的红色横幅。由它放行的调用在审计中标记为 `"via":"permit-all"`。命令行等价写法是 `openwrt-mcp allow <client> @all 1h --shell-equivalent`。最好逐个批准请求。
+
+**可选通道**安装后默认关闭;每个都是 *Settings* 上的一个开关,旁边说明它可能怎样伤害你,每次切换都会被审计:`pairing`(*Clients* 标签页:直接在 LuCI 中配对客户端)、`push_hook`(每个新请求触发 ubus 事件 `openwrt-mcp.request`,并以脱敏请求的 JSON 运行 `/etc/openwrt-mcp/hooks.d/` 中的可执行文件)、`chat_approve`(协商了 elicitation 的客户端也在自己的提示中显示请求;仅限确切范围、15 分钟、1 小时或 8 小时,绝不用于 root shell 级工具,也绝不用于 *Permit all*)。
+
+**代理做不到的事。** LuCI 管理员本来就是 root,所以按钮不会让任何人多得权力。必须杜绝的是代理扩大自己的授权,因此内置的**硬性底线**无论授权如何都拒绝(`@operator` 和 `@all` 也一样):`ubus_call` 访问对象 `openwrt-mcp`、`session`、`file` 和 `rpc-sys`,以及对 `openwrt-mcp` 和 `rpcd` 配置的 `uci` 写入;`exec` 该二进制及其 rpcd 插件,或操作策略、rpcd 配置、`/etc/openwrt-mcp` 和请求状态;以及对这两个配置的 `uci_apply`、历史 `restore` 和 `pkg_config_resolve`。已持有 root shell 的客户端超出底线能保证的范围:见 [SECURITY.md](SECURITY.md#authorisation)。
 
 **为什么不做成 `.apk`:** 25.12 的软件包是 apk-tools v3 的 ADB 归档。构建它需要 OpenWrt SDK,或带有
 `mkpkg` 的主机端 apk-tools(路由器上的 apk 没有 `mkpkg`),而且未签名的软件包仍需要 `--allow-untrusted`。
@@ -347,6 +362,63 @@ openwrt-mcp policies | status [--all] | clients
 这也涵盖了手写的策略。该列表只是底线,而非保证:能写文件的授权(`wget`、`cp`、`dd`)或会启动不在列表中的解释器的授权,
 仍可能被滥用。
 
+### 针对客户端所写值的规则
+
+范围限制 `uci_apply` 触碰哪些名称;**规则**限制它写入哪些值。规则放在 `/etc/config/openwrt-mcp` 中,只会拒绝:
+
+```
+config rule 'ssh_keys_only'
+	option path 'dropbear.*.PasswordAuth'    # 对 config.section.option 的通配
+	option eq 'on'                           # 值为 'on' 时拒绝
+
+config rule 'wifi_switch'
+	option path 'wireless.*.disabled'
+	option mode 'only'                       # 值不在下列之中则拒绝
+	list in '0'
+	list in '1'
+
+config rule 'wan_input'
+	option path 'firewall.*.input'
+	option eq 'ACCEPT'
+	list when '@type=zone'                   # 仅当该配置段是区域 ...
+	list when 'name=wan'                     # ... 且名为 wan
+	option why 'WAN 区域保持关闭'
+```
+
+只要**任何一条**规则拒绝,该更改即被拒绝,无论授权如何(包括 `@all`)。一条规则内所有条件必须同时成立(路径、每个 `when`、每个谓词);要表达“或”,请写两条规则。谓词有 `eq`、`in`、`regex`(匹配整个值)和 `exists`(`1` 表示正在设置某选项,`0` 表示正在删除);`client` 把规则限定到匹配的客户端名。`when` 条目按该配置段将成为的样子来检验:先看同一次调用的更改,再看现行配置。`mode only` 需要谓词,并忽略删除。带有错误 regex 或路径的规则会使配置无法加载。
+
+规则也适用于 `ubus_call` 和 `exec`,由 `option tool` 选择(默认 `uci_apply`):
+
+```
+config rule 'no_reboot_ubus'
+	option tool 'ubus_call'
+	option path 'system.reboot'              # 对 object.method 的通配
+
+config rule 'kick_reason'
+	option tool 'ubus_call'
+	option path 'hostapd.*.del_client'
+	option arg 'reason'                      # 谓词所读取的顶层参数
+	option mode 'only'
+	list in '0'
+
+config rule 'no_recursive_rm'
+	option tool 'exec'
+	option path 'rm'                         # 对 argv[0] 的通配:原样、规整后或其 basename
+	option regex '-[a-zA-Z]*[rR][a-zA-Z]*'   # 依次对其后每个 argv 元素检验
+```
+
+对 `ubus_call`,值是所指名的参数(字符串原样,其他 JSON 为紧凑 JSON);缺失的参数视为缺失,因此 `only` 规则会拒绝它,除非写了 `exists 0`。没有 `arg` 的拒绝型规则会拒绝该路径的每次调用。对 `exec`,值是 `argv[1:]`,逐个检验,且 `busybox APPLET ...` 也会被当作 `APPLET` 来判断。`when` 仅用于 `uci_apply`。规则判断的是调用中的字面内容;它们不是针对持有 shell 上 `exec` 的客户端的边界(`sh -c` 会把内容藏起来,任何 argv 规则都看不到)。
+
+**把 shell 警告变成拦截。** 在 `config server` 中设置 `option deny_shell_exec '1'`,会按 basename 拒绝 `allow` 警告所列的每个程序(`sh`、`env`、`find`、`awk`、`busybox` 等)的 `exec`,无论授权如何。默认关闭,因为点名 `sh` 的授权是合法的;它不是针对已持有 shell 的客户端的边界。
+
+### 交互式视图(MCP Apps)
+
+为支持 MCP Apps 扩展的宿主提供三个只读页面:可排序、可过滤的**客户端表格**(`network_clients`)、`system_status mode=doctor|audit` 的**发现项**(`system_status`),以及 `request_access` 所打开的**请求**(`request_access`)。默认仍是文本,只有双方都同意才会打开:
+
+- 所有者开启它:在 `config server` 中设置 `option apps '1'`(默认关闭;每次调用都会读取,所以修改立即生效)。关闭时目录和资源列表都不变。
+- 客户端在 initialize 时声明扩展 `io.modelcontextprotocol/ui` 及 `text/html;profile=mcp-app`。只有这时,`tools/list` 才为这三个工具带上 `_meta.ui.resourceUri`,`resources/read` 才提供 `ui://openwrt-mcp/clients`、`/audit` 和 `/approvals` 页面。
+
+页面绘制宿主交给它的结果(与模型得到的文本或行相同,所以遮蔽和清理已经完成)。它只写入文本节点,采用 `default-src 'none'` 策略,从不调用工具也不跟随链接:请求视图不能批准任何东西。尚未在真实宿主中运行;已在带有恶意主机名和 SSID 的浏览器测试台中验证。
 ### 第二因素
 
 与上游相同:`openwrt-mcp mfa enrol <client>` 会打印一个 `otpauth://` URI;然后在策略中设置
