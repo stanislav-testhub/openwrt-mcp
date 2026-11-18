@@ -1074,7 +1074,7 @@ part of the deny floor.
 
 ### 6.2 Argument predicates and a deny floor
 
-**Status (unreleased):** predicates built (`rules.go`: `config rule`, eq/in/regex/exists/when, deny and only, any-refusal-wins), on `uci_apply`; the deny floor came with 8.1. Rules for `ubus_call` and `exec` built (`option tool`, `arg`; busybox applets judged too). 3.7's warning is a gate with `option deny_shell_exec '1'` (off by default). Fixture-tested; not run on a router.
+**Status (unreleased):** predicates built (`rules.go`: `config rule`, eq/in/regex/exists/when, deny and only, any-refusal-wins), on `uci_apply`; the deny floor came with 8.1. Rules for `ubus_call` and `exec` built (`option tool`, `arg`; busybox applets judged too). 3.7's warning is a gate with `option deny_shell_exec '1'` (off by default). Fixture-tested; run on an OpenWrt 25.12 VM (all three) and on a GL-MT6000 (`ubus_call system.info` and `exec rm -rf` refused, plain `rm` allowed); `deny_shell_exec` on the VM only.
 
 - **Problem.** Scope globs limit which names a call touches, never which values it writes.
 - **Ships.** Rules can match on argument values: `eq`, `in`, `regex`, `exists`. Examples:
@@ -1090,7 +1090,7 @@ part of the deny floor.
 
 ### 6.3 Per-device access control
 
-**Status (unreleased): built** (`clientaccess.go`) as its own tool `client_access` (block, schedule, allow), not as `network_clients action=`, so the read tool stays read-only. Golden and mutation tests pass; run on a 25.12.6 VM (fw4 rejects `weekdays` as a list, fixed; nft shows the split window), not on hardware. Rules match TCP and UDP only (fw4 default), so ICMP still passes. `action=kick` (`hostapd del_client`) built as scope `kick.<mac>`; fixture-tested, not run on a router.
+**Status (unreleased): built** (`clientaccess.go`) as its own tool `client_access` (block, schedule, allow), not as `network_clients action=`, so the read tool stays read-only. Golden and mutation tests pass; run on a 25.12.6 VM (fw4 rejects `weekdays` as a list, fixed; nft shows the split window), not on hardware. Rules match TCP and UDP only (fw4 default), so ICMP still passes. `action=kick` (`hostapd del_client`) built as scope `kick.<mac>`; fixture-tested, run on a 25.12 VM and on a GL-MT6000 (the client came back about a minute later). `block` and `schedule` were not run on a real router.
 
 - **Ships.** `network_clients action=block|allow|schedule` for one device:
   - block or pause its internet access;
@@ -1121,7 +1121,7 @@ part of the deny floor.
 
 ### 6.5 Managed files
 
-**Status (unreleased): typed kinds built** (`managedfile.go`): crontab, dnsmasq.d, hosts, sysupgrade.conf with validators, atomic write keeping mode and owner, history (2.4), masking, symlink refusal and a read-back. The generic path-glob scope is built (`kind=path`, empty until the owner lists `managed_path` globs) with a fuzzed canonicaliser and the deny floor; fixture-tested, not run on a router. Run on a 25.12.6 VM (dnsmasq reads `/etc/dnsmasq.d` only once `dhcp.@dnsmasq[0].confdir` is set, so a write says so); not on hardware.
+**Status (unreleased): typed kinds built** (`managedfile.go`): crontab, dnsmasq.d, hosts, sysupgrade.conf with validators, atomic write keeping mode and owner, history (2.4), masking, symlink refusal and a read-back. The generic path-glob scope is built (`kind=path`, empty until the owner lists `managed_path` globs) with a fuzzed canonicaliser and the deny floor; fixture-tested. Run on a 25.12.6 VM (dnsmasq reads `/etc/dnsmasq.d` only once `dhcp.@dnsmasq[0].confdir` is set, so a write says so); `kind=path` (read, write with diff, history, restore, a path outside the globs and `/etc/passwd` refused) also on a GL-MT6000; the typed kinds not on hardware.
 
 - **Problem.** Anything outside UCI needs `exec`, which is a root shell. That includes crontabs, `dnsmasq.d`
   snippets, `sysupgrade.conf`, hosts files and block lists. It is the main reason operators grant more than they
