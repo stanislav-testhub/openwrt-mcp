@@ -327,6 +327,11 @@ func addTool[In any](s *Server, srv *mcp.Server, client, name, desc string, ann 
 			if reason := floorRefusal(in); reason != "" {
 				return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
 			}
+			if s.cfg().DenyShellExec {
+				if reason := shellGateRefusal(in); reason != "" {
+					return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
+				}
+			}
 			if reason := ruleRefusal(ctx, s.cfg().Rules, client, in); reason != "" {
 				return finish(errResultCoded(reason, codeLine(codePolicyDenied)), OutcomeDenied, "", reason)
 			}

@@ -1074,7 +1074,7 @@ part of the deny floor.
 
 ### 6.2 Argument predicates and a deny floor
 
-**Status (unreleased):** predicates built (`rules.go`: `config rule`, eq/in/regex/exists/when, deny and only, any-refusal-wins), on `uci_apply`; the deny floor came with 8.1. Not built: rules for `ubus_call` and `exec`, and the gate for 3.7's warning.
+**Status (unreleased):** predicates built (`rules.go`: `config rule`, eq/in/regex/exists/when, deny and only, any-refusal-wins), on `uci_apply`; the deny floor came with 8.1. Rules for `ubus_call` and `exec` built (`option tool`, `arg`; busybox applets judged too). 3.7's warning is a gate with `option deny_shell_exec '1'` (off by default). Fixture-tested; not run on a router.
 
 - **Problem.** Scope globs limit which names a call touches, never which values it writes.
 - **Ships.** Rules can match on argument values: `eq`, `in`, `regex`, `exists`. Examples:

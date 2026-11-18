@@ -3,6 +3,14 @@
 ## Unreleased
 
 Added
+- **Rules for `ubus_call` and `exec`, and a shell gate (ROADMAP 6.2, last two items).** `config rule` takes `option tool
+  'ubus_call'` (path is `object.method`; `option arg` names the argument a predicate reads) or `'exec'` (path is a glob over
+  `argv[0]`, as written, cleaned or by basename; the predicate is tested on each later argument, and `busybox APPLET` is also
+  judged as the applet). Same modes, predicates, any-refusal-wins, and no grant lifts one. Bad combinations (an `arg` on exec, a
+  `when` off `uci_apply`, a ubus predicate without `arg`) stop the config from loading. New `option deny_shell_exec '1'`
+  (default off) makes 3.7's shell-equivalent warning a gate: `exec` of any listed program is refused at call time whatever the
+  grant. Mutation-checked (busybox applet, the tool field, the gate wiring); not run on the router. A rule is not a boundary
+  against `sh -c`.
 - **Managed files (ROADMAP 6.5).** New tool `managed_file` edits the files outside UCI by kind instead of through `exec`: `crontab`,
   `dnsmasq` (`/etc/dnsmasq.d/<name>.conf`), `hosts` and `sysupgrade_conf`. There is no path argument, so nothing to traverse; a
   dnsmasq name is `[A-Za-z0-9][A-Za-z0-9_.-]*.conf`, and a symlink at the target is refused. A write validates (cron fields,
@@ -27,8 +35,7 @@ Added
   `name=wan`, read from the same call first, then the live config), mode `deny` or `only`, and an optional client glob. Any
   refusing rule denies; no grant lifts one, `@all` included; a rule is checked before the grant, so a refused call opens no
   approval request. Documented in README *Rules on the values a client writes*. Tested through the server and with mutations of
-  the `when` and `only` logic. Not built: a rule on `ubus_call uci` or `exec` (a shell holder is not bound), a rule that turns
-  3.7's shell-equivalent warning into a gate.
+  the `when` and `only` logic. Rules for `ubus_call` and `exec` and the shell gate came later (next entry up).
 
 - **Upgrade planner, within a release (ROADMAP 6.4).** A simulated `pkg_change action=upgrade` now ends with a plan read from the simulation and
   from the package file lists: the version changes, whether a reboot is needed (kernel or `kmod-*` packages change), the init scripts the packages

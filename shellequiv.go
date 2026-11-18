@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -88,4 +89,22 @@ func takeFlag(args []string, flag string) ([]string, bool) {
 		rest = append(rest, a)
 	}
 	return rest, found
+}
+
+// shellGateRefusal is the deny floor's optional half (`option deny_shell_exec '1'`): the owner
+// who wants the 3.7 warning to be a gate gets exec refused for every program in the table, by
+// base name, whatever the grant says. Off by default because a grant that names `sh` is legal
+// today. It judges argv[0] as written (a link under another name is not followed: on OpenWrt
+// every applet is a link to busybox, so following them would refuse `ls`), so it narrows what a
+// careless grant can do and is not a boundary against a client that already holds a shell.
+func shellGateRefusal(in any) string {
+	e, ok := in.(execIn)
+	if !ok || len(e.Argv) == 0 {
+		return ""
+	}
+	base := path.Base(path.Clean(filepath.ToSlash(e.Argv[0])))
+	if contains(shellEquivalentPrograms, base) {
+		return floorRefuse(fmt.Sprintf("exec of %q is a root shell and deny_shell_exec is on", base))
+	}
+	return ""
 }

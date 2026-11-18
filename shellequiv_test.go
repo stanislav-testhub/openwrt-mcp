@@ -140,3 +140,35 @@ func TestTakeFlagRemovesEveryCopyAndKeepsTheOrder(t *testing.T) {
 		t.Errorf("no flag present: %v %v", rest, found)
 	}
 }
+
+func TestDenyShellExecIsAGateWhateverTheGrant(t *testing.T) {
+	f := newFakeRouter(t)
+	f.on("true", "ok")
+	f.on("sh", "ran")
+	run := func(extra string, argv ...any) (string, bool) {
+		s := testServer(t, extra+policyFor("c", []string{"exec"}, "*"))
+		return callText(t, connectClient(t, s, "c"), "exec", map[string]any{"argv": argv})
+	}
+	// Off by default: a grant for * runs a shell today.
+	if out, isErr := run("", "sh", "-c", "true"); isErr || strings.Contains(out, "deny_shell_exec") {
+		t.Errorf("off by default, got isErr=%v\n%s", isErr, out)
+	}
+	on := "config server\n\toption deny_shell_exec '1'\n"
+	for _, argv := range [][]any{
+		{"sh", "-c", "true"}, {"/bin/sh", "-c", "true"}, {"/usr/bin/../bin/ash"}, {"busybox", "ls"},
+		{"env", "true"}, {"find", "/", "-exec", "true", "{}", ";"}, {"ubus", "call", "file", "exec"},
+	} {
+		out, isErr := run(on, argv...)
+		if !isErr || !strings.Contains(out, "deny_shell_exec is on") || !strings.Contains(out, "POLICY_DENIED") {
+			t.Errorf("%v: isErr=%v\n%s", argv, isErr, out)
+		}
+	}
+	if out, isErr := run(on, "true"); isErr {
+		t.Errorf("an ordinary program was refused: %s", out)
+	}
+	for _, name := range shellEquivalentPrograms {
+		if shellGateRefusal(execIn{Argv: []string{"/x/" + name}}) == "" {
+			t.Errorf("%s is in the table but the gate lets it through", name)
+		}
+	}
+}

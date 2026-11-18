@@ -531,8 +531,37 @@ condition must hold (path, each `when`, each predicate); to say "or", write two 
 `regex` (matches the whole value) and `exists` (`1` an option is being set, `0` it is being removed); `client`
 narrows a rule to matching client names. `when` entries are tested on the section as it will be: the same call's
 changes first, then the live config. `mode only` needs a predicate and ignores deletes. A rule with a bad regex or
-path stops the config from loading. Rules cover `uci_apply`; they are not a boundary against a client that holds
-`exec` on a shell.
+path stops the config from loading.
+
+Rules also cover `ubus_call` and `exec`, chosen by `option tool` (default `uci_apply`):
+
+```
+config rule 'no_reboot_ubus'
+	option tool 'ubus_call'
+	option path 'system.reboot'              # glob over object.method
+
+config rule 'kick_reason'
+	option tool 'ubus_call'
+	option path 'hostapd.*.del_client'
+	option arg 'reason'                      # the top-level argument the predicate reads
+	option mode 'only'
+	list in '0'
+
+config rule 'no_recursive_rm'
+	option tool 'exec'
+	option path 'rm'                         # glob over argv[0]: as written, cleaned, or its basename
+	option regex '-[a-zA-Z]*[rR][a-zA-Z]*'   # tested on each later argv element in turn
+```
+
+For `ubus_call` the value is the named argument (a string as is, other JSON as compact JSON); an absent argument
+counts as missing, so an `only` rule refuses it unless it says `exists 0`. A deny rule without `arg` refuses every
+call of the path. For `exec` the values are `argv[1:]`, one at a time, and `busybox APPLET ...` is also judged as
+`APPLET`. `when` is for `uci_apply` only. Rules judge the words of the call; they are not a boundary against a client
+that holds `exec` on a shell (`sh -c` hides its words from any argv rule).
+
+**Make the shell warning a gate.** `option deny_shell_exec '1'` in `config server` refuses `exec` of every program
+the `allow` warning lists (`sh`, `env`, `find`, `awk`, `busybox`, ...), by base name, whatever the grant says. It is
+off by default, because a grant that names `sh` is legal; it is not a boundary against a client that already holds one.
 
 ### Second factor
 

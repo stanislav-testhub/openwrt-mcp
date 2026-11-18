@@ -139,6 +139,8 @@ type Config struct {
 	IdleExitMin int
 	Policies    []*Policy
 	Rules       []*argRule // argument rules (rules.go); they only refuse
+	// DenyShellExec refuses exec of every shell-equivalent program whatever the grant (shellequiv.go).
+	DenyShellExec bool
 
 	// Failed-attempt limiter for mfa_unlock (see MFAStore.Unlock).
 	MFAMaxFailures int
@@ -257,6 +259,7 @@ func LoadConfig(configPath string) (*Config, error) {
 			if v, err := strconv.Atoi(s.Options["request_wait"]); err == nil && v >= 0 {
 				c.RequestWait = min(time.Duration(v)*time.Second, maxRequestWait)
 			}
+			c.DenyShellExec = s.Options["deny_shell_exec"] == "1"
 			c.Pairing = s.Options["pairing"] == "1"
 			c.PushHook = s.Options["push_hook"] == "1"
 			c.ChatApprove = s.Options["chat_approve"] == "1"

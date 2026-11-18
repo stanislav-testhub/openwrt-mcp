@@ -2,7 +2,10 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -44,14 +47,42 @@ import (
 //     changes first, else the live value from uci. `@type=` tests the section type.
 //   - Only a change with an option is looked at; creating or deleting a whole section is not a
 //     value write.
-//   - A client glob (default *) and a tool list (uci_apply only, today) narrow who a rule
-//     applies to.
-// Rules govern uci_apply. They are not a boundary against a client that holds exec on a shell.
+//   - A client glob (default *) and `option tool` (uci_apply, ubus_call or exec; default uci_apply)
+//     narrow who and what a rule applies to.
+//
+// ubus_call and exec rules use the same modes and predicates:
+//
+//	config rule 'no_reboot_ubus'
+//	    option tool 'ubus_call'
+//	    option path 'system.reboot'                # glob over object.method
+//
+//	config rule 'hostapd_only_status'
+//	    option tool 'ubus_call'
+//	    option path 'hostapd.*.del_client'
+//	    option arg 'reason'                        # the call's top-level arg the predicate reads
+//	    option mode 'only'
+//	    list in '0'
+//
+//	config rule 'no_recursive_rm'
+//	    option tool 'exec'
+//	    option path 'rm'                           # glob over argv[0]: as given, cleaned, or its basename
+//	    option regex '-[a-zA-Z]*[rR][a-zA-Z]*'     # judged against each later argv element in turn
+//
+// For ubus_call the value is the named arg (strings as they are, other JSON as compact JSON);
+// without `arg` a deny rule refuses every call of the path and predicates are not allowed. An
+// absent arg is judged as the empty value that does not exist, so an `only` rule refuses it
+// unless it says `exists 0`. For exec the values are argv[1:], one at a time (one failing element
+// refuses; a call with no arguments is not judged). `busybox APPLET ...` is also judged as
+// APPLET, so a rule on `rm` is not stepped around by `busybox rm`. `when` is uci_apply only.
+// Rules govern what the tools are asked to do. They are not a boundary against a client that
+// holds exec on a shell: `sh -c` hides its words from any argv rule.
 
 type argRule struct {
 	Name   string
 	Client string
+	Tool   string // uci_apply | ubus_call | exec
 	Path   string
+	Arg    string // ubus_call: the top-level arg the predicate reads
 	Mode   string // deny | only
 	Eq     *string
 	In     []string
@@ -64,15 +95,28 @@ type argRule struct {
 type ruleWhen struct{ key, glob string }
 
 func ruleFromSection(s uciSection) (*argRule, error) {
-	r := &argRule{Name: s.Name, Client: orStar(s.Options["client"]), Path: s.Options["path"], Mode: s.Options["mode"], Why: s.Options["why"]}
+	r := &argRule{Name: s.Name, Client: orStar(s.Options["client"]), Tool: s.Options["tool"], Path: s.Options["path"], Arg: s.Options["arg"], Mode: s.Options["mode"], Why: s.Options["why"]}
+	if r.Tool == "" {
+		r.Tool = "uci_apply"
+	}
+	if !contains([]string{"uci_apply", "ubus_call", "exec"}, r.Tool) {
+		return nil, fmt.Errorf("bad 'tool' %q: want uci_apply, ubus_call or exec", r.Tool)
+	}
 	if r.Mode == "" {
 		r.Mode = "deny"
 	}
 	if r.Mode != "deny" && r.Mode != "only" {
 		return nil, fmt.Errorf("bad 'mode' %q: want deny or only", r.Mode)
 	}
-	if n := len(strings.Split(r.Path, ".")); r.Path == "" || n != 3 {
-		return nil, fmt.Errorf("'path' must be a config.section.option glob, got %q", r.Path)
+	if r.Tool == "uci_apply" {
+		if n := len(strings.Split(r.Path, ".")); r.Path == "" || n != 3 {
+			return nil, fmt.Errorf("'path' must be a config.section.option glob, got %q", r.Path)
+		}
+	} else if r.Path == "" {
+		return nil, fmt.Errorf("'path' is needed: object.method for ubus_call, argv[0] for exec")
+	}
+	if r.Arg != "" && r.Tool != "ubus_call" {
+		return nil, fmt.Errorf("'arg' is for tool ubus_call only")
 	}
 	if v, ok := s.Options["eq"]; ok {
 		r.Eq = &v
@@ -105,6 +149,12 @@ func ruleFromSection(s uciSection) (*argRule, error) {
 	if r.Mode == "only" && !r.hasPredicate() {
 		return nil, fmt.Errorf("mode only needs a predicate (eq, in, regex or exists)")
 	}
+	if r.Tool != "uci_apply" && len(r.When) > 0 {
+		return nil, fmt.Errorf("'when' is for tool uci_apply only")
+	}
+	if r.Tool == "ubus_call" && r.hasPredicate() && r.Arg == "" {
+		return nil, fmt.Errorf("a ubus_call predicate needs 'arg' to say which argument it reads")
+	}
 	return r, nil
 }
 
@@ -134,7 +184,7 @@ type ruleLookup func(config, section, key string) string
 
 // refuses says why this rule refuses the one change, or "".
 func (r *argRule) refuses(client string, c UCIChange, look ruleLookup) string {
-	if c.Option == "" || !matchAny([]string{r.Client}, client) || !matchAny([]string{r.Path}, uciKey(c)) {
+	if r.Tool != "uci_apply" || c.Option == "" || !matchAny([]string{r.Client}, client) || !matchAny([]string{r.Path}, uciKey(c)) {
 		return ""
 	}
 	op := c.op()
@@ -158,6 +208,11 @@ func (r *argRule) refuses(client string, c UCIChange, look ruleLookup) string {
 			return ""
 		}
 	}
+	return r.judge(uciKey(c), vals, present)
+}
+
+// judge applies the mode and predicate to the values of one matched call.
+func (r *argRule) judge(label string, vals []string, present bool) string {
 	for _, v := range vals {
 		holds := r.holds(v, present)
 		if (r.Mode == "deny" && (holds || !r.hasPredicate())) || (r.Mode == "only" && !holds) {
@@ -166,16 +221,110 @@ func (r *argRule) refuses(client string, c UCIChange, look ruleLookup) string {
 				why = "set by the operator"
 			}
 			return fmt.Sprintf("denied by rule %q: %s = %q is not allowed (%s). No grant lifts a rule, @operator and @all included; the owner edits %s.",
-				r.Name, uciKey(c), v, why, "/etc/config/openwrt-mcp")
+				r.Name, label, v, why, "/etc/config/openwrt-mcp")
 		}
 	}
 	return ""
 }
 
+// refusesUbus judges one ubus_call against a ubus_call rule.
+func (r *argRule) refusesUbus(client string, in ubusCallIn) string {
+	key := in.Object + "." + in.Method
+	if r.Tool != "ubus_call" || !matchAny([]string{r.Client}, client) || !matchAny([]string{r.Path}, key) {
+		return ""
+	}
+	if r.Arg == "" {
+		return r.judge(key, []string{""}, true) // a deny rule without a predicate: any call of the path
+	}
+	raw, present := in.Args[r.Arg]
+	v := ""
+	if present {
+		if str, ok := raw.(string); ok {
+			v = str
+		} else if b, err := json.Marshal(raw); err == nil {
+			v = string(b)
+		}
+	}
+	return r.judge(key+" arg "+r.Arg, []string{v}, present)
+}
+
+// execForms are the (program names, arguments) pairs an exec call is judged as: argv[0] as
+// given, cleaned and by basename; and for `busybox APPLET ...` the applet too.
+func execForms(argv []string) (forms []struct {
+	names []string
+	args  []string
+}) {
+	if len(argv) == 0 {
+		return nil
+	}
+	names := func(p string) []string {
+		p = filepath.ToSlash(p)
+		return []string{p, path.Clean(p), path.Base(p)}
+	}
+	forms = append(forms, struct {
+		names []string
+		args  []string
+	}{names(argv[0]), argv[1:]})
+	if path.Base(filepath.ToSlash(argv[0])) == "busybox" && len(argv) > 1 {
+		forms = append(forms, struct {
+			names []string
+			args  []string
+		}{names(argv[1]), argv[2:]})
+	}
+	return forms
+}
+
+// refusesExec judges one exec call against an exec rule.
+func (r *argRule) refusesExec(client string, in execIn) string {
+	if r.Tool != "exec" || !matchAny([]string{r.Client}, client) {
+		return ""
+	}
+	for _, f := range execForms(in.Argv) {
+		if !anyGlob(r.Path, f.names) {
+			continue
+		}
+		if r.Mode == "deny" && !r.hasPredicate() {
+			return r.judge(in.Argv[0], []string{""}, true)
+		}
+		if why := r.judge(f.names[2], f.args, true); why != "" {
+			return why
+		}
+	}
+	return ""
+}
+
+func anyGlob(glob string, names []string) bool {
+	for _, n := range names {
+		if matchAny([]string{glob}, n) {
+			return true
+		}
+	}
+	return false
+}
+
 // ruleRefusal checks a uci_apply call against every rule: any refusing rule refuses the call.
 func ruleRefusal(ctx context.Context, rules []*argRule, client string, in any) string {
+	if len(rules) == 0 {
+		return ""
+	}
+	switch v := in.(type) {
+	case ubusCallIn:
+		for _, r := range rules {
+			if why := r.refusesUbus(client, v); why != "" {
+				return why
+			}
+		}
+		return ""
+	case execIn:
+		for _, r := range rules {
+			if why := r.refusesExec(client, v); why != "" {
+				return why
+			}
+		}
+		return ""
+	}
 	apply, ok := in.(uciApplyIn)
-	if !ok || len(rules) == 0 {
+	if !ok {
 		return ""
 	}
 	staged := map[string]string{} // config.section.option -> last value set in this call

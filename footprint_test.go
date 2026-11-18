@@ -17,7 +17,7 @@ import (
 // 54 936 bytes after Milestone 10.2 moved the package-level regexps behind lazyRegexp (it was 2 557 528).
 // New package-level work belongs behind lazyRegexp or sync.OnceValue.
 const (
-	maxStrippedMipsleBytes = 13_300_000
+	maxStrippedMipsleBytes = 13_320_000 // 6.2: ubus_call and exec rules, shell gate (+4 KB)
 	maxStartupHeapBytes    = 100_000
 )
 
