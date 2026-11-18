@@ -138,6 +138,7 @@ type Config struct {
 	// IdleExitMin stops the daemon after this many idle minutes (0: stays resident).
 	IdleExitMin int
 	Policies    []*Policy
+	Rules       []*argRule // argument rules (rules.go); they only refuse
 
 	// Failed-attempt limiter for mfa_unlock (see MFAStore.Unlock).
 	MFAMaxFailures int
@@ -268,6 +269,12 @@ func LoadConfig(configPath string) (*Config, error) {
 			for _, n := range names {
 				c.RedactExtra = append(c.RedactExtra, strings.ToLower(strings.TrimSpace(n)))
 			}
+		case "rule":
+			r, err := ruleFromSection(s)
+			if err != nil {
+				return nil, fmt.Errorf("rule %q: %w", s.Name, err)
+			}
+			c.Rules = append(c.Rules, r)
 		case "policy":
 			p, err := policyFromSection(s)
 			if err != nil {

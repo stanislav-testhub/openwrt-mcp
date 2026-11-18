@@ -3,6 +3,13 @@
 ## Unreleased
 
 Added
+- **Argument rules (ROADMAP 6.2).** `config rule` sections in the policy config refuse `uci_apply` changes by value: a path glob
+  (`dropbear.*.PasswordAuth`), predicates `eq`, `in`, `regex`, `exists`, `when` conditions on the same section (`@type=zone`,
+  `name=wan`, read from the same call first, then the live config), mode `deny` or `only`, and an optional client glob. Any
+  refusing rule denies; no grant lifts one, `@all` included; a rule is checked before the grant, so a refused call opens no
+  approval request. Documented in README *Rules on the values a client writes*. Tested through the server and with mutations of
+  the `when` and `only` logic. Not built: a rule on `ubus_call uci` or `exec` (a shell holder is not bound), a rule that turns
+  3.7's shell-equivalent warning into a gate.
 
 - **Upgrade planner, within a release (ROADMAP 6.4).** A simulated `pkg_change action=upgrade` now ends with a plan read from the simulation and
   from the package file lists: the version changes, whether a reboot is needed (kernel or `kmod-*` packages change), the init scripts the packages

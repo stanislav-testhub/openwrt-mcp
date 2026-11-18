@@ -500,6 +500,38 @@ count too; a `ubus_call` grant that can reach `file.exec` is treated the same wa
 hand. The list is a floor, not a promise: a grant that writes files (`wget`, `cp`, `dd`) or
 starts an interpreter that is not on it can still be abused.
 
+### Rules on the values a client writes
+
+A scope limits which names `uci_apply` touches; a **rule** limits which values it writes. Rules go in
+`/etc/config/openwrt-mcp` and only ever refuse:
+
+```
+config rule 'ssh_keys_only'
+	option path 'dropbear.*.PasswordAuth'    # glob over config.section.option
+	option eq 'on'                           # refuse when the value is 'on'
+
+config rule 'wifi_switch'
+	option path 'wireless.*.disabled'
+	option mode 'only'                       # refuse unless the value is one of these
+	list in '0'
+	list in '1'
+
+config rule 'wan_input'
+	option path 'firewall.*.input'
+	option eq 'ACCEPT'
+	list when '@type=zone'                   # only on a section that is a zone ...
+	list when 'name=wan'                     # ... named wan
+	option why 'the WAN zone stays closed'
+```
+
+A change is refused when **any** rule refuses it, whatever the grant (`@all` included). Inside one rule every
+condition must hold (path, each `when`, each predicate); to say "or", write two rules. Predicates are `eq`, `in`,
+`regex` (matches the whole value) and `exists` (`1` an option is being set, `0` it is being removed); `client`
+narrows a rule to matching client names. `when` entries are tested on the section as it will be: the same call's
+changes first, then the live config. `mode only` needs a predicate and ignores deletes. A rule with a bad regex or
+path stops the config from loading. Rules cover `uci_apply`; they are not a boundary against a client that holds
+`exec` on a shell.
+
 ### Second factor
 
 Unchanged from upstream: `openwrt-mcp mfa enrol <client>` prints an `otpauth://` URI; then in a
