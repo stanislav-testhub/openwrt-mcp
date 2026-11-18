@@ -129,6 +129,15 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 		annDest, uciScopes,
 		func(ctx context.Context, in uciApplyIn) (string, string, error) { return s.uciApply(ctx, client, in) })
 
+	addTool(s, srv, client, "client_access",
+		"Cut one device off the internet by MAC: block, schedule (blocked in a window such as 22:00 to 06:00) "+
+			"or allow. Writes fw4 reject rules via the rollback-armed uci_apply flow (dry_run, then uci_confirm). "+
+			"LAN, DHCP and DNS keep working. Scope client.<mac>.",
+		annDestIdem, clientAccessScope,
+		func(ctx context.Context, in clientAccessIn) (string, string, error) {
+			return s.clientAccess(ctx, client, in)
+		})
+
 	addTool(s, srv, client, "uci_confirm",
 		"Make a pending uci_apply (or pkg_config_resolve use_new) permanent. Only after verifying the router is "+
 			"reachable and behaving; doing nothing is the safe default -- the change reverts.",
@@ -240,7 +249,7 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 // allToolNames is every tool the server registers, for presets and validation.
 var allToolNames = []string{
 	"ubus_list", "ubus_call", "exec", "system_status", "logread", "network_clients", "firewall_show",
-	"net_diag", "uci_get", "uci_apply", "uci_confirm", "uci_rollback", "service_list", "service_control",
+	"net_diag", "uci_get", "uci_apply", "client_access", "uci_confirm", "uci_rollback", "service_list", "service_control",
 	"pkg_query", "pkg_change", "pkg_config_diff", "pkg_config_resolve", "sysupgrade", "wg_list_clients",
 	"wg_new_client", "wg_remove_client", "mfa_unlock", "request_access",
 }
@@ -271,6 +280,7 @@ var toolTitles = map[string]string{
 	"net_diag":           "Network diagnostics",
 	"uci_get":            "Read configuration",
 	"uci_apply":          "Change configuration (auto-rollback)",
+	"client_access":      "Block or schedule a device's internet",
 	"uci_confirm":        "Confirm pending change",
 	"uci_rollback":       "Roll back pending change",
 	"service_list":       "List services",

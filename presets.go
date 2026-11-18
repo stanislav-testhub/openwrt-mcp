@@ -54,7 +54,7 @@ var presets = map[string][]presetPolicy{
 		{tools: []string{"service_control"}, scopes: append([]string{"*.start", "*.stop", "*.restart", "*.reload", "*.enable", "*.disable"}, routineVerbScopes()...)},
 		{tools: []string{"system_status", "logread", "network_clients", "firewall_show", "service_list",
 			"pkg_query", "pkg_config_diff", "wg_list_clients", "uci_get",
-			"uci_apply", "uci_confirm", "uci_rollback", "pkg_change",
+			"uci_apply", "client_access", "uci_confirm", "uci_rollback", "pkg_change",
 			"pkg_config_resolve", "wg_new_client", "wg_remove_client"}, scopes: []string{"*"}},
 		{tools: []string{"ubus_call"}, scopes: readonlyUbus},
 		{tools: []string{"net_diag"}, scopes: netDiagRoutine},

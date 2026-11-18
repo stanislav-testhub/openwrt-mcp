@@ -80,6 +80,7 @@ var goldenCalls = []struct {
 	{"wg_new_client", map[string]any{"name": "tablet", "iface": "wg0", "endpoint": "vpn.example.com:51820",
 		"reveal": true}},
 	{"wg_remove_client", map[string]any{"iface": "wg0", "name": "phone"}},
+	{"client_access", map[string]any{"action": "block", "mac": "aa:bb:cc:dd:ee:01"}},
 	{"mfa_unlock", map[string]any{"code": "123456"}},
 	{"request_access", map[string]any{"wants": []string{"uci_apply wireless.radio1.channel"}}},
 }
@@ -219,8 +220,8 @@ func TestToolSchemasArePortable(t *testing.T) {
 // 1.8 (9.4): +100 for net_diag's dns_path and path actions and its `src` parameter (24,048 measured).
 // warnings of 5.9 use too (23,856 and 12,825 measured). uci_get now has three modes, so it joins toolBudgets.
 const (
-	catalogueBudgetBytes = 27960 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose; 1.8: request_access, +636, wants is a plain list of strings); 1.8: uci_get view=vlan_matrix (7.6, +107) and net_diag bufferbloat (7.7, +40), +179 with the descriptions of both kept to one clause
-	catalogueProseBudget = 13580 // descriptions plus input-property descriptions only
+	catalogueBudgetBytes = 29320 // all tools, marshalled as tools/list sends them (1.4: offset, logread mode/baseline, system_status mode, net_diag actions; 1.5: service_list detail, opkg; 1.8: net_diag throughput/capture and filter, +196; 1.8: outputSchema for network_clients and wg_list_clients, +1142; 1.8: system_status history, +74; 1.8: outputSchema for system_status and service_list, +740, nested objects left loose; 1.8: outputSchema for pkg_query's installed and upgradable lists, +264; 1.8: outputSchema for uci_get, logread and exec, +409, item lists left loose; 1.8: request_access, +636, wants is a plain list of strings); 1.8: uci_get view=vlan_matrix (7.6, +107) and net_diag bufferbloat (7.7, +40), +179 with the descriptions of both kept to one clause; 6.3: client_access, +1337
+	catalogueProseBudget = 14200 // descriptions plus input-property descriptions only
 	toolBudgetBytes      = 1500  // any one tool, except those below
 )
 
@@ -451,6 +452,7 @@ func TestToolTitlesAndHints(t *testing.T) {
 		"pkg_config_diff":    {"Review new package configs (.apk-new)", true, false, nil, &no},
 		"pkg_config_resolve": {"Resolve a package config (.apk-new)", false, false, &yes, &no},
 		"sysupgrade":         {"Firmware checks and backup (never flashes)", false, false, &no, &yes},
+		"client_access":      {"Block or schedule a device's internet", false, true, &yes, &no},
 		"wg_list_clients":    {"List WireGuard peers", true, false, nil, &no},
 		"wg_new_client":      {"Add WireGuard peer", false, false, &yes, &no},
 		"wg_remove_client":   {"Remove WireGuard peer", false, true, &yes, &no},

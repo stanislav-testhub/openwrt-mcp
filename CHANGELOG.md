@@ -3,6 +3,14 @@
 ## Unreleased
 
 Added
+- **Per-device access control (ROADMAP 6.3).** New tool `client_access`: `block`, `schedule` (blocked from..until on chosen days,
+  a window past midnight is split into two rules with the days shifted) or `allow` for one MAC. It compiles to fw4 `REJECT` rules
+  (`src_mac`, `dest wan`, `start_time`, `stop_time`, `weekdays`) named `mcpdev_<mac>_<n>` and runs them through the
+  rollback-armed `uci_apply` flow (dry run, `uci_confirm`). The scope is `client.<mac>`; the device keeps LAN, DHCP and DNS.
+  Part of the `operator` preset and the `config` toolset. Golden tests per action, and a mutation-checked test that a block
+  touches only its own MAC's sections. Deviates from the roadmap: a separate tool, not `network_clients action=`, so the read
+  tool stays read-only. Not built: kicking a Wi-Fi client (`hostapd del_client`). Not run on a real router; the fw4 time match
+  on `start_time`/`stop_time` is unverified on hardware. `config rule` argument rules cover `uci_apply` only, not this tool.
 - **Argument rules (ROADMAP 6.2).** `config rule` sections in the policy config refuse `uci_apply` changes by value: a path glob
   (`dropbear.*.PasswordAuth`), predicates `eq`, `in`, `regex`, `exists`, `when` conditions on the same section (`@type=zone`,
   `name=wan`, read from the same call first, then the live config), mode `deny` or `only`, and an optional client glob. Any

@@ -28,6 +28,7 @@ Use the same ssh options as the user's MCP client entry (`openwrt-mcp connect` p
 
 ## Tools
 
+- `client_access`: Block or schedule a device's internet
 - `exec`: Run a command (no shell)
 - `firewall_show`: Firewall ruleset
 - `logread`: System log

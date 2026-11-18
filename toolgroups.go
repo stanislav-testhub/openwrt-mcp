@@ -19,7 +19,7 @@ var toolGroups = []struct {
 	Tools     []string
 }{
 	{"diagnostics", "Diagnostics", []string{"system_status", "logread", "network_clients", "firewall_show", "service_list", "net_diag", "ubus_list"}},
-	{"configuration", "Configuration", []string{"uci_get", "uci_apply", "uci_confirm", "uci_rollback"}},
+	{"configuration", "Configuration", []string{"uci_get", "uci_apply", "client_access", "uci_confirm", "uci_rollback"}},
 	{"packages", "Packages", []string{"pkg_query", "pkg_config_diff", "pkg_change", "pkg_config_resolve"}},
 	{"vpn", "VPN", []string{"wg_list_clients", "wg_new_client", "wg_remove_client"}},
 	{"system", "System", []string{"service_control", "sysupgrade", "mfa_unlock", "request_access"}},
@@ -120,6 +120,7 @@ var scopeHints = map[string]string{
 	"net_diag":           "action or action.target, e.g. ping.1.1.1.1  traffic.br-lan  route  wifi_survey.*  capture.br-lan  throughput.<server>  bufferbloat.<server>",
 	"uci_get":            "config.section.option, e.g. network.lan  wireless.*  dhcp.@dnsmasq[0].*  or refs for the name search",
 	"uci_apply":          "config.section.option, e.g. network.lan  wireless.*  dhcp.@dnsmasq[0].*",
+	"client_access":      "client.<mac>, e.g. client.aa:bb:cc:dd:ee:ff  client.*",
 	"service_list":       "service.detail, e.g. dnsmasq.detail  *.detail",
 	"service_control":    "service.action, e.g. dnsmasq.restart  uhttpd.*  *.status",
 	"pkg_change":         "action or action.package, e.g. add.curl  del.curl  upgrade",

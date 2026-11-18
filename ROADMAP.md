@@ -1090,6 +1090,8 @@ part of the deny floor.
 
 ### 6.3 Per-device access control
 
+**Status (unreleased): built** (`clientaccess.go`) as its own tool `client_access` (block, schedule, allow), not as `network_clients action=`, so the read tool stays read-only. Golden and mutation tests pass; not run on a real router. Not built: `hostapd del_client`.
+
 - **Ships.** `network_clients action=block|allow|schedule` for one device:
   - block or pause its internet access;
   - allow only within time windows ("no internet after 22:00").
