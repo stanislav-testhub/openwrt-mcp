@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.9.0 -- per-device access, managed files, rules, interactive views
 
 Added
 - **Interactive views (ROADMAP 6.6).** Opt-in MCP Apps pages: client table (`network_clients`), findings of `system_status` doctor and audit, and the requests `request_access` opened. Off unless the owner sets `option apps '1'`, and shown only to a client that declares `io.modelcontextprotocol/ui` with `text/html;profile=mcp-app`; otherwise `tools/list` and the resource list are unchanged and the pages are refused. The pages are read-only (text nodes only, default-deny CSP, no tool calls) and draw the result the host passes in, so masking is the existing one. Tested: the double opt-in, the three links and pages, a source check that the page has no HTML sinks, network or tool calls, and that the audit parser still matches what `render` writes; driven in a headless browser with a mock host and hostile strings. Not run in a real MCP Apps host; the handshake follows the 2026-01-26 spec as published, not checked against a host.
