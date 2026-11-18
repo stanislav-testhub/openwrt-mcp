@@ -143,6 +143,8 @@ type Config struct {
 	DenyShellExec bool
 	// ManagedPaths are the globs kind path of managed_file may touch; empty means the kind is off.
 	ManagedPaths []string
+	// Apps turns on the read-only MCP Apps views (apps.go) for clients that ask for them.
+	Apps bool
 
 	// Failed-attempt limiter for mfa_unlock (see MFAStore.Unlock).
 	MFAMaxFailures int
@@ -262,6 +264,7 @@ func LoadConfig(configPath string) (*Config, error) {
 				c.RequestWait = min(time.Duration(v)*time.Second, maxRequestWait)
 			}
 			c.DenyShellExec = s.Options["deny_shell_exec"] == "1"
+			c.Apps = s.Options["apps"] == "1"
 			for _, g := range s.Lists["managed_path"] {
 				if _, err := canonManagedPath(strings.ReplaceAll(strings.ReplaceAll(g, "*", "x"), "?", "x")); err != nil || !strings.HasPrefix(g, "/") {
 					log.Printf("openwrt-mcp: ignoring managed_path %q: want an absolute, clean glob outside the deny floor", g)

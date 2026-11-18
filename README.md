@@ -563,6 +563,23 @@ that holds `exec` on a shell (`sh -c` hides its words from any argv rule).
 the `allow` warning lists (`sh`, `env`, `find`, `awk`, `busybox`, ...), by base name, whatever the grant says. It is
 off by default, because a grant that names `sh` is legal; it is not a boundary against a client that already holds one.
 
+### Interactive views (MCP Apps)
+
+Three read-only pages for hosts that support the MCP Apps extension: a sortable, filterable **client table**
+(`network_clients`), the **findings** of `system_status mode=doctor|audit` (`system_status`), and the **requests**
+`request_access` opened (`request_access`). Text stays the default, and nothing opens unless both sides agree:
+
+- the owner turns it on, `option apps '1'` in `config server` (off by default; read on each call, so an edit applies
+  at once). With it off the catalogue and the resource list are unchanged.
+- the client declares the `io.modelcontextprotocol/ui` extension with `text/html;profile=mcp-app` at initialize.
+  Only then does `tools/list` carry `_meta.ui.resourceUri` for those three tools and `resources/read` serve the
+  `ui://openwrt-mcp/clients`, `/audit` and `/approvals` pages.
+
+A page draws the result the host hands it, the same text or rows the model got, so masking and sanitising already
+happened. It writes text nodes only, has a `default-src 'none'` policy, and never calls a tool or follows a link:
+the requests view cannot approve anything. Not run in a real host yet; checked in a browser harness with a hostile
+host name and SSID.
+
 ### Second factor
 
 Unchanged from upstream: `openwrt-mcp mfa enrol <client>` prints an `otpauth://` URI; then in a

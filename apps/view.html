@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en" data-view="{{VIEW}}">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<meta name="color-scheme" content="light dark">
+<title>openwrt-mcp</title>
+<style>
+  :root { font: 14px/1.4 system-ui, sans-serif; }
+  body { margin: 8px; }
+  h1 { font-size: 15px; margin: 0 0 8px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { text-align: left; padding: 3px 8px; border-bottom: 1px solid #8884; white-space: nowrap; }
+  th { cursor: pointer; user-select: none; }
+  td.n { text-align: right; font-variant-numeric: tabular-nums; }
+  input { margin: 0 0 8px; padding: 3px 6px; width: 16em; }
+  .f { border-left: 4px solid #888; padding: 2px 8px; margin: 6px 0; }
+  .f .t { font-weight: 600; }
+  .f .d { opacity: .8; margin-left: 4px; }
+  .high { border-color: #c0392b; } .medium { border-color: #d68910; } .low { border-color: #2e86c1; } .info { border-color: #888; }
+  .sev { display: inline-block; min-width: 4.5em; text-transform: uppercase; font-size: 11px; font-weight: 700; }
+  .note, .muted { opacity: .7; }
+  pre { white-space: pre-wrap; margin: 0; }
+</style>
+</head>
+<body>
+<h1 id="title">openwrt-mcp</h1>
+<div id="root" class="muted">Waiting for the result…</div>
+<script>
+"use strict";
+// Read-only view. It draws what the tool already returned, as text nodes only (a host name or an
+// SSID is somebody else's string), and it never calls a tool or navigates anywhere.
+const view = document.documentElement.dataset.view;
+const root = document.getElementById("root");
+const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+const clear = () => { root.className = ""; root.replaceChildren(); };
+const textOf = r => ((r && r.content) || []).filter(c => c.type === "text").map(c => c.text).join("\n");
+
+function plain(r) { clear(); root.append(el("pre", textOf(r))); }
+
+function renderClients(r) {
+  const data = r && r.structuredContent;
+  if (!data || !Array.isArray(data.clients)) return plain(r);
+  clear();
+  document.getElementById("title").textContent = "Clients (" + data.clients.length + (data.total > data.clients.length ? " of " + data.total : "") + ")";
+  const cols = [
+    ["Name", c => c.host || c.device || "", false], ["MAC", c => c.mac, false], ["IP", c => (c.ips || []).join(" "), false],
+    ["Wi-Fi", c => c.wireless ? (c.ssid || "yes") : "", false], ["dBm", c => c.signal_dbm, true],
+    ["Up s", c => c.connected_s, true], ["Rx kbit", c => c.rx_kbit, true], ["Tx kbit", c => c.tx_kbit, true],
+  ];
+  const q = el("input"); q.placeholder = "Filter"; q.setAttribute("aria-label", "Filter clients");
+  const table = el("table"), head = el("tr"), body = el("tbody");
+  let sortBy = -1, asc = true;
+  const draw = () => {
+    const needle = q.value.toLowerCase();
+    let rows = data.clients.filter(c => !needle || cols.some(k => String(k[1](c) ?? "").toLowerCase().includes(needle)));
+    if (sortBy >= 0) {
+      const f = cols[sortBy][1];
+      rows = rows.slice().sort((a, b) => { const x = f(a) ?? "", y = f(b) ?? ""; return (typeof x === "number" && typeof y === "number" ? x - y : String(x).localeCompare(String(y))) * (asc ? 1 : -1); });
+    }
+    body.replaceChildren(...rows.map(c => { const tr = el("tr"); cols.forEach(k => tr.append(el("td", k[1](c) ?? "", k[2] ? "n" : ""))); return tr; }));
+  };
+  cols.forEach((k, i) => { const th = el("th", k[0]); th.tabIndex = 0; const go = () => { asc = sortBy === i ? !asc : true; sortBy = i; draw(); }; th.onclick = go; th.onkeydown = e => { if (e.key === "Enter") go(); }; head.append(th); });
+  table.append(el("thead")); table.firstChild.append(head); table.append(body);
+  q.oninput = draw; root.append(q, table); draw();
+}
+
+function renderAudit(r) {
+  const lines = textOf(r).split("\n");
+  const findings = []; const notes = []; let head = "", cur = null;
+  for (const l of lines) {
+    let m;
+    if ((m = /^\[(\w+)\] ([^:]+): (.*)$/.exec(l))) { cur = { sev: m[1], id: m[2], msg: m[3], more: [] }; findings.push(cur); }
+    else if (cur && (m = /^\s+(evidence|next|docs): (.*)$/.exec(l))) cur.more.push([m[1], m[2]]);
+    else if (/^(checked|not checked|limits): /.test(l)) { notes.push(l); cur = null; }
+    else if (!head && /^\w[^\n]*: (no findings|\d+ finding)/.test(l)) head = l;
+  }
+  if (!head && !findings.length) return plain(r);
+  clear();
+  document.getElementById("title").textContent = head || "Findings";
+  for (const f of findings) {
+    const box = el("div", undefined, "f " + f.sev.toLowerCase());
+    const t = el("div"); t.append(el("span", f.sev, "sev"), el("span", f.id + ": ", "t"), el("span", f.msg));
+    box.append(t);
+    for (const [k, v] of f.more) box.append(el("div", k + ": " + v, "d"));
+    root.append(box);
+  }
+  notes.forEach(n => root.append(el("div", n, "note")));
+}
+
+function renderApprovals(r) {
+  const lines = textOf(r).split("\n").filter(Boolean);
+  if (!lines.length) return plain(r);
+  clear();
+  document.getElementById("title").textContent = lines[0];
+  const table = el("table"), body = el("tbody");
+  for (const l of lines.slice(1)) {
+    const m = /^(.*?): (.*)$/.exec(l), tr = el("tr");
+    tr.append(el("td", m ? m[1] : l), el("td", m ? m[2] : ""));
+    body.append(tr);
+  }
+  table.append(body); root.append(table);
+  root.append(el("p", "Answer these in LuCI → Services → MCP Server, or with the CLI on the router. This view cannot approve anything.", "muted"));
+}
+
+const render = { clients: renderClients, audit: renderAudit, approvals: renderApprovals }[view] || plain;
+
+let next = 1; const waiting = new Map();
+const send = m => parent.postMessage(Object.assign({ jsonrpc: "2.0" }, m), "*");
+addEventListener("message", e => {
+  const m = e.data;
+  if (e.source !== parent || !m || m.jsonrpc !== "2.0") return;
+  if (m.id !== undefined && !m.method) { const done = waiting.get(m.id); if (done) { waiting.delete(m.id); done(m); } return; }
+  if (m.method === "ui/notifications/tool-result") render(m.params);
+  else if (m.method === "ping" && m.id !== undefined) send({ id: m.id, result: {} });
+});
+const id = next++;
+waiting.set(id, () => send({ method: "ui/notifications/initialized" }));
+send({ id, method: "ui/initialize", params: { protocolVersion: "2026-01-26", appInfo: { name: "openwrt-mcp view", version: "1" }, appCapabilities: {} } });
+</script>
+</body>
+</html>

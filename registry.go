@@ -27,6 +27,8 @@ func (s *Server) newServerForClient(client string) *mcp.Server {
 
 	addPrompts(srv)
 	srv.AddReceivingMiddleware(profileCatalogue, structuredGate)
+	addApps(srv)
+	srv.AddReceivingMiddleware(s.appsGate)
 
 	// ---- discovery and generic access
 

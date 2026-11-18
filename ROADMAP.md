@@ -1121,7 +1121,7 @@ part of the deny floor.
 
 ### 6.5 Managed files
 
-**Status (unreleased): typed kinds built** (`managedfile.go`): crontab, dnsmasq.d, hosts, sysupgrade.conf with validators, atomic write keeping mode and owner, history (2.4), masking, symlink refusal and a read-back. Not built: the generic path-glob scope (empty by default) and a fuzzed canonicaliser, which only matter once a caller-supplied path exists. Run on a 25.12.6 VM (dnsmasq reads `/etc/dnsmasq.d` only once `dhcp.@dnsmasq[0].confdir` is set, so a write says so); not on hardware.
+**Status (unreleased): typed kinds built** (`managedfile.go`): crontab, dnsmasq.d, hosts, sysupgrade.conf with validators, atomic write keeping mode and owner, history (2.4), masking, symlink refusal and a read-back. The generic path-glob scope is built (`kind=path`, empty until the owner lists `managed_path` globs) with a fuzzed canonicaliser and the deny floor; fixture-tested, not run on a router. Run on a 25.12.6 VM (dnsmasq reads `/etc/dnsmasq.d` only once `dhcp.@dnsmasq[0].confdir` is set, so a write says so); not on hardware.
 
 - **Problem.** Anything outside UCI needs `exec`, which is a root shell. That includes crontabs, `dnsmasq.d`
   snippets, `sysupgrade.conf`, hosts files and block lists. It is the main reason operators grant more than they
